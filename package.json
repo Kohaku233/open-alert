@@ -1,0 +1,63 @@
+{
+  "name": "open-alert",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Self-hosted multiuser OKX price alerts for Node and Cloudflare",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:foundation": "node scripts/test-batches.mjs --group foundation",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/runtime/node.ts",
+    "dev:web": "vite",
+    "build:web": "vite build",
+    "build:node": "tsc -p tsconfig.build.json",
+    "build": "npm run build:node && npm run build:web",
+    "start": "node --env-file-if-exists=.env dist/server/runtime/node.js",
+    "test": "node scripts/test-batches.mjs",
+    "test:api": "node scripts/test-batches.mjs --group api",
+    "test:auth": "node scripts/test-batches.mjs --group auth",
+    "test:db": "node scripts/test-batches.mjs --group db",
+    "admin:invite": "node --env-file-if-exists=.env --import tsx scripts/admin-invite.ts",
+    "admin:invite:d1": "tsx scripts/d1-invite.ts",
+    "db:migrate:d1": "tsx scripts/d1-migrate.ts",
+    "test:browser": "node scripts/browser-check.mjs",
+    "test:browser:mock": "node scripts/browser-mock-check.mjs",
+    "cf:dev": "wrangler dev",
+    "cf:check": "wrangler deploy --dry-run --outdir dist/worker",
+    "cf:deploy": "wrangler deploy",
+    "typecheck:web": "tsc -p web/tsconfig.json --noEmit",
+    "test:runtime:cf": "npm run build:web && npm run cf:check && node scripts/test-batches.mjs test/runtime-cloudflare.test.ts"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.7",
+    "@hono/node-server": "2.1.4",
+    "better-auth": "1.7.7",
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.13",
+    "nodemailer": "10.1.0",
+    "pg": "8.23.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261011.1",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "22.20.5",
+    "@types/nodemailer": "8.0.2",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "wrangler": "4.149.0"
+  }
+}

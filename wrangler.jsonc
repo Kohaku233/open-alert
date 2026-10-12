@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "open-alert",
+  "main": "src/runtime/cloudflare.ts",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {"directory": "./dist/web", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true},
+  "vars": {
+    "NODE_ENV": "production",
+    "DEPLOYMENT": "cloudflare",
+    "DB_DRIVER": "d1",
+    "INVITE_ONLY": "true",
+    "MAX_USERS": "5",
+    "MAX_ALERTS_PER_USER": "20",
+    "MAX_INSTRUMENTS_PER_USER": "8",
+    "MAX_ACTIVE_ALERTS": "100",
+    "MAX_GLOBAL_INSTRUMENTS": "8",
+    "DAILY_NOTIFICATION_LIMIT": "20",
+    "GLOBAL_DAILY_NOTIFICATION_LIMIT": "100"
+  },
+  "d1_databases": [{"binding":"DB","database_name":"open-alert","database_id":"00000000-0000-0000-0000-000000000000"}],
+  "durable_objects": {"bindings":[{"name":"COORDINATOR","class_name":"Coordinator"}]},
+  "migrations": [{"tag":"v1","new_sqlite_classes":["Coordinator"]}]
+}
