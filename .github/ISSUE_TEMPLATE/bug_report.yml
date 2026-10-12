@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible defect without including secrets or private data.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the expected and actual behavior. Do not paste secrets, cookies, tokens, or database dumps.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can it be reproduced?
+      description: Include the deployment type, version, and minimal steps. Redact domains and account identifiers where practical.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main@commit or v0.1.0
+    validations:
+      required: true

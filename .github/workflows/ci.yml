@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify the SQLite native binding
+        run: node --input-type=module -e "import Database from 'better-sqlite3'; const db=new Database(':memory:'); if (db.prepare('SELECT 1 AS ok').get().ok !== 1) process.exit(1); db.close();"
+      - run: npm run typecheck
+      - run: npm run typecheck:web
+      - run: npm run build
+      - run: npm run cf:check
