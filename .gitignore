@@ -31,7 +31,11 @@ data/
 private/
 backups/
 backup/
-*.sqlite*
+# Database files only. *.sqlite* also ignores src/auth/schema.sqlite.ts.
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
 *.db
 *.db-*
 *.dump
