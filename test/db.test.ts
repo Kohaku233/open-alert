@@ -115,7 +115,21 @@ test('builtin SQLite Drizzle shares physical DB and maps selected values correct
  const {createAuthDrizzle}=await import('../src/db/drizzle.node.js'); const {sqliteTable,text}=await import('drizzle-orm/sqlite-core'); const {eq}=await import('drizzle-orm'); const s=await setup();
  const users=sqliteTable('user',{id:text('id').primaryKey(),email:text('email'),name:text('name'),role:text('role')}); const drizzle=await createAuthDrizzle(s.db,{users});
  const records=await drizzle.select().from(users).where(eq(users.id,'u1')); assert.equal(records[0]!.id,'u1'); assert.equal(records[0]!.email,'u1@example.com');
+ assert.equal((await drizzle.select().from(users).where(eq(users.id,'absent'))).length,0);
  await drizzle.update(users).set({name:'via-auth'}).where(eq(users.id,'u1')); assert.equal((await s.db.query<{name:string}>('SELECT name FROM "user" WHERE id=?',['u1']))[0]!.name,'via-auth'); await s.db.close();
+});
+test('node:sqlite proxy keeps projection order, misses, write counts and rejects collapsed names',async()=>{
+ const {DatabaseSync}=await import('node:sqlite'); const {executeSqliteProxyQuery}=await import('../src/db/sqlite-proxy.js');
+ const raw=new DatabaseSync(':memory:'); raw.exec("CREATE TABLE t(id TEXT PRIMARY KEY, name TEXT); INSERT INTO t VALUES ('a','b')");
+ const prepare=(sql:string)=>raw.prepare(sql); const query=(sql:string,params:readonly unknown[],method:string)=>executeSqliteProxyQuery(prepare,prepare(sql),params,method);
+ try {
+  assert.deepEqual(query('SELECT id, name FROM t WHERE id=?',['a'],'all').rows,[['a','b']]);
+  assert.equal(query('SELECT id, name FROM t WHERE id=?',['missing'],'get').rows,undefined);
+  assert.equal(query('UPDATE t SET name=? WHERE id=?',['c','a'],'run').changes,1);
+  assert.equal((raw.prepare('SELECT name FROM t').get() as {name:string}).name,'c');
+  if (typeof raw.prepare('SELECT 1').setReturnArrays==='function') assert.deepEqual(query('SELECT id, name, id FROM t',[],'all').rows,[['a','b','a']]);
+  else assert.throws(()=>query('SELECT id, name, id FROM t',[],'all'),/duplicate columns/);
+ } finally { raw.close(); }
 });
 test('file SQLite enables WAL and busy timeout; two connections share quota and reject stale mutations',async()=>{
  const {mkdtemp,rm}=await import('node:fs/promises'); const {tmpdir}=await import('node:os'); const {join}=await import('node:path'); const directory=await mkdtemp(join(tmpdir(),'open-alert-db-'));
