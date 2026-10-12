@@ -115,6 +115,12 @@ test('corrupt encrypted secrets fail without provider traffic and expired events
   await s.r.channels.put('u2',0,await encryptSecret(key,'u2','userKey','V'.repeat(30)),null,s.now());const b=await s.rule('u2');e.invalidate();await e.tick();s.advance(600001);await e.drain();assert.equal((await s.r.outbox.lastForAlert('u2',b.id))!.phase,'expired');assert.equal((await s.r.settings.dailyUsage('u2',s.now())).attempts,0);
  }finally{await e.stop();await s.db.close();}
 });
+test('empty ticker snapshot keeps fresh prices and reports prices unavailable',async()=>{
+ const s=await fixture();await s.rule();const e=s.engine();try{await e.tick();const original=e.getPrices();assert.equal(original.length,2);assert.equal(e.getStatus().health.prices.state,'healthy');
+  s.setTicks([]);s.advance(5000);await e.tick();assert.deepEqual(e.getPrices(),original);assert.equal(e.getStatus().health.prices.state,'degraded');assert.equal(e.getStatus().health.prices.code,'prices_unavailable');
+  assert.equal(s.calls.filter(c=>c.url.includes('tickers')).length,2);assert.equal((await s.r.scheduler.listDue(s.now(),20)).length,1);
+ }finally{await e.stop();await s.db.close();}
+});
 test('stale cached prices keep original timestamps and health degrades on missing active market',async()=>{
  const s=await fixture();await s.rule('u1','upper',100,'NEW-USDT-SWAP');const e=s.engine();try{await e.tick();assert.equal(e.getStatus().health.prices.state,'degraded');const original=e.getPrices()[0]!;s.advance(30001);const count=s.calls.length;assert.equal(e.getStatus().health.prices.state,'unhealthy');assert.deepEqual(e.getPrices()[0],original);assert.equal(s.calls.length,count);}finally{await e.stop();await s.db.close();}
 });
