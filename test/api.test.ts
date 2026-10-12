@@ -1,0 +1,147 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { loadConfig } from '../src/config.js';
+import { createApp } from '../src/api/index.js';
+import { initializeServices } from '../src/runtime/common.js';
+import { createNodeSqliteAuthDrizzle } from '../src/auth/drizzle.node-sqlite.js';
+import { SQLiteDatabase } from '../src/db/sqlite.js';
+import type { SQLiteConnection } from '../src/db/sqlite.js';
+import { createApiNotifications } from '../src/runtime/notifications.js';
+import type { ComponentHealth } from '../src/contracts/domain.js';
+import type { EmailMessage } from '../src/auth/email.js';
+import { decryptSecret } from '../src/notifications/index.js';
+const good:ComponentHealth={state:'healthy',lastSuccessAt:1700000000000,code:null};
+async function fixture(overrides:Record<string,string>={}) {
+ const config=loadConfig({NODE_ENV:'test',APP_URL:'http://localhost:3000',AUTH_SECRET:'api-fixture-secret-at-least-thirty-two-characters',ENCRYPTION_KEY:'12'.repeat(32),EMAIL_PROVIDER:'console',BOOTSTRAP_TOKEN:'bootstrap-fixture-at-least-thirty-two-characters',PUSHOVER_APP_TOKEN:'S'.repeat(30),...overrides});
+ const raw=new DatabaseSync(':memory:'),db=new SQLiteDatabase(raw as unknown as SQLiteConnection,'node:sqlite'),messages:EmailMessage[]=[],providerCalls:{url:string;body:URLSearchParams}[]=[];
+ const services=await initializeServices(config,db,createNodeSqliteAuthDrizzle(raw),config.environment==='test'?{testEmailTransport:{async verify(){},async send(m){messages.push(m);}}}:{emailTransportFactory:async()=>({async verify(){},async send(m){messages.push(m);}})});
+ let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0;
+ const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
+ const app=createApp({...services,notifications,catalog:{get:async()=>({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
+ const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
+ return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},wakes:()=>wakes,close:async()=>{services.auth.close();await db.close();}};
+}
+const input={name:'BTC ceiling',instrument:'BTC-USDT-SWAP',side:'upper',threshold:100,enabled:true};
+test('health idle degrades honestly; actual DB/email/provider failures and snapshot throws survive aggregation',async()=>{
+ const f=await fixture();try{
+  const idle:ComponentHealth={state:'degraded',lastSuccessAt:null,code:'idle_no_active_alerts'};
+  const unseen:ComponentHealth={state:'starting',lastSuccessAt:null,code:null};
+  let database=good,prices=idle,engineNotification=unseen,apiNotification=unseen,snapshotThrows=false,dbThrows=false;
+  let email:ReturnType<typeof f.auth.emailHealth>={state:'healthy',lastSuccessAt:good.lastSuccessAt,code:null};
+  const realQuery=f.db.query.bind(f.db);
+  const app=createApp({...f,db:{...f.db,query:async(sql:string,params?:any[])=>{if(dbThrows&&sql==='SELECT 1 AS ready')throw new Error('private DB message');return realQuery(sql,params);}} as typeof f.db,
+   auth:{...f.auth,emailHealth:()=>email},notifications:{...f.notifications,health:()=>apiNotification},catalog:{get:async()=>({markets:[],updatedAt:null,stale:true})},
+   runtime:{snapshot:async()=>{if(snapshotThrows)throw new Error('private snapshot message');return {health:{overall:'unhealthy',database,scheduler:idle,prices,notifications:engineNotification,email:good},lastPollAt:null,prices:[]};}},wake:async()=>{assert.fail('Health cannot wake');}});
+  const check=async(status:number,state:string)=>{const response=await app.request(f.config.appUrl+'/api/health');assert.equal(response.status,status);assert.equal((await response.json() as any).data.state,state);};
+  await check(200,'degraded');assert.equal(f.providerCalls.length,0);assert.equal(f.messages.length,0);
+  prices={state:'unhealthy',lastSuccessAt:null,code:'prices_unavailable'};await check(503,'unhealthy');prices=idle;
+  database={state:'unhealthy',lastSuccessAt:null,code:'database_unavailable'};await check(503,'unhealthy');database=good;
+  email={state:'unhealthy',lastSuccessAt:null,code:'email_unavailable'};await check(503,'unhealthy');email={state:'healthy',lastSuccessAt:good.lastSuccessAt,code:null};
+  engineNotification={state:'unhealthy',lastSuccessAt:null,code:'provider_unavailable'};apiNotification={...good,lastSuccessAt:Date.now()};await check(503,'unhealthy');
+  engineNotification={state:'degraded',lastSuccessAt:null,code:'provider_rejected'};await check(200,'degraded');
+  const logs:unknown[][]=[];const original=console.error;console.error=(...args:unknown[])=>{logs.push(args);};
+  try{snapshotThrows=true;await check(503,'unhealthy');snapshotThrows=false;dbThrows=true;await check(503,'unhealthy');}
+  finally{console.error=original;}
+  assert.deepEqual(logs,[['open_alert_health_failed','runtime_snapshot'],['open_alert_health_failed','database_probe']]);
+ }finally{await f.close();}
+});
+test('real cookie sessions protect app routes; strict input, trusted origin, catalog, ownership and generation CAS',async()=>{
+ const f=await fixture({MAX_ALERTS_PER_USER:'2'});try{
+  assert.equal((await f.call('/api/status')).status,401);
+  assert.equal((await f.call('/api/alerts','POST',{...input,userId:'forged'},'fake-session=admin')).status,401);
+  const alice=await f.login('alice@example.com'),bob=await f.login('bob@example.com');
+  const status=(await f.body(await f.call('/api/status','GET',undefined,alice.cookie))).data;assert.equal(status.user.id,alice.id);assert.equal(status.settings.enabled,false);assert.equal(status.capabilities.google,false);
+  assert.equal((await f.call('/api/alerts','POST',input,alice.cookie,{Origin:'https://evil.example'})).status,403);
+  assert.equal((await f.call('/api/alerts','POST',input,alice.cookie,{Origin:''})).status,403);
+  assert.equal((await f.call('/api/alerts','POST',input,alice.cookie,{'Sec-Fetch-Site':'cross-site'})).status,403);
+  assert.equal((await f.call('/api/alerts','POST',{...input,userId:bob.id},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/alerts','POST',{...input,threshold:'100'},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/alerts','POST',{...input,instrument:'FAKE-USDT-SWAP'},alice.cookie)).status,400);
+  f.setStale(true);assert.equal((await f.call('/api/alerts','POST',input,alice.cookie)).status,503);f.setStale(false);
+  const created=(await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201)).data.alert;
+  assert.equal(created.generation,0);assert.equal(created.status,'armed');
+  assert.equal((await f.call(`/api/alerts/${created.id}`,'PATCH',{expectedGeneration:0,name:'stolen'},bob.cookie)).status,404);
+  assert.equal((await f.call(`/api/alerts/${created.id}`,'DELETE',{expectedGeneration:0},bob.cookie)).status,404);
+  assert.equal((await f.call(`/api/alerts/${created.id}/rearm`,'POST',{expectedGeneration:0},bob.cookie)).status,404);
+  const changes=await Promise.all([f.call(`/api/alerts/${created.id}`,'PATCH',{expectedGeneration:0,name:'new'},alice.cookie),f.call(`/api/alerts/${created.id}`,'PATCH',{expectedGeneration:0,name:'other'},alice.cookie)]);assert.deepEqual(changes.map(r=>r.status).sort(),[200,409]);
+  const updated=(await f.body(await f.call('/api/alerts','GET',undefined,alice.cookie))).data.alerts[0];assert.equal(updated.threshold,100);assert.equal(updated.generation,1);
+  await f.body(await f.call(`/api/alerts/${created.id}/rearm`,'POST',{expectedGeneration:1},alice.cookie));
+  assert.equal((await f.call(`/api/alerts/${created.id}`,'DELETE',{expectedGeneration:1},alice.cookie)).status,409);
+  await f.body(await f.call(`/api/alerts/${created.id}`,'DELETE',{expectedGeneration:2},alice.cookie));assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,0);
+  assert.equal((await f.db.query<{deleted_at:number}>('SELECT deleted_at FROM alerts WHERE id=?',[created.id]))[0]!.deleted_at>0,true);
+  assert.deepEqual((await f.body(await f.call('/api/alerts','GET',undefined,bob.cookie))).data.alerts,[]);
+  await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201);await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201);assert.equal((await f.call('/api/alerts','POST',input,alice.cookie)).status,409);
+  assert.equal((await f.call('/api/alerts','POST',input,alice.cookie,{'Content-Type':'text/plain'})).status,400);
+  const oversized=await f.app.request(f.config.appUrl+'/api/alerts',{method:'POST',headers:{Origin:f.config.appUrl,Cookie:alice.cookie,'Content-Type':'application/json'},body:' '.repeat(17000)});assert.equal(oversized.status,400);
+ }finally{await f.close();}
+});
+test('channel retention uses encrypted own credentials; PUT validates only; explicit normal test claims quota once',async()=>{
+ const f=await fixture();try{
+  const alice=await f.login('channel@example.com'),bob=await f.login('other@example.com');
+  await f.body(await f.call('/api/status','GET',undefined,alice.cookie));await f.body(await f.call('/api/status','GET',undefined,bob.cookie));
+  assert.equal((await f.call('/api/channels','PUT',{provider:'pushover',appToken:'P'.repeat(30)},alice.cookie)).status,400);
+  const saved=(await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'A'.repeat(30),appToken:'P'.repeat(30)},alice.cookie))).data;assert.equal(saved.tokenSource,'private');assert.equal(f.providerCalls.length,1);assert.match(f.providerCalls[0]!.url,/validate/);
+  assert.equal(JSON.stringify(saved).includes('AAAA'),false);const first=(await f.repositories.channels.get(alice.id))!;assert.equal(await decryptSecret(f.config.encryptionKey,alice.id,'userKey',first.userKey),'A'.repeat(30));
+  await f.body(await f.call('/api/channels','PUT',{provider:'pushover',appToken:null},alice.cookie));const cleared=(await f.repositories.channels.get(alice.id))!;assert.deepEqual(cleared.userKey,first.userKey);assert.equal(cleared.privateAppToken,null);assert.equal(f.providerCalls.at(-1)!.body.get('token'),'S'.repeat(30));
+  await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'B'.repeat(30),appToken:'P'.repeat(30)},alice.cookie));await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'C'.repeat(30)},alice.cookie));assert.equal(f.providerCalls.at(-1)!.body.get('token'),'P'.repeat(30));
+  assert.equal((await f.body(await f.call('/api/channels','GET',undefined,bob.cookie))).data.userKeyPresent,false);
+  assert.equal((await f.call('/api/test-notification','POST',{confirm:false},alice.cookie)).status,400);assert.equal(f.providerCalls.some(c=>c.url.endsWith('messages.json')),false);
+  const result=(await f.body(await f.call('/api/test-notification','POST',{confirm:true},alice.cookie))).data;assert.equal(result.outcome,'sent');const sent=f.providerCalls.at(-1)!;assert.equal(sent.body.get('priority'),'0');assert.equal(sent.body.has('retry'),false);assert.equal(sent.body.get('user'),'C'.repeat(30));
+  assert.equal((await f.repositories.settings.dailyUsage(alice.id,Date.now())).attempts,1);assert.equal((await f.call('/api/test-notification','POST',{confirm:true},alice.cookie)).status,429);
+  await f.body(await f.call('/api/channels','DELETE',undefined,alice.cookie));assert.equal(await f.repositories.channels.get(alice.id),null);
+ }finally{await f.close();}
+});
+test('pending delivery guards changes; deliberate disable cancels queued work; bootstrap grants one verified user only',async()=>{
+ const f=await fixture();try{
+  const alice=await f.login('admin@example.com'),bob=await f.login('target@example.com');await f.body(await f.call('/api/status','GET',undefined,alice.cookie));
+  assert.equal((await f.call('/api/admin/users','GET',undefined,alice.cookie)).status,403);
+  assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,'',{Authorization:`Bearer ${f.config.bootstrapToken}`})).status,401);
+  assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,alice.cookie,{Authorization:'Bearer wrong'})).status,403);
+  await f.body(await f.call('/api/admin/bootstrap','POST',undefined,alice.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,bob.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`})).status,409);
+  const users=(await f.body(await f.call('/api/admin/users','GET',undefined,alice.cookie))).data;assert.equal(users.items.length,2);
+  const invited=(await f.body(await f.call('/api/admin/invites','POST',{email:'NEXT@example.com'},alice.cookie),201)).data;assert.equal(invited.email,'next@example.com');assert.equal(f.messages.at(-1)!.subject,'You are invited to Open Alert');
+  await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'A'.repeat(30)},alice.cookie));await f.body(await f.call('/api/settings','PATCH',{expectedGeneration:0,enabled:true},alice.cookie));
+  const a=(await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201)).data.alert;const now=Date.now(),lease=(await f.repositories.scheduler.acquireLease('test-owner',now,15000))!,triggerId=crypto.randomUUID();
+  assert.equal(await f.repositories.alerts.reserveTrigger({triggerId,alertId:a.id,userId:alice.id,generation:0,settingsGeneration:1,channelGeneration:0,tick:{instrument:a.instrument,price:100,timestamp:now,receivedAt:now},now,lease}),true);
+  assert.equal((await f.call(`/api/alerts/${a.id}`,'PATCH',{expectedGeneration:0,name:'blocked'},alice.cookie)).status,409);assert.equal((await f.call('/api/channels','DELETE',undefined,alice.cookie)).status,409);assert.equal((await f.call('/api/settings','PATCH',{expectedGeneration:1,dailyLimit:5},alice.cookie)).status,409);
+  await f.body(await f.call('/api/settings','PATCH',{expectedGeneration:1,enabled:false},alice.cookie));assert.equal((await f.repositories.outbox.getForUser(alice.id,triggerId))!.phase,'cancelled');assert.equal((await f.repositories.alerts.getForUser(alice.id,a.id))!.triggered,true);
+  await f.body(await f.call(`/api/admin/users/${bob.id}`,'PATCH',{disabled:true},alice.cookie));assert.equal((await f.db.query('SELECT id FROM session WHERE user_id=?',[bob.id])).length,0);assert.equal((await f.call('/api/status','GET',undefined,bob.cookie)).status,401);assert.equal((await f.repositories.settings.get(bob.id))!.disabled,true);
+  // Existing session that has not been revoked yet must still return the distinct disabled error.
+  await f.db.execute('UPDATE user_settings SET disabled=1 WHERE user_id=?',[alice.id]);assert.equal((await f.call('/api/status','GET',undefined,alice.cookie)).status,403);
+ }finally{await f.close();}
+});
+test('provider confirmed rejection and uncertainty return errors and durable audited outcomes without retry',async()=>{
+ for(const outcome of ['failed','uncertain'] as const){const f=await fixture();try{
+  const user=await f.login(`${outcome}@example.com`);await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'A'.repeat(30)},user.cookie));f.setProvider(outcome);
+  assert.equal((await f.call('/api/test-notification','POST',{confirm:true},user.cookie)).status,outcome==='failed'?502:504);assert.equal((await f.db.query<{phase:string}>('SELECT phase FROM test_notifications'))[0]!.phase,outcome);assert.equal((await f.repositories.settings.dailyUsage(user.id,Date.now())).attempts,1);assert.equal(f.providerCalls.filter(c=>c.url.endsWith('messages.json')).length,1);
+ }finally{await f.close();}}
+});
+test('development origin is explicit for both real OTP and app mutations and is refused in production',async()=>{
+ const f=await fixture({NODE_ENV:'test'});try{const user=await f.login('origin@example.com');assert.equal((await f.call('/api/alerts','POST',input,user.cookie,{Origin:'http://localhost:5173'})).status,403);assert.equal((await f.call('/api/auth/email-otp/send-verification-otp','POST',{email:'new@example.com',type:'sign-in'},'',{Origin:'http://localhost:5173'})).status,403);}finally{await f.close();}
+ const dev=await fixture({NODE_ENV:'development',DEV_ORIGIN:'http://localhost:5173'});try{await dev.repositories.admin.createInvitation('dev@example.com',Date.now()+60000,Date.now());const origin={Origin:'http://localhost:5173'};assert.equal((await dev.call('/api/auth/email-otp/send-verification-otp','POST',{email:'dev@example.com',type:'sign-in'},'',origin)).status,200);const otp=dev.messages.at(-1)!.text.match(/code is (\d{6})/)![1];const signed=await dev.call('/api/auth/sign-in/email-otp','POST',{email:'dev@example.com',otp},'',origin);assert.equal(signed.status,200);const cookie=signed.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');assert.equal((await dev.call('/api/alerts','POST',input,cookie,origin)).status,201);}finally{await dev.close();}
+ assert.throws(()=>loadConfig({NODE_ENV:'production',APP_URL:'https://alert.example.com',AUTH_SECRET:'a'.repeat(32),ENCRYPTION_KEY:'12'.repeat(32),EMAIL_PROVIDER:'resend',EMAIL_FROM:'alerts@example.com',RESEND_API_KEY:'fixture',DEV_ORIGIN:'http://localhost:5173'}));
+});
+
+test('persisted app request budget returns 429 and Retry-After across instances',async()=>{
+ const f=await fixture();try{const user=await f.login('rate@example.com');await f.body(await f.call('/api/status','GET',undefined,user.cookie));await f.db.execute('UPDATE rate_limit SET count=120,last_request=? WHERE "key" LIKE ?',[Date.now(),'app-auth:api-user:%']);const response=await f.call('/api/alerts','GET',undefined,user.cookie);assert.equal(response.status,429);assert.ok(Number(response.headers.get('Retry-After'))>0);}finally{await f.close();}
+});
+
+
+test('bootstrap is atomic under concurrent verified sessions and missing admin targets return 404',async()=>{
+ const f=await fixture();try{
+  const alice=await f.login('race-admin-a@example.com'),bob=await f.login('race-admin-b@example.com');
+  const authorization={Authorization:`Bearer ${f.config.bootstrapToken}`};
+  assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,'',authorization)).status,401);
+  const results=await Promise.all([f.call('/api/admin/bootstrap','POST',undefined,alice.cookie,authorization),f.call('/api/admin/bootstrap','POST',undefined,bob.cookie,authorization)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+  const winner=results[0]!.status===200?alice:bob,loser=winner===alice?bob:alice;
+  assert.equal((await f.db.query('SELECT id FROM "user" WHERE role=?',['admin'])).length,1);
+  assert.equal((await f.call('/api/admin/users','GET',undefined,loser.cookie)).status,403);
+  const missing=await f.call('/api/admin/users/no-such-user','PATCH',{disabled:true},winner.cookie);
+  assert.equal(missing.status,404,await missing.clone().text());
+  assert.equal((await f.db.query('SELECT user_id FROM user_settings WHERE user_id=?',['no-such-user'])).length,0);
+ }finally{await f.close();}
+});
