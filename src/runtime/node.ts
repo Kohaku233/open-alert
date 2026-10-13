@@ -10,6 +10,7 @@ import { createApiNotifications } from './notifications.js';
 import { setupHtml,trustedRequest,unavailableApi } from './common.js';
 import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
+import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
@@ -29,8 +30,9 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const config=loadConfig(env);if(config.deployment!=='node')throw new ConfigurationError(['DEPLOYMENT']);
   const services=await createNodeServices(config);
   const notifications=createApiNotifications(config);
-  const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications})});
-  const app=createApp({...services,notifications,catalog:{get:async()=>engine.getMarkets()},runtime:{snapshot:engine.snapshot},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),
+    marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments})});
+  const app=createApp({...services,notifications,catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const})},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   let started=false;
   return {
     config,services,engine,app,

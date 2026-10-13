@@ -13,6 +13,7 @@ import { createApp } from '../api/index.js';
 import type { CatalogSnapshot,RuntimeSnapshot } from '../api/ports.js';
 import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
+import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { D1SqlDatabase } from '../db/d1.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
 async function databaseServices(env: CloudflareBindings) {
@@ -61,7 +62,9 @@ export class Coordinator {
   constructor(private readonly state:DurableObjectState,env:CloudflareBindings) {
     this.initialized=state.blockConcurrencyWhile(async()=>{
       const services=await databaseServices(env);
-      return createScheduler({...services,notifications:createNotificationService(services)});
+      return createScheduler({...services,notifications:createNotificationService(services),
+        marketSource:createPublicCcxtMarketSource({mode:'polling',fetchImplementation:globalThis.fetch,
+          maxDemand:services.config.limits.globalInstruments,requestTimeoutMs:8000,pollBudgetMs:10000})});
     });
   }
   private async reconcile():Promise<boolean> {
@@ -106,7 +109,7 @@ export class Coordinator {
       // First read after eviction or a lost wake repairs active work, but never polls idle prices.
       await this.reconcile();
       const status=engine.getStatus();
-      return Response.json({health:status.health,lastPollAt:status.lastPollAt,prices:engine.getPrices()});
+      return Response.json({health:status.health,lastPollAt:status.lastPollAt,prices:engine.getPrices(),marketMode:'polling'});
     }
     return new Response('Not found',{status:404});
   }

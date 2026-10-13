@@ -10,6 +10,7 @@ import type {D1Database} from '@cloudflare/workers-types';
 import {D1SqlDatabase} from '../src/db/d1.js';
 import {applyD1Schema} from '../src/db/migrations.js';
 import type {RuntimeSnapshot} from '../src/api/ports.js';
+import {publicExchangeFixture} from './runtime-cloudflare-fixtures.js';
 import type {SystemStatus,Alert} from '../src/contracts/domain.js';
 
 const bundle=resolve('dist/worker/cloudflare.js');
@@ -51,14 +52,9 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
     if(url.pathname==='/domains'&&request.method==='GET'){domainRequests++;return MfResponse.json({data:[{name:'alert.example.com',status:'verified'}]});}
     if(url.pathname==='/emails'&&request.method==='POST'){const body=await request.json() as {to:string[];subject:string;text:string};emails.push(body);return MfResponse.json({id:`email-${emails.length}`});}
    }
-   if(url.hostname==='www.okx.com'&&request.method==='GET'){
-    assert.equal(url.searchParams.get('instType'),'SWAP');
-    if(url.pathname==='/api/v5/public/instruments'){
-     catalogRequests++;return MfResponse.json({code:'0',data:['BTC','ETH'].map(base=>({instType:'SWAP',instId:`${base}-USDT-SWAP`,state:'live',settleCcy:'USDT',tickSz:'0.1'}))});
-    }
-    if(url.pathname==='/api/v5/market/tickers'){
-     tickerRequests++;return MfResponse.json({code:'0',data:['BTC','ETH'].map(base=>({instId:`${base}-USDT-SWAP`,last:'100',ts:String(Date.now())}))});
-    }
+   if(request.method==='GET'){
+    const fixture=publicExchangeFixture(url,Date.now(),tickerRequests+1);
+    if(fixture){if(fixture.kind==='catalog')catalogRequests++;else tickerRequests++;return MfResponse.json(fixture.body);}
    }
    if(url.hostname==='api.pushover.net'&&request.method==='POST'){
     const body=new URLSearchParams(await request.text());
@@ -153,15 +149,15 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
   };
   const wake=async()=>{assert.equal((await coordinator.fetch('https://coordinator.internal/wake',{method:'POST'})).status,202);};
   await t.test('idle catalog discovery and wake never poll prices or keep an alarm',async()=>{
-   const initial=await snapshot();assert.equal(initial.lastPollAt,null);assert.deepEqual(initial.prices,[]);assert.equal(initial.health.scheduler.code,'idle_no_active_alerts');assert.equal(await alarm(),null);
+   const initial=await snapshot();assert.equal(initial.marketMode,'polling');assert.equal(initial.lastPollAt,null);assert.deepEqual(initial.prices,[]);assert.equal(initial.health.scheduler.code,'idle_no_active_alerts');assert.equal(await alarm(),null);
    assert.equal(initial.health.prices.state,'degraded');assert.equal(initial.health.prices.code,'idle_no_active_alerts');
    assert.equal(initial.health.database.state,'healthy');assert.equal(initial.health.notifications.state,'degraded');
    assert.equal(initial.health.overall,'degraded');assert.equal((await request('/api/health')).status,200);
    assert.equal((await api<SystemStatus>('/api/status','GET',undefined,aliceCookie)).health.overall,'degraded');
    assert.equal(tickerRequests,0);assert.equal(deliveries.length,0);assert.equal(emails.length,2);
    const catalog=await coordinator.fetch('https://coordinator.internal/catalog');assert.equal(catalog.status,200);
-   const catalogBody=await catalog.json() as {stale:boolean;markets:unknown[]};assert.equal(catalogBody.stale,false);assert.equal(catalogBody.markets.length,2);
-   assert.equal(catalogRequests,1);assert.equal(tickerRequests,0);assert.equal((await snapshot()).lastPollAt,null);
+   const catalogBody=await catalog.json() as {stale:boolean;markets:unknown[]};assert.equal(catalogBody.stale,false);assert.equal(catalogBody.markets.length,12);
+   assert.equal(catalogRequests,6);assert.equal(tickerRequests,0);assert.equal((await snapshot()).lastPollAt,null);
    await wake();await eventually(alarm,value=>value===null,'idle wake alarm removal');
    await pause(5200);assert.equal(tickerRequests,0);assert.equal(await alarm(),null);assert.equal((await snapshot()).lastPollAt,null);
    assert.equal((await db.query('SELECT id FROM scheduler_lease')).length,0);
@@ -199,7 +195,7 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.equal(deliveries.length,2);assert.equal(tickerRequests,1,'Cached tick is reused within the five-second price cadence');
    for(const delivery of deliveries){assert.equal(delivery.get('user'),userKey);assert.equal(delivery.get('token'),appToken);}
    const status=await api<SystemStatus>('/api/status','GET',undefined,aliceCookie);assert.ok(status.scheduler.lastPollAt);assert.equal(status.prices.length,1);assert.equal(status.prices[0]!.instrument,'BTC-USDT-SWAP');assert.equal(status.prices[0]!.price,100);
-   const bobStatus=await api<SystemStatus>('/api/status','GET',undefined,bobCookie);assert.deepEqual(bobStatus.prices.map(price=>price.instrument),['ETH-USDT-SWAP']);assert.equal(bobStatus.daily.attempts,0);assert.equal(bobStatus.settings.enabled,false);
+   const bobStatus=await api<SystemStatus>('/api/status','GET',undefined,bobCookie);assert.deepEqual(bobStatus.prices,[],'Disabled rules do not create market demand or obtain another tenant’s prices');assert.equal(bobStatus.daily.attempts,0);assert.equal(bobStatus.settings.enabled,false);
    const alerts=(await api<{alerts:Alert[]}>('/api/alerts','GET',undefined,aliceCookie)).alerts;
    for(const id of [firstAlert.id,secondAlert.id]){const alert=alerts.find(alert=>alert.id===id)!;assert.equal(alert.triggered,true);assert.equal(alert.last?.outcome,'sent');assert.equal(alert.last?.receiptAvailable,true);assert.equal(alert.pending,null);}
    const leases=await db.query<{id:string}>('SELECT id FROM scheduler_lease');assert.deepEqual(leases,[{id:'coordinator-v1'}]);assert.deepEqual(await mf.listDurableObjectIds('COORDINATOR'),[id.toString()]);
