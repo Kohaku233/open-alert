@@ -33,7 +33,7 @@ after(() => { mock.restoreAll(); assert.deepEqual(denied, [], 'Every request mus
 
 const initial = 1_700_000_000_000;
 const routes = [
-  { venue: 'binance', type: 'spot', host: 'api.binance.com', path: '/api/v3/exchangeInfo', field: 'symbols' },
+  { venue: 'binance', type: 'spot', host: 'api-gcp.binance.com', path: '/api/v3/exchangeInfo', field: 'symbols' },
   { venue: 'binance', type: 'swap', host: 'fapi.binance.com', path: '/fapi/v1/exchangeInfo', field: 'symbols' },
   { venue: 'okx', type: 'spot', host: 'www.okx.com', path: '/api/v5/public/instruments', field: 'data' },
   { venue: 'okx', type: 'swap', host: 'www.okx.com', path: '/api/v5/public/instruments', field: 'data' },
@@ -58,7 +58,7 @@ function fixture(venue: Venue, mode: MarketMode = 'polling') {
     change(url, body);
     return Response.json(body);
   };
-  const source = createPublicCcxtMarketSource({ mode, venues: [venue], fetchImplementation,
+  const source = createPublicCcxtMarketSource({ mode, venues: [venue], splitProducts: [], fetchImplementation,
     now: () => time, catalogTtlMs: 100, requestTimeoutMs: 5000, closeTimeoutMs: 100,
     retryBaseMs: 10, retryMaxMs: 100 });
   return { source, requests, alter: (fn: typeof change) => { change = fn; }, advance: (ms = 100) => { time += ms; }, time: () => time };

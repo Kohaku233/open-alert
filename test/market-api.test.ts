@@ -61,6 +61,14 @@ test('market directory stays complete, bounded search filters venue/product and 
  assert.equal(f.writes(),0);assert.equal(f.wakes(),0);
 });
 
+test('product-specific outage keeps Binance spot usable and missing failed futures returns 503',async()=>{
+ const f=fixture();f.setCatalog({...f.catalog(),stale:true,markets:markets.filter(m=>m.instrument!=='binance:swap:BTCUSDT'),sources:[{venue:'binance',type:'spot',updatedAt:1000,stale:false},{venue:'binance',type:'swap',updatedAt:null,stale:true,code:'catalog_unavailable'},{venue:'okx',updatedAt:1000,stale:false},{venue:'mexc',updatedAt:1000,stale:false}]});
+ const choices=await f.data('/api/markets?q=btc&venue=binance');assert.deepEqual(choices.markets.map((m:Market)=>m.instrument),['binance:spot:BTCUSDT']);assert.equal((await f.call('/api/alerts','POST',{...input,instrument:'binance:spot:BTCUSDT'})).status,201);
+ assert.equal((await f.call('/api/alerts','POST',{...input,instrument:'binance:swap:BTCUSDT'})).status,503);assert.equal((await f.call('/api/alerts','POST',{...input,instrument:'binance:spot:FAKEUSDT'})).status,400);assert.equal(f.writes(),1);
+ f.setCatalog({...f.catalog(),markets:[...f.catalog().markets,market('binance:swap:BTCUSDT','binance','swap')]});const exact=await f.data('/api/markets?instrument=binance%3Aswap%3ABTCUSDT');assert.equal(exact.markets[0].available,false);
+ const old=f.alert('retained-futures','binance:swap:BTCUSDT',false);f.records.set(old.id,old);assert.equal((await f.call('/api/alerts/retained-futures','PATCH',{expectedGeneration:0,enabled:true})).status,503);assert.equal((await f.call('/api/alerts/retained-futures/rearm','POST',{expectedGeneration:0})).status,503);
+});
+
 test('invalid bounded search fails before catalog access and still requires authentication',async()=>{
  const f=fixture();
  for(const query of [`q=${'a'.repeat(81)}`,'venue=bybit','venue=OKX','type=future','type=SPOT','limit=101','limit=0','limit=1.1','limit=1e2','limit=','limit=-1','offset=-1','offset=100001','offset=1.5','offset=Infinity','q=a&q=b','venue=okx&venue=binance','unknown=1','instrument=BTCUSDT','instrument=binance%3Aswap%3ABTCUSDT%0A']){

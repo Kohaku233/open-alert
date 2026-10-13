@@ -2,7 +2,7 @@ import type { AppConfig } from '../config.js';
 import type { OpenAlertAuth } from '../auth/index.js';
 import type { ChannelRecord, Repositories, SqlDatabase } from '../contracts/db.js';
 import type { ComponentHealth, EncryptedSecret, Market, PriceTick, SystemStatus } from '../contracts/domain.js';
-export interface CatalogSource { venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
+export interface CatalogSource { type?: 'spot' | 'swap'; venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
 export type CatalogMarket = Market & { available?: boolean };
 export interface CatalogSnapshot {
   markets: CatalogMarket[]; updatedAt: number | null; stale: boolean;

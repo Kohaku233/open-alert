@@ -24,8 +24,13 @@ function identity(market: CatalogMarket): { venue?: Venue; type?: 'spot' | 'swap
 }
 export function marketSourceStale(snapshot: CatalogSnapshot, market: CatalogMarket): boolean {
   if (snapshot.sources) {
-    const venue = identity(market).venue;
-    const source = venue ? Array.isArray(snapshot.sources) ? snapshot.sources.find(s => s.venue === venue) : snapshot.sources[venue] : undefined;
+    const {venue,type} = identity(market);
+    if (!venue) return true;
+    if (Array.isArray(snapshot.sources)) {
+      const matches = snapshot.sources.filter(s => s.venue === venue && (!s.type || s.type === type));
+      return !matches.length || matches.some(s => s.stale || s.updatedAt === null);
+    }
+    const source = snapshot.sources[venue];
     return !source || source.stale || source.updatedAt === null;
   }
   // A source can publish eligibility directly when it has no per-venue snapshot.

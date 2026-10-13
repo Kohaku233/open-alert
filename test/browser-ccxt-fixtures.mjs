@@ -29,8 +29,8 @@ function state(exchange, venue) {
   assert.equal(value.closed, false, 'Closed fixture instance cannot be reused');
   return value;
 }
-function rows(venue) {
-  return ['BTC', 'ETH'].flatMap(base => ['spot', 'swap'].map(type => {
+function rows(venue, products = ['spot', 'swap']) {
+  return ['BTC', 'ETH'].flatMap(base => products.map(type => {
     const swap = type === 'swap';
     return {
       id: venue === 'okx' ? `${base}-USDT${swap ? '-SWAP' : ''}` : venue === 'mexc' && swap ? `${base}_USDT` : `${base}USDT`,
@@ -48,8 +48,16 @@ for (const venue of ['binance', 'okx', 'mexc']) {
   prototype.loadMarkets = async function (reload) {
     const fixture = state(this, venue);
     assert.equal(reload, true, 'Production source must explicitly load a complete catalog');
-    fixture.markets = Object.fromEntries(rows(venue).map(market => [market.symbol, market]));
-    event({ type: 'transport', provider: 'ccxt-method-fixture', venue, operation: 'catalog', method: 'loadMarkets', instance: fixture.id, rows: 4 });
+    let products = ['spot', 'swap'];
+    if (venue === 'binance') {
+      const types = this.options.fetchMarkets.types;
+      assert.deepEqual(types, types[0] === 'spot' ? ['spot'] : ['linear'], 'Binance fixture must request one product per instance');
+      products = types.map(type => type === 'linear' ? 'swap' : 'spot');
+      assert.equal(this.urls.api.public, 'https://api-gcp.binance.com/api/v3');
+    }
+    const markets = rows(venue, products);
+    fixture.markets = Object.fromEntries(markets.map(market => [market.symbol, market]));
+    event({ type: 'transport', provider: 'ccxt-method-fixture', venue, operation: 'catalog', method: 'loadMarkets', instance: fixture.id, rows: markets.length });
     return structuredClone(fixture.markets);
   };
   const trade = function (method, symbol, since, limit) {

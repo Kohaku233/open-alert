@@ -214,9 +214,9 @@ try {
   });
   await journey('06 actual process restart persists sessions, roles, alerts and quotas',async()=>{
     await stopServer();const tradeCallsBeforeRestart=transport.filter(e=>e.operation==='trades').length;await startServer();
-    await check('restart loads three fresh catalogs and retains idle demand',async()=>{
+    await check('restart loads four fresh product/venue catalogs and retains idle demand',async()=>{
       const catalog=await ok(alice.context,'/api/markets');assert.equal(catalog.stale,false);assert.equal(catalog.markets.length,12);
-      assert.deepEqual(transport.filter(e=>e.child===server.label&&e.operation==='catalog').map(e=>e.venue).sort(),['binance','mexc','okx']);
+      assert.deepEqual(transport.filter(e=>e.child===server.label&&e.operation==='catalog').map(e=>e.venue).sort(),['binance','binance','mexc','okx']);
       assert.equal(transport.filter(e=>e.operation==='trades').length,tradeCallsBeforeRestart);
       assert.deepEqual((await ok(alice.context,'/api/status')).prices,[]);assert.deepEqual((await ok(bob.context,'/api/status')).prices,[]);
     });

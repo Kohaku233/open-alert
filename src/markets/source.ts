@@ -1,5 +1,5 @@
 import { parseInstrumentIdentity } from '../contracts/domain.js';
-import type { ComponentHealth, PriceTick, Venue } from '../contracts/domain.js';
+import type { ComponentHealth, MarketType, PriceTick, Venue } from '../contracts/domain.js';
 import type { CatalogSnapshot } from '../api/ports.js';
 import { VENUES, normalizeCatalog, record } from './normalize.js';
 import type { NormalizedMarket } from './normalize.js';
@@ -15,7 +15,7 @@ export interface CcxtExchange {
   close(): Promise<unknown>;
 }
 export interface ExchangeSettings {
-  mode: MarketMode; timeoutMs: number; tradesLimit: number;
+  mode: MarketMode; timeoutMs: number; tradesLimit: number; product?: MarketType;
 }
 export type ExchangeFactory = (venue: Venue, settings: ExchangeSettings) => CcxtExchange | Promise<CcxtExchange>;
 export interface MarketSource {
@@ -41,12 +41,14 @@ export interface MarketSource {
 }
 export interface SourceDiagnostics {
   stopped: boolean; queued: number; queueCapacity: number; demandCapacity: number;
-  venues: { venue: Venue; catalogAt: number | null; catalogCode: string | null; priceCode: string | null; retryAt: number; clientOpen: boolean }[];
+  venues: { venue: Venue; type?: MarketType; catalogAt: number | null; catalogCode: string | null; priceCode: string | null; retryAt: number; clientOpen: boolean }[];
   instruments: { instrument: string; code: string | null; queued: number; replayEntries: number }[];
   replayCapacity: number;
 }
 export interface MarketSourceOptions {
   factory: ExchangeFactory; mode: MarketMode; venues?: readonly Venue[]; now?: () => number;
+  /** Independent authoritative snapshots; shared demand/queue budgets remain global. */
+  splitProducts?: readonly Venue[];
   catalogTtlMs?: number; requestTimeoutMs?: number; closeTimeoutMs?: number;
   freshnessMs?: number; futureSkewMs?: number; pollIntervalMs?: number;
   retryBaseMs?: number; retryMaxMs?: number;
@@ -60,7 +62,7 @@ interface Demand {
   code: string | null; seen: Map<string, number>; nextPollAt: number;
 }
 interface VenueState {
-  venue: Venue; exchange: CcxtExchange | null; epoch: number;
+  venue: Venue; product?: MarketType; exchange: CcxtExchange | null; epoch: number;
   catalog: Map<string, NormalizedMarket>; catalogAt: number | null; catalogCode: string | null;
   priceCode: string | null; retryAt: number; failures: number; nextCatalogAt: number;
   watchers: Map<string, Promise<void>>; catalogWork: Promise<void> | null; opening: Promise<void> | null;
@@ -108,7 +110,10 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   if (options.mode !== 'stream' && options.mode !== 'polling') throw new Error('invalid_market_mode');
   const venues = options.venues ?? VENUES;
   if (!venues.length || new Set(venues).size !== venues.length || venues.some(v => !VENUES.includes(v))) throw new Error('invalid_venues');
-  const states: VenueState[] = venues.map(venue => ({ venue, exchange: null, epoch: 0, catalog: new Map(), catalogAt: null,
+  const split = options.splitProducts ?? [];
+  if (new Set(split).size !== split.length || split.some(v => !venues.includes(v))) throw new Error('invalid_product_scope');
+  const scopes = venues.flatMap<{ venue: Venue; product: MarketType | undefined }>(venue => split.includes(venue) ? [{venue, product:'spot' as MarketType}, {venue, product:'swap' as MarketType}] : [{venue, product:undefined}]);
+  const states: VenueState[] = scopes.map(({venue,product}) => ({ venue, ...(product ? {product} : {}), exchange: null, epoch: 0, catalog: new Map(), catalogAt: null,
     catalogCode: 'catalog_not_loaded', priceCode: null, retryAt: 0, failures: 0, nextCatalogAt: 0, watchers: new Map(), catalogWork: null, opening: null, pollCursor: 0, controller: new AbortController() }));
   let stopped = false, lastPoll: number | null = null, queued = 0;
   let demand = new Map<string, Demand>(), refreshWork: Promise<void> | null = null;
@@ -146,7 +151,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       try {
         // A late factory result is closed, even when its outer deadline already expired.
         const exchange = await deadline(async () => {
-          const result = await options.factory(s.venue, { mode: options.mode, timeoutMs: timeout, tradesLimit: maxBatch });
+          const result = await options.factory(s.venue, { mode: options.mode, timeoutMs: timeout, tradesLimit: maxBatch, ...(s.product ? {product:s.product} : {}) });
           if (stopped || epoch !== s.epoch) { await close(result); throw new Error('obsolete_factory'); }
           return result;
         }, timeout, s.controller.signal);
@@ -156,10 +161,16 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
         // Every newly constructed instance explicitly loads metadata before trades.
         const raw = await deadline(() => exchange.loadMarkets(true), timeout, s.controller.signal);
         if (stopped || epoch !== s.epoch || s.exchange !== exchange) return;
-        applyCatalog(s, normalizeCatalog(s.venue, raw, exchange.precisionMode, maxCatalog));
+        applyCatalog(s, scopedCatalog(s, raw, exchange.precisionMode));
       } catch { if (epoch === s.epoch && !stopped) { s.catalogCode = 'catalog_unavailable'; s.nextCatalogAt = now() + retryBase; await fault(s, epoch, 'exchange_unavailable'); } }
     })().finally(() => { s.opening = null; });
     return s.opening;
+  }
+  function scopedCatalog(s: VenueState, raw: unknown, precisionMode: number) {
+    const next = normalizeCatalog(s.venue, raw, precisionMode, maxCatalog);
+    if (s.product && [...next.values()].some(m => m.type !== s.product)) throw new Error('catalog_scope');
+    if (next.size + states.filter(other => other !== s && other.venue === s.venue).reduce((sum, other) => sum + other.catalog.size, 0) > maxCatalog) throw new Error('catalog_capacity');
+    return next;
   }
   function applyCatalog(s: VenueState, next: Map<string, NormalizedMarket>): boolean {
     let subscriptionsChanged = false;
@@ -186,7 +197,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       try {
         const raw = await deadline(() => exchange.loadMarkets(true), timeout, s.controller.signal);
         if (stopped || epoch !== s.epoch) return;
-        const changed = applyCatalog(s, normalizeCatalog(s.venue, raw, exchange.precisionMode, maxCatalog));
+        const changed = applyCatalog(s, scopedCatalog(s, raw, exchange.precisionMode));
         if (changed && options.mode === 'stream') {
           // applyCatalog already invalidated changed/delisted instruments. Keep
           // accepted observations for every unchanged row while retiring sockets.
@@ -285,19 +296,18 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       s.watchers.set(id, task.catch(() => { if (!stopped && epoch === s.epoch) s.priceCode = 'stream_unavailable'; }));
     }
   }
-  async function poll(s: VenueState) {
+  async function poll(s: VenueState, budget: { end: number; requests: number; demand: Map<string, Demand>; visited: Set<Demand> }, allowance: number) {
     if (!s.exchange || !catalogFresh(s)) return;
     const exchange = s.exchange, epoch = s.epoch;
     // Bounded fair rotation; sequential per venue respects CCXT rate limiting.
-    const entries = [...demand].filter(([id]) => s.catalog.has(id));
-    const end = performance.now() + pollBudget;
-    let requests = 0;
-    for (let scanned = 0; scanned < entries.length && requests < maxPollRequests && performance.now() < end; scanned++) {
+    const entries = [...budget.demand].filter(([id]) => s.catalog.has(id));
+    const end = budget.end, startRequests = budget.requests;
+    for (let scanned = 0; scanned < entries.length && budget.requests - startRequests < allowance && budget.requests < maxPollRequests && performance.now() < end; scanned++) {
       s.pollCursor %= entries.length;
       const [id, d] = entries[s.pollCursor]!; s.pollCursor++;
       const market = s.catalog.get(id);
-      if (!market || d.code === 'trade_queue_overflow' || now() < d.nextPollAt) continue;
-      requests++;
+      if (!market || demand.get(id) !== d || budget.visited.has(d) || d.code === 'trade_queue_overflow' || now() < d.nextPollAt) continue;
+      budget.visited.add(d); budget.requests++;
       try {
         const raw = await deadline(() => exchange.fetchTrades(market.symbol, undefined, maxBatch), Math.max(1, Math.min(timeout, Math.ceil(end - performance.now()))), s.controller.signal);
         if (stopped || epoch !== s.epoch) return;
@@ -313,9 +323,23 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   const samples = (id: string) => { const d = demand.get(id); return d && available(id, d) ? d.queue.filter(t => fresh(t)).map(t => ({ ...t })) : []; };
   const ticks = () => new Map([...demand].flatMap(([id, d]) => d.latest && available(id, d) && fresh(d.latest) ? [[id, { ...d.latest }] as const] : []));
   async function refreshCatalog() { await Promise.all(states.map(catalog)); }
+  const productCursor = new Map<Venue, number>();
   function refresh(): Promise<void> {
     if (refreshWork) return refreshWork;
-    refreshWork = (async () => { await refreshCatalog(); if (!stopped) await Promise.all(states.map(s => options.mode === 'stream' ? Promise.resolve(startWatchers(s)) : poll(s))); })().finally(() => { refreshWork = null; });
+    refreshWork = (async () => { await refreshCatalog(); if (!stopped) await Promise.all(venues.map(async venue => {
+      const group = states.filter(s => s.venue === venue);
+      if (options.mode === 'stream') { group.forEach(startWatchers); return; }
+      const budget = {end:performance.now()+pollBudget, requests:0, demand:new Map(demand), visited:new Set<Demand>()};
+      const start = productCursor.get(venue) ?? 0;
+      // Alternate the first product even when a timeout exhausts the whole budget.
+      productCursor.set(venue, (start + 1) % group.length);
+      const ordered = [...group.slice(start), ...group.slice(0, start)];
+      while (!stopped && budget.requests < maxPollRequests && performance.now() < budget.end) {
+        const before = budget.requests;
+        for (const s of ordered) await poll(s, budget, 1);
+        if (budget.requests === before) break;
+      }
+    })); })().finally(() => { refreshWork = null; });
     return refreshWork;
   }
   function setDemand(instruments: readonly string[]): Promise<void> {
@@ -330,7 +354,8 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       const next = new Set(ids), affected = new Set<VenueState>();
       for (const [id, d] of demand) if (!next.has(id)) { const s = locate(id); if (s) affected.add(s); clear(d); demand.delete(id); }
       for (const id of ids) if (!demand.has(id)) {
-        const venueState = states.find(s => s.venue === parseInstrumentIdentity(id)!.venue)!;
+        const identity = parseInstrumentIdentity(id)!;
+        const venueState = states.find(s => s.venue === identity.venue && (!s.product || s.product === identity.type))!;
         affected.add(venueState); const at = now();
         demand.set(id, { since: at, cursor: at, first: true, queue: [], latest: null, code: 'price_not_observed', seen: new Map(), nextPollAt: 0 });
       }
@@ -367,7 +392,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
     getMarkets() {
       const ats = states.map(s => s.catalogAt);
       return { markets: states.flatMap(s => [...s.catalog.values()].map(m => ({ ...m, available: eligible(m.instrument) }))), updatedAt: ats.some(t => t === null) ? null : Math.min(...ats as number[]), stale: states.some(s => !catalogFresh(s)),
-        sources: states.map(s => ({ venue: s.venue, updatedAt: s.catalogAt, stale: !catalogFresh(s), code: s.catalogCode })) };
+        sources: states.map(s => ({ venue: s.venue, ...(s.product ? {type:s.product} : {}), updatedAt: s.catalogAt, stale: !catalogFresh(s), code: s.catalogCode })) };
     },
     priceHealth() {
       const current = ticks().size;
@@ -377,7 +402,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
     diagnostics() {
       return { stopped, queued, queueCapacity: maxQueue, demandCapacity: maxDemand, replayCapacity: maxReplay,
         // A constructed CCXT client does not establish socket connectivity.
-        venues: states.map(s => ({ venue: s.venue, catalogAt: s.catalogAt, catalogCode: s.catalogCode, priceCode: s.priceCode, retryAt: s.retryAt, clientOpen: !!s.exchange })),
+        venues: states.map(s => ({ venue: s.venue, ...(s.product ? {type:s.product} : {}), catalogAt: s.catalogAt, catalogCode: s.catalogCode, priceCode: s.priceCode, retryAt: s.retryAt, clientOpen: !!s.exchange })),
         instruments: [...demand].map(([instrument, d]) => ({ instrument, code: d.code, queued: d.queue.length, replayEntries: d.seen.size })) };
     },
   };

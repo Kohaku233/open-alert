@@ -62,12 +62,13 @@ function validateRawCatalog(venue: Venue, product: 'spot' | 'swap', rows: unknow
  */
 export function publicExchangeConfig(venue: Venue, settings: ExchangeSettings, fetchImplementation?: typeof fetch): ConstructorArgs {
   return {
+    ...(venue === 'binance' ? {urls:{api:{public:'https://api-gcp.binance.com/api/v3'}}} : {}),
     enableRateLimit: true, timeout: settings.timeoutMs, newUpdates: true,
     ...(fetchImplementation ? { fetchImplementation } : {}),
     options: {
       defaultType: 'spot', fetchCurrencies: false, fetchMargins: false,
       adjustForTimeDifference: false, tradesLimit: settings.tradesLimit,
-      ...(venue === 'binance' ? { fetchMarkets: { types: ['spot', 'linear'] } }
+      ...(venue === 'binance' ? { fetchMarkets: { types: settings.product ? [settings.product === 'spot' ? 'spot' : 'linear'] : ['spot', 'linear'] } }
         : venue === 'okx' ? { fetchMarkets: { types: ['spot', 'swap'] } } : {}),
     },
   };
@@ -121,6 +122,6 @@ export function createPublicCcxtMarketSource(options: Omit<MarketSourceOptions, 
   // updates in a separate, larger cache; saturation remains a completeness fault.
   const maxBatch = options.maxBatch ?? (options.mode === 'stream' ? 1000 : 100);
   if (options.mode === 'polling' && maxBatch > 100) throw new RangeError('public_trade_page_capacity');
-  return createCcxtMarketSource({ ...sourceOptions, maxBatch,
+  return createCcxtMarketSource({ ...sourceOptions, splitProducts: sourceOptions.splitProducts ?? (sourceOptions.venues ?? ['binance','okx','mexc']).filter(v => v === 'binance'), maxBatch,
     factory: createPublicCcxtFactory(fetchImplementation ? { fetchImplementation } : {}) });
 }

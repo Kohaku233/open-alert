@@ -349,6 +349,11 @@ test('public source sets independent Pro cache and REST page sizes without openi
   const custom=createPublicCcxtMarketSource({mode:'stream',maxBatch:2000}); await custom.stop();
   const config=publicExchangeConfig('okx',{mode:'stream',timeoutMs:1000,tradesLimit:1000});
   assert.equal(config.newUpdates,true); assert.equal(config.enableRateLimit,true); assert.equal(config.options!.tradesLimit,1000);
+  for (const mode of ['stream','polling'] as const) for (const product of ['spot','swap'] as const) {
+    const binance=publicExchangeConfig('binance',{mode,product,timeoutMs:1000,tradesLimit:100});
+    assert.deepEqual(binance.options!.fetchMarkets,{types:[product==='spot'?'spot':'linear']});
+    assert.equal((binance.urls as {api:{public:string}}).api.public,'https://api-gcp.binance.com/api/v3');
+  }
 });
 
 test('ACKed high-volume stream traffic has bounded replay history independent of pending capacity', async () => {
@@ -438,6 +443,9 @@ test('actual CCXT metadata parsers yield explicit supported flags for all six ve
     for (const venue of ['binance','okx','mexc'] as const) for (const type of ['spot','swap'] as const) {
       assert.equal(snapshot.markets.filter(m=>m.venue===venue&&m.type===type).length,2); assert.ok(snapshot.markets.filter(m=>m.venue===venue&&m.type===type).every(m=>m.available));
     }
-    assert.equal(requests.length,6); assert.equal(native.mock.callCount(),0);
+    assert.equal(requests.length,6);
+    assert.deepEqual(requests.filter(url=>url.pathname==='/api/v3/exchangeInfo'&&url.hostname.endsWith('.binance.com')).map(url=>url.hostname),['api-gcp.binance.com']);
+    assert.deepEqual(requests.filter(url=>url.pathname==='/fapi/v1/exchangeInfo').map(url=>url.hostname),['fapi.binance.com']);
+    assert.equal(native.mock.callCount(),0);
   } finally {await source.stop();native.mock.restore();}
 });

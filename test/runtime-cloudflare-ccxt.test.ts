@@ -22,6 +22,7 @@ test('public CCXT factory: actual loadMarkets/fetchTrades parse all three venues
  try {
   await source.refreshCatalog();assert.equal(source.getMarkets().stale,false);assert.equal(source.getMarkets().markets.length,12);
   assert.equal(requests.length,6);assert.deepEqual(source.getPrices(),[]);
+  assert.deepEqual(requests.filter(url=>url.hostname.endsWith('.binance.com')).map(url=>[url.hostname,url.pathname]).sort(),[['api-gcp.binance.com','/api/v3/exchangeInfo'],['fapi.binance.com','/fapi/v1/exchangeInfo']]);
   await source.setDemand(demand);at=Date.now();await source.refresh();
   assert.equal(source.getPrices().length,6);assert.equal(source.priceHealth().state,'healthy');
   for(const id of demand){const samples=source.samples(id);assert.equal(samples.length,1,id);assert.equal(samples[0]!.price,100);assert.equal(samples[0]!.timestamp,at);assert.equal(samples[0]!.instrument,id);}
@@ -65,6 +66,10 @@ test('workerd HTTP through public CCXT: loadMarkets and fetchTrades for six prod
   assert.equal(data.health.state,'healthy',JSON.stringify(data.diagnostics));assert.deepEqual(data.prices.map(p=>p.instrument).sort(),[...demand].sort());
   assert.ok(data.prices.every(p=>p.price===100));assert.ok(data.samples.every(s=>s.length===1));
   assert.equal(seen.filter(r=>r.kind==='catalog').length,6);assert.equal(seen.filter(r=>r.kind==='trades').length,6);
+  assert.deepEqual(seen.map(r=>new URL(r.url)).filter(url=>url.hostname.endsWith('.binance.com')).map(url=>[url.hostname,url.pathname]).sort(),[
+   ['api-gcp.binance.com','/api/v3/aggTrades'],['api-gcp.binance.com','/api/v3/exchangeInfo'],
+   ['fapi.binance.com','/fapi/v1/aggTrades'],['fapi.binance.com','/fapi/v1/exchangeInfo']
+  ]);
   const denial=await mf.dispatchFetch('https://probe.internal/denied');assert.deepEqual(await denial.json(),{denied:true});assert.equal(denied.length,1);assert.deepEqual(unexpected,[]);
  } finally {await mf.dispose();await rm(directory,{recursive:true,force:true});}
 });

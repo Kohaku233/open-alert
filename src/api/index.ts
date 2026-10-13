@@ -8,7 +8,7 @@ import { RepositoryConflict } from '../contracts/db.js';
 import type { AlertRecord, ChannelRecord } from '../contracts/db.js';
 import type { ApiErrorCode, SessionPrincipal } from '../contracts/api.js';
 import { createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
-import type { Alert, ChannelProfile, UserIdentity, UserSettings } from '../contracts/domain.js';
+import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from './markets.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
@@ -56,7 +56,7 @@ export function createApi(d:ApiDependencies) {
   async function market(instrument:string) {
     const catalog=await d.catalog.get(),selected=catalog.markets.find(m=>m.instrument===instrument);
     if(!selected) {
-      if(catalog.stale&&!catalog.sources)throw new HttpError(503,'service_unavailable');
+      if(marketSourceStale(catalog,{instrument} as Market))throw new HttpError(503,'service_unavailable');
       throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});
     }
     if(marketSourceStale(catalog,selected))throw new HttpError(503,'service_unavailable');
