@@ -11,7 +11,7 @@ import { FormError } from './components/Dialog.js';
 
 const routes = ['/dashboard', '/notifications', '/account', '/admin'];
 function Brand({ navigate }: { navigate: (path: string) => void }) {
-  return <a className="brand" href="/dashboard" onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><span className="brand-mark" aria-hidden="true">⌁</span><span>价格哨站<small>Open Alert · OKX 永续</small></span></a>;
+  return <a className="brand" href="/dashboard" onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><span className="brand-mark" aria-hidden="true">⌁</span><span>价格哨站<small>Open Alert · 价格监控</small></span></a>;
 }
 export function App() {
   const session = authClient.useSession();

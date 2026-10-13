@@ -65,7 +65,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   }
   const registrationCopy = capabilities?.registration === 'open' ? '首次登录会创建账户。' : capabilities?.registration === 'closed' ? '仅已有账户可登录，新注册已关闭。' : '新账户需要管理员邀请，请使用获邀邮箱。';
   return <main className="login-layout">
-    <section className="login-intro"><div className="signal-mark" aria-hidden="true"><span /><span /><span /></div><h1>盯住价格，<br />把提醒交给哨站。</h1><p>OKX 永续合约价格警报。每条警报触发一次，Pushover 把结果送到你的手机。</p><div className="intro-detail"><strong>达到或高于 / 达到或低于</strong><p>以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。</p></div><p className="small muted">后台运行时无需保持页面打开。</p></section>
+    <section className="login-intro"><div className="signal-mark" aria-hidden="true"><span /><span /><span /></div><h1>盯住价格，<br />把提醒交给哨站。</h1><p>Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。</p><div className="intro-detail"><strong>达到或高于 / 达到或低于</strong><p>以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。</p></div><p className="small muted">后台运行时无需保持页面打开。</p></section>
     <section className="login-panel" aria-labelledby="login-heading"><h2 id="login-heading">登录我的哨站</h2><p className="muted small">{capabilities ? registrationCopy : '正在读取可用登录方式…'}</p>
       {capError && <><FormError message={capError} /><button onClick={() => void loadCapabilities()}>重试读取登录方式</button></>}
       <button className="google-button" disabled={!capabilities?.google || busy} onClick={() => void google()}><span className="google-letter" aria-hidden="true">G</span>使用 Google 登录</button>

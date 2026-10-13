@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { safeChartSymbol } from '../utils.js';
 
-// Official embed only. The symbol originates in the authenticated OKX catalog.
-export const TradingChart = memo(function TradingChart({ symbol }: { symbol: string }) {
+// Official reference embed only; symbols must satisfy the verified allowlist.
+export const TradingChart = memo(function TradingChart({ symbol, source }: { symbol: string; source: string }) {
   const host = useRef<HTMLDivElement>(null);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
@@ -39,8 +39,8 @@ export const TradingChart = memo(function TradingChart({ symbol }: { symbol: str
     <div className="chart-caption"><span role="status">{state === 'loading' ? '正在连接 TradingView 图表…' : state === 'failed' ? '图表连接不可用' : '图表由 TradingView 提供'}</span><button className="text-button" onClick={() => setRetry(value => value + 1)}>重连图表</button></div>
     <div className="chart-shell">
       <div ref={host} className="tradingview-widget-container" />
-      {state === 'failed' && <div className="chart-fallback" role="status"><strong>图表暂时无法连接</strong><p>后台警报仍按 OKX 行情运行。可以重试，或打开 TradingView 查看合约。</p><button className="primary" onClick={() => setRetry(value => value + 1)}>重试图表</button><a href={chartURL} target="_blank" rel="noopener noreferrer">在 TradingView 打开</a></div>}
+      {state === 'failed' && <div className="chart-fallback" role="status"><strong>图表暂时无法连接</strong><p>后台警报使用 {source} 最新成交价。可以重试参考图表，或打开 TradingView 查看。</p><button className="primary" onClick={() => setRetry(value => value + 1)}>重试图表</button>{safeChartSymbol(symbol) && <a href={chartURL} target="_blank" rel="noopener noreferrer">在 TradingView 打开</a>}</div>}
     </div>
-    <div className="chart-bottom"><span>图表用于查看；警报按 OKX 最新成交价约 5 秒检查。</span><a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">在 TradingView 追踪所有市场</a></div>
+    <div className="chart-bottom"><span>TradingView 仅供参考；警报按 {source} 后台最新成交价判断。</span>{safeChartSymbol(symbol) && <a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">在 TradingView 追踪所有市场</a>}</div>
   </>;
 });

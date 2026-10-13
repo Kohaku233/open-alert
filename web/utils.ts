@@ -11,7 +11,7 @@ export function freshTick(tick: PriceTick | undefined, now = Date.now()): tick i
 export function breached(side: 'upper' | 'lower', threshold: number, tick: PriceTick | undefined): boolean {
   return freshTick(tick) && (side === 'upper' ? tick.price >= threshold : tick.price <= threshold);
 }
-export function safeChartSymbol(symbol: string): boolean { return /^OKX:[A-Z0-9]{1,24}USDT\.P$/.test(symbol); }
+export { verifiedChartSymbol as safeChartSymbol } from './markets.js';
 export const healthLabels = { healthy: '正常', degraded: '受限', unhealthy: '不可用', starting: '启动中' };
 export const outcomeLabels = { sent: '已交给 Pushover', failed: '投递失败', expired: '投递已过期', cancelled: '已取消', uncertain: '结果不确定', daily_limit: '达到当日上限' };
 export function alertState(alert: Alert): string {

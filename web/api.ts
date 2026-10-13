@@ -91,7 +91,7 @@ const messages: Record<string, string> = {
   unauthenticated: '登录已失效，请重新登录。', forbidden: '账户已停用，或你没有此操作的权限。',
   generation_conflict: '数据已在其他页面更新。已刷新当前状态，请检查后重试。',
   pending_delivery: '通知正在排队或发送，暂时无法修改。请等待完成；暂停监控会取消尚未发送的通知。',
-  limit_exceeded: '已达到警报、合约或用户数量上限，请先清理已有项目。',
+  limit_exceeded: '已达到警报、市场或用户数量上限，请先清理已有项目。',
   channel_unconfigured: '请先配置 Pushover 用户密钥和可用的应用令牌。',
   notification_uncertain: '测试投递结果不确定，可能已经送达。请先查看手机，避免重复发送。',
   notification_failed: 'Pushover 未确认投递成功，请检查密钥和服务状态。',

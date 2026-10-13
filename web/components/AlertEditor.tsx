@@ -3,8 +3,10 @@ import type { FormEvent } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import { api, errorText } from '../api.js';
 import { breached, formatPrice, freshTick } from '../utils.js';
+import { findMarket, marketLabel, marketQuote, sameMarket, selectableMarket, useRetainedMarket } from '../markets.js';
 import type { WorkspaceModel } from '../model.js';
 import { Dialog, FormError } from './Dialog.js';
+import { MarketPicker } from './MarketPicker.js';
 
 export function AlertEditor({ model, alert, instrument, onClose, notify }: { model: WorkspaceModel; alert: Alert | null; instrument: string; onClose: () => void; notify: (text: string) => void }) {
   const { data, busy, mutate } = model;
@@ -14,37 +16,44 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: { mod
   const [threshold, setThreshold] = useState(alert ? String(alert.threshold) : '');
   const [enabled, setEnabled] = useState(alert?.enabled ?? true);
   const [error, setError] = useState('');
-  const tick = data?.status.prices.find(price => price.instrument === selected);
+  const market = useRetainedMarket(data?.markets ?? [], selected);
+  const available = selectableMarket(findMarket(data?.markets ?? [], selected));
+  const unchangedMarket = !!alert && sameMarket(alert.instrument, selected);
+  const canSaveMarket = available || (unchangedMarket && (!enabled || alert?.enabled === enabled));
+  const quote = marketQuote(selected, market);
+  const tick = data?.status.prices.find(price => sameMarket(price.instrument, selected));
   const current = alert ? data?.alerts.find(item => item.id === alert.id) : null;
   const pending = !!current?.pending;
   const hit = breached(side, Number(threshold), tick);
   async function save(event: FormEvent) {
-    event.preventDefault(); if (!data || busy || pending) return;
+    event.preventDefault(); if (!data || busy || pending || model.error) return;
     const value = Number(threshold);
-    if (!name.trim() || [...name.trim()].length > 80 || !Number.isFinite(value) || value <= 0 || value > 1e12 || !data.markets.some(market => market.instrument === selected)) {
-      setError('请填写有效名称、支持的合约和大于零的价格。'); return;
+    if (!name.trim() || [...name.trim()].length > 80 || !Number.isFinite(value) || value <= 0 || value > 1e12 || !canSaveMarket) {
+      setError('请填写有效名称、大于零的价格，并选择可用市场。'); return;
     }
     if (alert && current?.generation !== alert.generation) { setError('警报已在其他页面更新，请关闭窗口后重新打开。'); return; }
     setError('');
     try {
-      const payload = { name: name.trim(), instrument: selected, side, threshold: value, enabled };
-      await mutate(() => alert ? api('PATCH /api/alerts/:id', { ...payload, expectedGeneration: alert.generation }, alert.id) : api('POST /api/alerts', payload));
+      const fields = { name: name.trim(), side, threshold: value };
+      await mutate(() => alert ? api('PATCH /api/alerts/:id', { ...fields, ...(enabled !== alert.enabled ? { enabled } : {}), ...(!unchangedMarket ? { instrument: selected } : {}), expectedGeneration: alert.generation }, alert.id) : api('POST /api/alerts', { ...fields, enabled, instrument: selected }));
       notify(alert ? '警报已保存；已触发的警报仍保持锁定。' : '警报已创建。'); onClose();
     } catch (cause) { setError(errorText(cause)); }
   }
   return <Dialog title={alert ? '编辑价格警报' : '创建价格警报'} onClose={onClose} busy={busy}>
-    <form onSubmit={event => void save(event)}><fieldset disabled={busy || pending}>
-      <label>警报合约<select value={selected} onChange={event => setSelected(event.target.value)} required>{data?.markets.map(market => <option key={market.instrument} value={market.instrument}>{market.base} / USDT 永续</option>)}</select><span className="small muted">始终按这里保存的合约判断，与当前图表选择无关。</span></label>
+    <form onSubmit={event => void save(event)}><fieldset disabled={busy || pending || !!model.error}>
+      <MarketPicker label="警报市场" markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()} />
+      <p className="small muted">始终按这里保存的交易所和市场判断，与当前参考图表选择无关。</p>
       <label>警报名称<input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="例如：突破前高" autoFocus /></label>
-      <div className="form-row"><label>触发条件<select value={side} onChange={event => setSide(event.target.value as 'upper' | 'lower')}><option value="upper">达到或高于</option><option value="lower">达到或低于</option></select></label><label>价格 · USDT<input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} /></label></div>
+      <div className="form-row"><label>触发条件<select value={side} onChange={event => setSide(event.target.value as 'upper' | 'lower')}><option value="upper">达到或高于</option><option value="lower">达到或低于</option></select></label><label>价格 · {quote}<input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} /></label></div>
       <label className="check-label"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} />启用这条警报</label>
     </fieldset>
+    {!available && unchangedMarket && <p className="warning">原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。</p>}
     {pending && <p className="warning">该警报的通知正在排队或发送，请等待完成后再修改。</p>}
-    {hit && enabled && <p className="warning">当前新鲜成交价 {tick ? formatPrice(tick.price) : ''} 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。</p>}
+    {hit && enabled && <p className="warning">{marketLabel(selected, market)} 当前新鲜成交价 {tick ? formatPrice(tick.price) : ''} {quote} 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。</p>}
     {!freshTick(tick) && <p className="small muted">当前没有可用的新鲜后台价格。恢复行情后，首次满足条件的价格也会触发。</p>}
     {alert?.triggered && <p className="warning">此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。</p>}
     {!data?.status.settings.enabled && <p className="small muted">你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。</p>}
     <p className="small muted">每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。</p>
-    <FormError message={error} /><button className="primary wide" disabled={busy || pending || !data?.markets.length}>{busy ? '正在保存…' : alert ? '保存警报' : '创建警报'}</button></form>
+    <FormError message={error || model.error} /><button className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy ? '正在保存…' : alert ? '保存警报' : '创建警报'}</button></form>
   </Dialog>;
 }
