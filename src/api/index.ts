@@ -10,6 +10,7 @@ import type { ApiErrorCode, SessionPrincipal } from '../contracts/api.js';
 import { createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import type { Alert, ChannelProfile, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
+import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from './markets.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
 type Env = { Variables: { requestId: string; principal: SessionPrincipal } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
@@ -52,7 +53,23 @@ export function createApi(d:ApiDependencies) {
     const pending=event&&(event.phase==='queued'||event.phase==='sending')?{triggerId:event.triggerId,generation:event.generation,phase:event.phase,attempts:event.attempts,nextAt:event.nextAt,createdAt:event.createdAt,price:event.price,timestamp:event.timestamp}:null;
     return {id:a.id,name:a.name,instrument:a.instrument,side:a.side,threshold:a.threshold,enabled:a.enabled,generation:a.generation,triggered:a.triggered,triggerId:a.triggerId,pending,last:last&&last.phase!=='queued'&&last.phase!=='sending'?{triggerId:last.triggerId,outcome:last.phase,at:last.updatedAt,attempts:last.attempts,code:last.code,receiptAvailable:!!last.receipt}:null,status:pending?pending.phase:!a.enabled?'disabled':a.triggered?'latched':'armed',createdAt:a.createdAt,updatedAt:a.updatedAt};
   }
-  async function market(instrument:string) {const catalog=await d.catalog.get();if(catalog.stale)throw new HttpError(503,'service_unavailable');if(!catalog.markets.some(m=>m.instrument===instrument))throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});}
+  async function market(instrument:string) {
+    const catalog=await d.catalog.get(),selected=catalog.markets.find(m=>m.instrument===instrument);
+    if(!selected) {
+      if(catalog.stale&&!catalog.sources)throw new HttpError(503,'service_unavailable');
+      throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});
+    }
+    if(marketSourceStale(catalog,selected))throw new HttpError(503,'service_unavailable');
+    if(!marketAvailable(catalog,selected))throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});
+  }
+  async function mutableAlert(userId:string,id:string,expectedGeneration:number) {
+    const current=await d.repositories.alerts.getForUser(userId,id);
+    if(!current)throw new HttpError(404,'not_found');
+    // Preserve the repository's pending/generation conflict precedence before catalog I/O.
+    if(current.pendingTriggerId)throw new HttpError(409,'pending_delivery');
+    if(current.generation!==expectedGeneration)throw new HttpError(409,'generation_conflict');
+    return current;
+  }
   app.use('/api/*',async(c,next)=>{c.set('requestId',crypto.randomUUID());c.header('Cache-Control','no-store');c.header('X-Content-Type-Options','nosniff');await next();});
   app.onError((error,c)=>{
     let problem:HttpError;
@@ -104,14 +121,21 @@ export function createApi(d:ApiDependencies) {
     const userId=uid(c);const [user,settings,daily,channel,runtime]=await Promise.all([identity(userId),d.repositories.settings.get(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot()]);if(!settings)throw new HttpError(503,'service_unavailable');
     const health=await aggregateHealth(runtime);
     const own=new Set((await d.repositories.alerts.listForUser(userId)).map(v=>v.instrument));
-    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1'},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'}});
+    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'}});
   });
-  app.get('/api/markets',async c=>ok(c,await d.catalog.get()));
+  app.get('/api/markets',async c=>{
+    const raw=c.req.queries();
+    if(Object.keys(raw).length===0)return ok(c,catalogDirectory(await d.catalog.get()));
+    if(Object.values(raw).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
+    const query=marketQuerySchema.safeParse(c.req.query());
+    if(!query.success)throw new HttpError(400,'invalid_request',fields(query.error));
+    return ok(c,searchMarkets(await d.catalog.get(),query.data));
+  });
   app.get('/api/alerts',async c=>ok(c,{alerts:await Promise.all((await d.repositories.alerts.listForUser(uid(c))).map(a=>hydrate(uid(c),a)))}));
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),alert)},201);});
-  app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);if(!await d.repositories.alerts.getForUser(uid(c),c.req.param('id')))throw new HttpError(404,'not_found');if(patch.instrument)await market(patch.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
+  app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),expectedGeneration);if(patch.instrument!==undefined||patch.enabled===true)await market(patch.instrument??current.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
   app.delete('/api/alerts/:id',async c=>{const body=await json(c,rearmAlertSchema);await d.repositories.alerts.remove(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake();return ok(c,{deleted:true});});
-  app.post('/api/alerts/:id/rearm',async c=>{const body=await json(c,rearmAlertSchema);const a=await d.repositories.alerts.rearm(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
+  app.post('/api/alerts/:id/rearm',async c=>{const body=await json(c,rearmAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),body.expectedGeneration);await market(current.instrument);const a=await d.repositories.alerts.rearm(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
   app.get('/api/channels',async c=>ok(c,channelProfile(await d.repositories.channels.get(uid(c)),d.config.sharedPushoverAppToken)));
   app.put('/api/channels',async c=>{
     const body=await json(c,channelSchema),userId=uid(c),old=await d.repositories.channels.get(userId);if(!body.userKey&&!old)throw new HttpError(400,'invalid_request',{userKey:'Required for a new channel'});

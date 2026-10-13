@@ -1,7 +1,7 @@
 import type { AppConfig } from '../config.js';
 import type { ChannelRecord, OutboxRecord, Repositories } from '../contracts/db.js';
 import type { ChannelProfile, ComponentHealth, EncryptedSecret } from '../contracts/domain.js';
-import { DEFAULT_NOTIFICATION } from '../contracts/domain.js';
+import { DEFAULT_NOTIFICATION, parseInstrumentIdentity } from '../contracts/domain.js';
 import { decryptSecret, encryptSecret } from './crypto.js';
 import type { Fetch } from './http.js';
 import { NotificationError, sendPushover, validatePushoverChannel } from './pushover.js';
@@ -57,6 +57,20 @@ export function createNotifications(config: AppConfig, options: NotificationServ
   return { encrypt: encryptSecret, validate, test, health, send, validateCredentials: validate, sendTest: test };
 }
 
+/** Deterministic snapshot display: delivery must not fetch a mutable market catalog. */
+export function notificationMarketLabel(instrument: string): { label: string; quote: string } {
+  const identity = parseInstrumentIdentity(instrument);
+  if (!identity) return { label: 'Market unavailable', quote: '' };
+  const { venue, type, nativeId } = identity;
+  const pair = nativeId.match(/^([A-Z0-9]+)[_\-/]([A-Z0-9]+)(?::[A-Z0-9]+|-SWAP)?$/);
+  const concatenated = nativeId.match(/^([A-Z0-9]+)USDT$/);
+  // Derive units only from an unambiguous native pair; never silently label unknown quotes USDT.
+  const quote = pair?.[2] ?? (concatenated ? 'USDT' : '');
+  const product = type === 'spot' ? 'Spot' : quote === 'USDT' ? 'USDT perpetual' : 'Perpetual';
+  const symbol = pair ? `${pair[1]}/${pair[2]}` : concatenated ? `${concatenated[1]}/USDT` : nativeId;
+  return { label: `${venue.toUpperCase()} · ${product} · ${symbol}`, quote };
+}
+
 /** Scheduler and optional standalone test convenience use the SAME durable repositories. */
 export function createNotificationService(options: NotificationServiceOptions & { config: AppConfig; repositories: Repositories; provider?: ReturnType<typeof createNotifications> }) {
   const { config, repositories } = options, now = options.now ?? Date.now;
@@ -67,7 +81,8 @@ export function createNotificationService(options: NotificationServiceOptions & 
     if (!settings || !settings.enabled || settings.disabled || settings.generation !== event.settingsGeneration || !channel || channel.generation !== event.channelGeneration) return { outcome: 'failed', code: 'channel_changed', receipt: null };
     const direction = event.side === 'upper' ? 'at or above' : 'at or below';
     // No user-supplied URLs, receipt capability, HTML, or provider credential in the message.
-    return provider.send(event.userId, channel, `${event.name}\n${event.instrument}: ${event.price} USDT (${direction} ${event.threshold})\nExchange timestamp: ${new Date(event.timestamp).toISOString()}`, 'Open Alert price alert', event.notification);
+    const market = notificationMarketLabel(event.instrument), unit = market.quote ? ` ${market.quote}` : '';
+    return provider.send(event.userId, channel, `${event.name}\n${market.label}: ${event.price}${unit} (${direction} ${event.threshold}${unit})\nExchange timestamp: ${new Date(event.timestamp).toISOString()}`, 'Open Alert price alert', event.notification);
   }
   async function test(userId: string) {
     const [settings, channel] = await Promise.all([repositories.settings.get(userId), repositories.channels.get(userId)]);

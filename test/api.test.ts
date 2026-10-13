@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { loadConfig } from '../src/config.js';
 import { createApp } from '../src/api/index.js';
+import type { CatalogSnapshot } from '../src/api/ports.js';
 import { initializeServices } from '../src/runtime/common.js';
 import { createNodeSqliteAuthDrizzle } from '../src/auth/drizzle.node-sqlite.js';
 import { SQLiteDatabase } from '../src/db/sqlite.js';
@@ -17,12 +18,13 @@ async function fixture(overrides:Record<string,string>={}) {
  const raw=new DatabaseSync(':memory:'),db=new SQLiteDatabase(raw as unknown as SQLiteConnection,'node:sqlite'),messages:EmailMessage[]=[],providerCalls:{url:string;body:URLSearchParams}[]=[];
  const services=await initializeServices(config,db,createNodeSqliteAuthDrizzle(raw),config.environment==='test'?{testEmailTransport:{async verify(){},async send(m){messages.push(m);}}}:{emailTransportFactory:async()=>({async verify(){},async send(m){messages.push(m);}})});
  let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0;
+ let catalogOverride:CatalogSnapshot|undefined;
  const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
- const app=createApp({...services,notifications,catalog:{get:async()=>({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const app=createApp({...services,notifications,catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
  const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
  async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
  const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
- return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},wakes:()=>wakes,close:async()=>{services.auth.close();await db.close();}};
+ return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},setCatalog:(v:CatalogSnapshot)=>{catalogOverride=v;},wakes:()=>wakes,close:async()=>{services.auth.close();await db.close();}};
 }
 const input={name:'BTC ceiling',instrument:'BTC-USDT-SWAP',side:'upper',threshold:100,enabled:true};
 test('health idle degrades honestly; actual DB/email/provider failures and snapshot throws survive aggregation',async()=>{
@@ -78,6 +80,27 @@ test('real cookie sessions protect app routes; strict input, trusted origin, cat
   const oversized=await f.app.request(f.config.appUrl+'/api/alerts',{method:'POST',headers:{Origin:f.config.appUrl,Cookie:alice.cookie,'Content-Type':'application/json'},body:' '.repeat(17000)});assert.equal(oversized.status,400);
  }finally{await f.close();}
 });
+test('enabling unchanged instruments and rearm require eligible catalog; conflicts, disable, rename and delete keep their semantics',async()=>{
+ const f=await fixture();try{
+  const alice=await f.login('eligibility@example.com'),bob=await f.login('eligibility-other@example.com');
+  const a=(await f.body(await f.call('/api/alerts','POST',{...input,enabled:false},alice.cookie),201)).data.alert;
+  const before=f.wakes();f.setStale(true);
+  for(const [path,method,body] of [[`/api/alerts/${a.id}`,'PATCH',{expectedGeneration:0,enabled:true}],[`/api/alerts/${a.id}/rearm`,'POST',{expectedGeneration:0}]] as const){
+   assert.equal((await f.call(path,method,body,alice.cookie)).status,503);
+   assert.equal((await f.call(path,method,body,bob.cookie)).status,404);
+  }
+  assert.equal(f.wakes(),before);assert.equal((await f.repositories.alerts.getForUser(alice.id,a.id))!.generation,0);
+  f.setCatalog({markets:[{instrument:a.instrument,base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'',available:false}],updatedAt:Date.now(),stale:false});
+  assert.equal((await f.call(`/api/alerts/${a.id}`,'PATCH',{expectedGeneration:0,enabled:true},alice.cookie)).status,400);
+  assert.equal((await f.call(`/api/alerts/${a.id}/rearm`,'POST',{expectedGeneration:0},alice.cookie)).status,400);
+  await f.body(await f.call(`/api/alerts/${a.id}`,'PATCH',{expectedGeneration:0,name:'still editable'},alice.cookie));
+  assert.equal((await f.call(`/api/alerts/${a.id}/rearm`,'POST',{expectedGeneration:0},alice.cookie)).status,409);
+  await f.body(await f.call(`/api/alerts/${a.id}`,'PATCH',{expectedGeneration:1,enabled:false},alice.cookie));
+  await f.body(await f.call(`/api/alerts/${a.id}`,'DELETE',{expectedGeneration:2},alice.cookie));
+  assert.equal(f.providerCalls.length,0);
+ }finally{await f.close();}
+});
+
 test('channel retention uses encrypted own credentials; PUT validates only; explicit normal test claims quota once',async()=>{
  const f=await fixture();try{
   const alice=await f.login('channel@example.com'),bob=await f.login('other@example.com');

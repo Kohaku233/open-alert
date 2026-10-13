@@ -2,8 +2,14 @@ import type { AppConfig } from '../config.js';
 import type { OpenAlertAuth } from '../auth/index.js';
 import type { ChannelRecord, Repositories, SqlDatabase } from '../contracts/db.js';
 import type { ComponentHealth, EncryptedSecret, Market, PriceTick, SystemStatus } from '../contracts/domain.js';
-export interface CatalogSnapshot { markets: Market[]; updatedAt: number | null; stale: boolean }
-export interface RuntimeSnapshot { health: SystemStatus['health']; lastPollAt: number | null; prices: PriceTick[] }
+export interface CatalogSource { venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
+export type CatalogMarket = Market & { available?: boolean };
+export interface CatalogSnapshot {
+  markets: CatalogMarket[]; updatedAt: number | null; stale: boolean;
+  /** Freshness is scoped to the selected venue; aggregate stale can mean a partial outage. */
+  sources?: Partial<Record<'binance' | 'okx' | 'mexc', CatalogSource>> | (CatalogSource & { venue: 'binance' | 'okx' | 'mexc' })[];
+}
+export interface RuntimeSnapshot { health: SystemStatus['health']; lastPollAt: number | null; prices: PriceTick[]; marketMode?: 'stream' | 'polling' }
 export interface NotificationPort {
   encrypt(key: string, userId: string, field: 'userKey' | 'appToken' | 'receipt', plaintext: string): Promise<EncryptedSecret>;
   validate(userId: string, channel: ChannelRecord): Promise<void>;
