@@ -11,7 +11,11 @@ export type Venue = 'binance' | 'okx' | 'mexc';
 export type MarketType = 'spot' | 'swap';
 /** This representation belongs exclusively to legacy OKX linear USDT swaps. */
 export const legacyInstrumentSchema = z.string().regex(/^[A-Z0-9]{1,24}-USDT-SWAP$/);
-export const nativeMarketIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:/+\-]+$/);
+/** Exchange codes can contain Unicode letters (e.g. MEXC 龙虾) and parentheses.
+ * Keep delimiters, whitespace, controls and formatting characters out of currency
+ * codes; native IDs additionally allow the exchange's pair separators. */
+export const currencyCodeSchema = z.string().min(1).max(32).regex(/^[\p{L}\p{N}\p{M}._()+\-]+$/u);
+export const nativeMarketIdSchema = z.string().min(1).max(128).regex(/^[\p{L}\p{N}\p{M}._:/()+\-]+$/u);
 export interface InstrumentIdentity { venue: Venue; type: MarketType; nativeId: string }
 /** Percent encoding must round-trip exactly: one identity has one representation. */
 export function parseInstrumentIdentity(value: string): InstrumentIdentity | null {

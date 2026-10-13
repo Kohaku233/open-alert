@@ -1,12 +1,12 @@
 import ccxt from 'ccxt';
 import type { ConstructorArgs } from 'ccxt';
-import type { Venue } from '../contracts/domain.js';
+import { currencyCodeSchema, type Venue } from '../contracts/domain.js';
 import { createCcxtMarketSource } from './source.js';
 import { record } from './normalize.js';
 import type { CcxtExchange, ExchangeFactory, ExchangeSettings, MarketSourceOptions } from './source.js';
 
 const rawString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
-const otherCurrency = (value: unknown) => rawString(value) && /^[A-Z0-9]{1,32}$/.test(value) && value !== 'USDT';
+const otherCurrency = (value: unknown) => currencyCodeSchema.safeParse(value).success && value !== 'USDT';
 const perpetualExpiry = 4133404800000;
 
 /** Check only identity/category inputs that CCXT can drop or default into an

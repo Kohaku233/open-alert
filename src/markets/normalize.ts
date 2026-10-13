@@ -1,4 +1,4 @@
-import { legacyInstrumentSchema, nativeMarketIdSchema, parseInstrumentIdentity } from '../contracts/domain.js';
+import { currencyCodeSchema, legacyInstrumentSchema, nativeMarketIdSchema, parseInstrumentIdentity } from '../contracts/domain.js';
 import type { Market, MarketType, Venue } from '../contracts/domain.js';
 
 export type NormalizedMarket = Market & {
@@ -8,7 +8,7 @@ export type NormalizedMarket = Market & {
 export const VENUES: readonly Venue[] = ['binance', 'okx', 'mexc'];
 export const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const chartBases = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'LTC', 'BCH', 'TRX']);
-const currency = (v: unknown): v is string => typeof v === 'string' && /^[A-Z0-9]{1,32}$/.test(v);
+const currency = (v: unknown): v is string => currencyCodeSchema.safeParse(v).success;
 const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1e12;
 
 export function instrumentId(venue: Venue, type: MarketType, nativeId: string): string {

@@ -9,7 +9,7 @@ import ccxt from 'ccxt';
 import { createPublicCcxtMarketSource } from '../src/markets/ccxt.js';
 import { instrumentId, normalizeCatalog } from '../src/markets/normalize.js';
 import type { MarketMode } from '../src/markets/source.js';
-import type { MarketType, Venue } from '../src/contracts/domain.js';
+import { currencyCodeSchema, instrumentSchema, nativeMarketIdSchema, parseInstrumentIdentity, type MarketType, type Venue } from '../src/contracts/domain.js';
 import { publicExchangeFixture } from './runtime-cloudflare-fixtures.js';
 
 // Injected Response fixtures are the only allowed I/O. Deny native fetch and
@@ -246,6 +246,48 @@ test('actual OKX parser missing required spot/swap price precision rejects the s
     const data = body.data as Record<string, unknown>[];
     delete data[0]!.tickSz;
   }));
+});
+
+test('MEXC live Unicode and parenthesized codes survive actual CCXT parsing and canonical identities', { timeout: 15000 }, async t => {
+  for (const mode of ['polling', 'stream'] as const) await t.test(mode, async () => {
+    const f = fixture('mexc', mode);
+    const bases = ['龙虾', '牛来', '哈基米', 'SPACEX(PRE)', 'OIL(USOON)', 'GOLD(XAUT)'];
+    f.alter((url, body) => {
+      if (!matches(url, routes[4])) return;
+      const rows = body.symbols as Record<string, unknown>[];
+      const template = rows[0]!;
+      for (const base of bases) rows.push({ ...structuredClone(template), symbol: `${base}USDT`, baseAsset: base });
+    });
+    try {
+      await f.source.refreshCatalog();
+      const result = f.source.getMarkets();
+      assert.equal(result.stale, false, JSON.stringify(f.source.diagnostics()));
+      assert.equal(result.markets.length, 4 + bases.length);
+      for (const base of bases) {
+        const nativeId = `${base}USDT`, instrument = instrumentId('mexc', 'spot', nativeId);
+        assert.equal(instrumentSchema.safeParse(instrument).success, true);
+        assert.deepEqual(parseInstrumentIdentity(instrument), { venue: 'mexc', type: 'spot', nativeId });
+        assert.equal(f.source.eligible(instrument), true);
+        assert.equal(result.markets.find(m => m.instrument === instrument)?.symbol, `${base}/USDT`);
+      }
+      assert.equal(parseInstrumentIdentity('龙虾-USDT-SWAP'), null, 'Legacy OKX syntax remains unchanged');
+    } finally { await f.source.stop(); }
+  });
+});
+
+test('Unicode code acceptance keeps malformed and ambiguous catalog identities fail closed', () => {
+  for (const code of ['BTC/ETH', 'BTC:USDT', ' BTC', 'BTC ', 'BTC\u0000', 'BTC\n', 'BTC\u202e', 'BTC\u200b', '<BTC>', 'BTC%2F', 'BTC\\ETH', '\ud800']) {
+    assert.equal(currencyCodeSchema.safeParse(code).success, false, JSON.stringify(code));
+    const raw = { ...row('mexc', 'spot'), base: code, id: `${code}USDT`, symbol: `${code}/USDT` };
+    assert.throws(() => normalizeCatalog('mexc', catalog(raw), 4), /invalid_catalog_metadata/);
+  }
+  for (const id of ['BTC\u0000', 'BTC\u202e', 'BTC\u200b', 'BTC%2F', ' BTC', '<BTC>', '\ud800']) {
+    assert.equal(nativeMarketIdSchema.safeParse(id).success, false, JSON.stringify(id));
+  }
+  const valid = { ...row('mexc', 'spot'), base: '龙虾', id: '龙虾USDT', symbol: '龙虾/USDT' };
+  const canonical = instrumentId('mexc', 'spot', '龙虾USDT');
+  assert.equal(parseInstrumentIdentity(canonical.toLowerCase()), null, 'Noncanonical percent encoding is rejected');
+  assert.throws(() => normalizeCatalog('mexc', { ...catalog(valid), ...catalog({ ...row('mexc', 'swap'), contractSize: undefined }) }, 4), /invalid_catalog_metadata/);
 });
 
 test('catalog normalization rejects malformed supported metadata atomically for all venue products', () => {
