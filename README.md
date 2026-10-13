@@ -6,16 +6,22 @@
 
 ## English
 
-Self-hosted, multiuser price alerts for OKX USDT perpetual swaps. Each user manages their own rules, notification credentials, and daily quota. An operator manages invitations, account status, and capacity. The frontend uses React and Vite, the API uses Hono, Google and email-code login use Better Auth, and notifications are delivered through Pushover.
+Self-hosted, multiuser price alerts for Binance, OKX, and MEXC USDT spot markets and linear USDT-settled perpetual swaps. Each user manages their own rules, notification credentials, and daily quota. An operator manages invitations, account status, and capacity. The frontend uses React and Vite, the API uses Hono, Google and email-code login use Better Auth, and notifications are delivered through Pushover.
 
 | Deployment | Storage | Scheduling |
 | --- | --- | --- |
 | Node, directly or with Docker | SQLite or PostgreSQL | Shared scheduler with database leases and fencing |
 | Cloudflare Workers | D1 for accounts, rules, and delivery records | One SQLite Durable Object: `coordinator-v1` |
 
-The backend evaluates OKX `last` trade prices. TradingView charts are display-only. An upper rule triggers when `last >= threshold`, and a lower rule triggers when `last <= threshold`, including when the first fresh quote already crosses the threshold. A triggered rule stays latched until the user explicitly rearms it. Editing the threshold does not release the latch. Monitoring is off by default for a new account.
+The backend evaluates executed trade prices from the selected exchange. An upper rule triggers when `price >= threshold`, and a lower rule triggers when `price <= threshold`, including when the first fresh observation already crosses the threshold. A triggered rule stays latched until the user explicitly rearms it. Editing the threshold does not release the latch. Monitoring is off by default for a new account.
 
-Polling targets five seconds, subject to network, scheduler, and platform limits. A delivery whose provider receipt cannot be confirmed is marked `uncertain` and is not retried automatically. The system does not promise exactly-once delivery. A free tier does not mean unlimited users, polling, or notifications. Size production according to CPU, D1 operations, Durable Object duration, and third-party quotas.
+Node uses public CCXT Pro `watchTrades` and checks all accepted fresh observations in a batch. Cloudflare uses regular CCXT `fetchTrades` and samples only the latest valid fresh trade in each response, with a default five-second interval. Rate limiting, request budgets, network and scheduler delays can make the actual interval longer. Polling can miss transient threshold crossings, even within a fetched page; stream reconnects or bounded queue/cache overflow can also leave gaps. Neither mode guarantees every exchange trade. The authenticated status API exposes optional `scheduler.marketMode` (`stream` or `polling`), and the dashboard explains the mode. A fresh trade price does not establish transport connectivity; no recent trade does not prove disconnection.
+
+Only enabled, unlatched rules for enabled monitoring/accounts create price demand. Paused or disabled rules do not request quotes, and an idle runtime makes no trade requests. Opening the searchable market picker loads metadata but does not subscribe to the selected market; another user's active rule may supply a shared price. The picker searches the catalog locally by venue, type and pair, and shows up to 40 results. TradingView is display-only and is limited to the existing verified OKX perpetual symbols for BTC, ETH, SOL, XRP, DOGE, ADA, AVAX, LINK, DOT, LTC, BCH and TRX. Binance, MEXC and spot chart mappings remain disabled.
+
+Market catalogs and confirmed delistings are held in process memory, not persisted to the database. On a Node process restart or Durable Object recreation, the source starts ineligible and fails closed until a fresh complete catalog load succeeds for the relevant venue. Saved rules survive, but the adapter has no durable catalog/delisting history. See [CCXT runtime integration](docs/ccxt-runtime.md) for sampling, restart behavior and offline verification.
+
+A delivery whose provider receipt cannot be confirmed is marked `uncertain` and is not retried automatically. The system does not promise exactly-once delivery. A free tier does not mean unlimited users, polling, or notifications. Size production according to CPU, D1 operations, Durable Object duration, and third-party quotas.
 
 The included Cloudflare template is invite-only and small: 5 users, 20 alerts per user, 100 active alerts globally, 8 instruments per user and globally, and 20 delivery attempts per user per day with 100 globally. Attempts include tests and failures. This is a starting point. The Worker Free 10 ms CPU limit has not been proven under production load, and the limits do not prevent abusive traffic from exhausting a quota. See [capacity](docs/RUNTIME.md#调度免费额度与容量). Above 100 schedulable rules, evaluation is rotated across cycles and cannot guarantee a five-second check for every rule. The Node defaults in source are unchanged.
 
@@ -97,22 +103,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for changes and [SECURITY.md](SECURITY.md
 
 ### License
 
-This project is licensed under the [Apache License 2.0](LICENSE). Dependencies remain under their own licenses. Google, Cloudflare, OKX, TradingView, and Pushover are used under their own terms and pricing.
+This project is licensed under the [Apache License 2.0](LICENSE). Dependencies remain under their own licenses. Google, Cloudflare, Binance, OKX, MEXC, TradingView, and Pushover are used under their own terms and pricing.
 
 <a id="中文"></a>
 
 ## 中文
 
-自行部署的多用户 OKX USDT 永续合约价格警报系统。每个用户独立管理规则、通知凭据和每日额度；运营者管理邀请、账号状态与资源上限。前端使用 React/Vite，API 使用 Hono，Google 与邮箱验证码登录使用 Better Auth，通知通过 Pushover 发送。
+自行部署的多用户价格警报系统，支持 Binance、OKX、MEXC 的 USDT 现货及 USDT 结算线性永续合约。每个用户独立管理规则、通知凭据和每日额度；运营者管理邀请、账号状态与资源上限。前端使用 React/Vite，API 使用 Hono，Google 与邮箱验证码登录使用 Better Auth，通知通过 Pushover 发送。
 
 | 部署方式 | 数据存储 | 调度 |
 | --- | --- | --- |
 | Node（直接运行或 Docker） | SQLite / PostgreSQL | 共享调度器与数据库租约、fencing |
 | Cloudflare Workers | D1（认证、规则、发送记录） | 一个 SQLite Durable Object：`coordinator-v1` |
 
-后端以 OKX `last` 成交价判断触发，TradingView 图表仅用于展示。上限规则在 `last >= threshold`、下限规则在 `last <= threshold` 时触发，包括首次获得新鲜行情时已满足阈值的情况。触发后规则保持锁定，需要用户显式重新启用（rearm）；编辑阈值不会解锁。新账户的总监控默认关闭。
+后端以所选交易所的实际成交价判断触发。上限规则在 `price >= threshold`、下限规则在 `price <= threshold` 时触发，包括首次获得新鲜成交价时已满足阈值的情况。触发后规则保持锁定，需要用户显式重新武装（rearm）；编辑阈值不会解锁。新账户的总监控默认关闭。
 
-行情轮询目标为 5 秒，受网络、调度和平台限制影响。无法确定提供方是否已接收的发送标记为 `uncertain`，不会自动重发；系统不承诺 exactly-once。免费额度也不代表无限用户、无限轮询或无限通知，生产容量应按实际 CPU、D1 读写、Durable Object 持续时间及外部服务额度评估。
+Node 使用公共 CCXT Pro `watchTrades` 成交流，逐条评估批次中收到的有效新鲜成交。Cloudflare 使用常规 CCXT `fetchTrades`，每次只采样返回数据中的最新有效新鲜成交，默认间隔 5 秒；限流、请求预算、网络及调度可能让实际间隔更长。轮询可能漏掉短暂越过阈值的成交，包括同一响应中较早的越界成交；流式模式也可能因重连或有限队列/缓存溢出漏掉成交。两种模式都不保证覆盖交易所的每笔成交。认证后的状态 API 通过可选 `scheduler.marketMode`（`stream` / `polling`）报告模式，页面显示对应说明。「成交价新鲜」只表示价格时效；近期没有成交不代表连接断开。
+
+仅已开启监控、账户可用且未锁定的启用规则产生价格采集需求。暂停或禁用规则不请求报价，空闲运行时不请求成交。打开市场搜索只读取目录，不会为所选市场采集成交；其他用户的启用规则可能提供共享价格。当前搜索在浏览器内按交易所、市场类型与交易对筛选，最多展示 40 个结果。TradingView 仅供参考，只开放已有验证映射的 OKX 永续图表：BTC、ETH、SOL、XRP、DOGE、ADA、AVAX、LINK、DOT、LTC、BCH、TRX；Binance、MEXC 与现货映射尚未开放。
+
+市场目录和已确认下架状态只保存在当前进程内存，不写入数据库。Node 进程重启或 Durable Object 实例重建后，行情源默认不可评估；对应交易所必须完成新的完整目录加载，才能恢复评估（fail closed）。已保存规则保留，但适配器没有持久化目录或下架历史。采样、重启边界与离线验证详见 [CCXT 运行说明](docs/ccxt-runtime.md)。
+
+无法确定提供方是否已接收的发送标记为 `uncertain`，不会自动重发；系统不承诺 exactly-once。免费额度也不代表无限用户、无限轮询或无限通知，生产容量应按实际 CPU、D1 读写、Durable Object 持续时间及外部服务额度评估。
 
 Cloudflare 的 `wrangler.jsonc` 使用邀请制小规模配置：最多 5 位用户、每人 20 条规则、全局 100 条启用规则、每人及全局 8 个品种，每人 20 次/日、全局 100 次/日发送尝试（含测试及失败）。这是试运行起点，Worker Free 的 10 ms CPU 尚未线上验证，也不能抵御恶意访问耗尽额度；预算与线上指标要求见[容量说明](docs/RUNTIME.md#调度免费额度与容量)。若以后放宽到超过 100 条可调度规则，规则会跨轮次轮流评估，不能保证全部每五秒检查。Node 的源码默认容量保持不变。
 
@@ -194,4 +206,4 @@ npm run test:browser:mock
 
 ### 许可证
 
-项目采用 [Apache License 2.0](LICENSE)，允许按许可证条件使用、修改与分发。依赖仍受各自许可证约束；Google、Cloudflare、OKX、TradingView 和 Pushover 服务按各自条款与收费规则使用。
+项目采用 [Apache License 2.0](LICENSE)，允许按许可证条件使用、修改与分发。依赖仍受各自许可证约束；Google、Cloudflare、Binance、OKX、MEXC、TradingView 和 Pushover 服务按各自条款与收费规则使用。

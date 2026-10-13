@@ -61,3 +61,8 @@ Thumbs.db
 
 # Internal development handoff material is not part of the public release
 docs/internal/
+PRODUCT.md
+design/
+docs/market-search-design.md
+docs/market-upgrade-review.md
+test/browser-market-evidence/
