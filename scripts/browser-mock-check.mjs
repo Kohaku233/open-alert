@@ -314,7 +314,7 @@ try {
     await check('embed failure fallback', () => expect(page.getByText('图表暂时无法连接')).toBeVisible());
     await check('safe symbol external fallback', () => expect(page.getByRole('link',{name:'在 TradingView 打开',exact:true})).toHaveAttribute('href','https://www.tradingview.com/chart/?symbol=OKX%3ABTCUSDT.P'));
     state.chartFail=false; await page.getByRole('button',{name:'重试图表'}).click(); await expect(page.locator('iframe')).toBeVisible();
-    await page.getByLabel('查看合约').selectOption('ETH-USDT-SWAP'); await expect(page.locator('iframe')).toBeVisible();
+    await page.locator('.chart-toolbar .market-search summary').click(); await page.getByLabel('市场搜索结果').selectOption('ETH-USDT-SWAP'); await expect(page.locator('iframe')).toBeVisible();
     await check('symbol change recreates once', async () => { const content=await page.locator('.tradingview-widget-container script').textContent(); assert.equal(JSON.parse(content).symbol,'OKX:ETHUSDT.P'); });
   });
   await journey('08 logout expires native cookie and discards delayed workspace response', async () => {
@@ -366,7 +366,7 @@ try {
     await p.clock.runFor(5000);
     await check('HTTP-date parsed against browser now',()=>expect(p.locator('.connection-error')).toContainText('重试等待：12 秒'));
     const before = businessRequests(s).length;
-    await p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true}).click();
+    await check('editor visibly disabled during cooldown',()=>expect(p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true})).toBeDisabled());
     await check('editor blocked before action callback',()=>expect(p.getByRole('dialog').getByRole('alert')).toContainText('请求过于频繁'));
     await p.keyboard.press('Escape');
     for(let i=0;i<3;i++) { await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click(); await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange'))); }
@@ -478,7 +478,7 @@ try {
       await p.goto(`${origin}/?error=${encodeURIComponent(value)}&code=MOCK_SECRET_CODE&state=MOCK_SECRET_STATE`);
       await check('unknown error uses safe generic copy',()=>expect(p.getByRole('alert')).toContainText('Google 登录未完成，请重试或使用邮箱验证码登录'));
       await check('unknown query never reflected or used for navigation',async()=>{
-        assert.equal(p.url(),origin+'/login');
+        await expect(p).toHaveURL(origin+'/login');
         const text=await p.locator('body').innerText();
         assert(!text.includes('MOCK_')&&!text.includes('evil.example')&&!text.includes('<img'));
         assert.equal(await p.locator('.login-panel img').count(),0);

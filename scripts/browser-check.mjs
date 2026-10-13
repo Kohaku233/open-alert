@@ -6,11 +6,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtemp, rm, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, access, readFile, readdir } from 'node:fs/promises';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputs = process.env.OPEN_ALERT_BROWSER_OUTPUT_DIR ? resolve(process.env.OPEN_ALERT_BROWSER_OUTPUT_DIR) : resolve(root,'..');
@@ -23,8 +23,15 @@ const { chromium, devices } = await import(pathToFileURL(playwrightPath).href);
 const { expect } = await import(pathToFileURL(join(dirname(playwrightPath),'test.mjs')).href);
 expect.configure({timeout:3000});
 const results = [], children = [], messages = [], transport = [], violations = [], browserErrors = [], cleanupErrors = [];
+const guardProbes = [], fixtureReady = [], browserBlocked = [];
+const preloads = ['--import',join(root,'scripts/local-test-transport.mjs'),'--import',join(root,'scripts/local-test-types.mjs')];
+const marketPreload = ['--import',join(root,'test/browser-ccxt-fixtures.mjs')];
 let assertions = 0, apiRequests = 0, browser, server, directory, origin, environment, timedOut = false;
-let alice, bob, aliceAlert, bobAlert, aliceId, bobId, sessionCookie;
+let alice, bob, aliceAlert, bobAlert, aliceId, bobId, sessionCookie, compiledInputs = {};
+async function fingerprints() {
+  const files=['scripts/browser-check.mjs','test/browser-ccxt-fixtures.mjs','src/markets/ccxt.ts','src/markets/source.ts','src/markets/normalize.ts','src/scheduler/index.ts','dist/server/runtime/node.js','dist/server/markets/ccxt.js','dist/server/markets/source.js','dist/server/markets/normalize.js','dist/server/scheduler/index.js','dist/web/index.html',...(await readdir(join(root,'dist/web/assets'))).map(name=>`dist/web/assets/${name}`)];
+  return Object.fromEntries(await Promise.all(files.map(async file=>[file,createHash('sha256').update(await readFile(join(root,file))).digest('hex')])));
+}
 const startedAt = Date.now();
 const check = async (name,fn) => { await fn(); assertions++; console.log(`  CHECK ${name}`); };
 const journey = async (name,fn) => { const start=Date.now(); try { await fn(); results.push({name,passed:true,durationMs:Date.now()-start}); console.log(`PASS ${name}`); } catch(error) { results.push({name,passed:false,error:error.message}); throw error; } };
@@ -35,7 +42,13 @@ function launch(args,label) {
   const child=spawn(process.execPath,args,{cwd:root,env:environment,stdio:label==='operator-invite-cli'?['ignore','pipe','pipe']:['ignore','pipe','pipe','ipc']});
   const record={child,label,logs:'',exit:null}; children.push(record);
   child.stdout.on('data',chunk=>{record.logs+=chunk.toString();}); child.stderr.on('data',chunk=>{record.logs+=chunk.toString();});
-  child.on('message',message=>{if(message.type==='email')messages.push(message);else if(message.type==='blocked')violations.push(message);else if(message.type==='transport')transport.push(message);});
+  child.on('message',message=>{
+    if(label==='egress-guard-probe') { guardProbes.push(message); return; }
+    if(message.type==='email')messages.push(message);
+    else if(message.type==='blocked')violations.push(message);
+    else if(message.type==='transport')transport.push({...message,child:label});
+    else if(message.type==='ccxt-fixtures-ready')fixtureReady.push({...message,child:label});
+  });
   record.exited=new Promise((resolveExit,reject)=>{child.once('error',reject);child.once('exit',(code,signal)=>{record.exit={code,signal};resolveExit(record.exit);});});
   return record;
 }
@@ -51,7 +64,7 @@ async function stopServer() {
   assertions++; console.log('  CHECK compiled server exited cleanly after SIGTERM');
 }
 async function startServer() {
-  server=launch(['--import',join(root,'scripts/local-test-transport.mjs'),'--import',join(root,'scripts/local-test-types.mjs'),join(root,'dist/server/runtime/node.js')],`compiled-server-${children.length}`);
+  server=launch([...preloads,...marketPreload,join(root,'dist/server/runtime/node.js')],`compiled-server-${children.length}`);
   await until(async()=>{if(server.exit)throw new Error(`Server exited early: ${server.logs}`);try {const r=await fetch(origin+'/api/auth-capabilities',{signal:AbortSignal.timeout(400)});return r.ok&&(await r.json()).data.emailOtp;}catch{return false;}},'compiled server readiness');
   assert.match(server.logs,/setup ready/); assertions++;
 }
@@ -69,6 +82,7 @@ async function profile(mobile=false) {
     const url=new URL(route.request().url());
     if(url.origin===origin) {if(url.pathname.startsWith('/api/'))apiRequests++;return route.continue();}
     // TradingView is optional third-party UI; deliberately block its embed without network.
+    browserBlocked.push({host:url.hostname,path:url.pathname});
     if(url.href!=='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js')violations.push({type:'browser-external',host:url.hostname,path:url.pathname});
     return route.abort('blockedbyclient');
   });
@@ -90,14 +104,22 @@ async function login(profile,email,rejectWrong=false) {
 }
 const nav=(page,name)=>page.getByRole('navigation',{name:'主导航'}).getByRole('link',{name,exact:true}).click();
 const row=(page,name)=>page.locator('.alert-row').filter({has:page.getByText(name,{exact:true})});
-async function createAlert(profile,name,instrument,threshold) {
+async function selectMarket(picker,instrument,venue='okx',type='swap') {
+  await picker.locator('summary').click();
+  await picker.getByLabel('搜索市场').fill(instrument);
+  await picker.getByLabel('交易所',{exact:true}).selectOption(venue);
+  await picker.getByLabel('市场类型',{exact:true}).selectOption(type);
+  await picker.getByLabel('市场搜索结果').selectOption(instrument);
+}
+async function createAlert(profile,name,instrument,threshold,enabled=true) {
   const {page,context}=profile;await page.getByRole('button',{name:'＋ 创建警报'}).click();const dialog=page.getByRole('dialog');
-  await dialog.getByLabel('警报合约').selectOption(instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
+  await selectMarket(dialog.locator('.market-search'),instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));
+  await dialog.getByLabel('启用这条警报').setChecked(enabled);await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
   await expect(row(page,name)).toBeVisible();return (await ok(context,'/api/alerts')).alerts.find(a=>a.name===name);
 }
 const watchdog=setTimeout(()=>{timedOut=true;for(const r of children)if(!r.exit)r.child.kill('SIGTERM');void browser?.close();},55000);
 try {
-  await access(join(root,'dist/server/runtime/node.js'));await access(join(root,'dist/web/index.html'));
+  await access(join(root,'dist/server/runtime/node.js'));await access(join(root,'dist/web/index.html'));compiledInputs=await fingerprints();
   directory=await mkdtemp(join(tmpdir(),'open-alert-browser-real-'));
   const reservation=createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));origin=`http://127.0.0.1:${port}`;
   environment={PATH:process.env.PATH,HOME:homedir(),NODE_ENV:'test',DEPLOYMENT:'node',DB_DRIVER:'sqlite',SQLITE_PATH:join(directory,'app.sqlite'),APP_URL:origin,PORT:String(port),AUTH_SECRET:randomBytes(32).toString('hex'),ENCRYPTION_KEY:randomBytes(32).toString('hex'),BOOTSTRAP_TOKEN:randomBytes(32).toString('hex'),EMAIL_PROVIDER:'console',INVITE_ONLY:'true',OPEN_ALERT_LOCAL_TEST:'1',...(process.env.OPEN_ALERT_TEST_NODE_MODULES?{OPEN_ALERT_TEST_NODE_MODULES:process.env.OPEN_ALERT_TEST_NODE_MODULES}:{})};
@@ -105,7 +127,19 @@ try {
   try{await access(join(cachedLib,'libXdamage.so.1'));launchEnv.LD_LIBRARY_PATH=[cachedLib,process.env.LD_LIBRARY_PATH].filter(Boolean).join(':');}catch{}
   browser=await chromium.launch({headless:true,env:launchEnv});console.log(`REAL local integration — Chromium ${browser.version()} — compiled Node + dist/web`);
   await journey('01 actual operator CLI invitation and compiled Node launch',async()=>{
-    const cli=launch(['--import',join(root,'scripts/local-test-transport.mjs'),'--import',join(root,'scripts/local-test-types.mjs'),join(root,'scripts/admin-invite.ts'),'alice@example.test'],'operator-invite-cli');
+    const probe=launch([...preloads,...marketPreload,'--input-type=module','-e',`
+      import assert from 'node:assert/strict';
+      import { Socket } from 'node:net';
+      await assert.rejects(fetch('https://example.invalid/egress-probe'),/Unexpected outbound fetch blocked/);
+      assert.throws(()=>new Socket().connect(443,'example.invalid'),/All outbound sockets blocked/);
+      process.send({type:'guard-probe-passed',fetchDenied:true,socketDenied:true});
+    `],'egress-guard-probe');
+    await check('fetch and socket guards reject before any external egress with CCXT fixtures installed',async()=>{
+      assert.deepEqual(await waitExit(probe),{code:0,signal:null},probe.logs);
+      assert.equal(guardProbes.filter(m=>m.type==='blocked').length,2);
+      assert(guardProbes.some(m=>m.type==='guard-probe-passed'&&m.fetchDenied&&m.socketDenied));
+    });
+    const cli=launch([...preloads,join(root,'scripts/admin-invite.ts'),'alice@example.test'],'operator-invite-cli');
     const exit=await waitExit(cli);await check('operator CLI exits zero and creates invitation',async()=>{assert.deepEqual(exit,{code:0,signal:null},cli.logs);assert.match(cli.logs,/Invitation created for alice@example.test/);});
     await startServer();alice=await profile();bob=await profile(true);
     await check('unauthenticated real API denied',async()=>assert.equal((await api(bob.context,'/api/status')).status,401));
@@ -132,13 +166,24 @@ try {
     await check('second tenant has distinct identity and cannot list admin users',async()=>{assert.notEqual(aliceId,bobId);assert.equal((await api(bob.context,'/api/admin/users')).status,403);});
   });
   await journey('04 real browser alert CRUD, CAS and tenant-scoped resource guards',async()=>{
-    await nav(alice.page,'行情与警报');aliceAlert=await createAlert(alice,'LOCAL Alice alert','BTC-USDT-SWAP',61000);bobAlert=await createAlert(bob,'LOCAL Bob alert','ETH-USDT-SWAP',4000);
+    await nav(alice.page,'行情与警报');
+    await check('public factory catalogs all three venues and both products without trade demand',async()=>{
+      const catalog=await ok(alice.context,'/api/markets');assert.equal(catalog.stale,false);assert.equal(catalog.markets.length,12);
+      for(const venue of ['binance','okx','mexc'])for(const type of ['spot','swap'])assert.equal(catalog.markets.filter(m=>m.venue===venue&&m.type===type&&m.available).length,2);
+      assert.equal(transport.filter(e=>e.operation==='trades').length,0);
+      assert(fixtureReady.some(e=>e.child===server.label));
+    });
+    aliceAlert=await createAlert(alice,'LOCAL Alice alert','BTC-USDT-SWAP',61000);bobAlert=await createAlert(bob,'LOCAL Bob alert','ETH-USDT-SWAP',4000,false);
     await check('tenants list only their own alerts',async()=>{assert.deepEqual((await ok(alice.context,'/api/alerts')).alerts.map(a=>a.id),[aliceAlert.id]);assert.deepEqual((await ok(bob.context,'/api/alerts')).alerts.map(a=>a.id),[bobAlert.id]);});
     for(const [method,path,body] of [['PATCH',`/api/alerts/${aliceAlert.id}`,{expectedGeneration:0,name:'intrusion'}],['DELETE',`/api/alerts/${aliceAlert.id}`,{expectedGeneration:0}],['POST',`/api/alerts/${aliceAlert.id}/rearm`,{expectedGeneration:0}]])await check(`Bob ${method} Alice resource denied`,async()=>assert.equal((await api(bob.context,path,method,body)).status,404));
     await row(alice.page,'LOCAL Alice alert').getByRole('button',{name:'编辑',exact:true}).click();await alice.page.getByRole('dialog').getByLabel('警报名称').fill('LOCAL Alice persisted');await alice.page.getByRole('button',{name:'保存警报',exact:true}).click();await expect(row(alice.page,'LOCAL Alice persisted')).toBeVisible();
     await check('database increments generation on UI edit',async()=>{aliceAlert=(await ok(alice.context,'/api/alerts')).alerts[0];assert.equal(aliceAlert.generation,1);});
     await check('stale generation rejected by real repository',async()=>assert.equal((await api(alice.context,`/api/alerts/${aliceAlert.id}`,'PATCH',{expectedGeneration:0,name:'stale'})).status,409));
-    await check('status prices follow tenant-owned instruments',async()=>{assert.deepEqual((await ok(alice.context,'/api/status')).prices.map(p=>p.instrument),['BTC-USDT-SWAP']);assert.deepEqual((await ok(bob.context,'/api/status')).prices.map(p=>p.instrument),['ETH-USDT-SWAP']);});
+    await check('paused accounts and disabled rules create no trade demand or prices',async()=>{
+      assert.equal(bobAlert.enabled,false);
+      assert.deepEqual((await ok(alice.context,'/api/status')).prices,[]);assert.deepEqual((await ok(bob.context,'/api/status')).prices,[]);
+      assert.equal(transport.filter(e=>e.operation==='trades').length,0);
+    });
     await check('mobile real UI has no horizontal overflow',async()=>assert(await bob.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)));
   });
   await journey('05 isolated settings, encrypted channel and local provider test',async()=>{
@@ -152,15 +197,29 @@ try {
     try {
       await check('database stores encrypted keys and consumes both invitations',async()=>{const channel=db.prepare('SELECT user_key_json,private_token_json FROM channels WHERE user_id=?').get(aliceId);assert(channel);assert.equal(JSON.stringify(channel).includes('LOCALUSER'),false);assert.equal(JSON.stringify(channel).includes('LOCALTOKEN'),false);assert.equal(JSON.parse(channel.user_key_json).algorithm,'A256GCM');assert.equal(db.prepare('SELECT COUNT(*) AS n FROM invitations WHERE consumed_by IS NOT NULL').get().n,2);});
     } finally {db.close();}
+    await nav(alice.page,'行情与警报');await alice.page.getByRole('switch').click();await expect(alice.page.getByRole('switch')).toHaveAttribute('aria-checked','true');
+    await check('only active rule demand yields fresh tenant-scoped CCXT Pro prices',async()=>{
+      await until(async()=>{const status=await ok(alice.context,'/api/status');return status.prices.some(p=>p.instrument==='BTC-USDT-SWAP'&&p.price===60000);},'active CCXT Pro BTC observation');
+      assert.deepEqual((await ok(alice.context,'/api/status')).prices.map(p=>p.instrument),['BTC-USDT-SWAP']);
+      assert.deepEqual((await ok(bob.context,'/api/status')).prices,[]);
+      const calls=transport.filter(e=>e.operation==='trades');assert(calls.length>0);
+      assert(calls.every(e=>e.method==='watchTrades'&&e.venue==='okx'&&e.symbol==='BTC/USDT:USDT'));
+      assert.equal(transport.filter(e=>e.operation==='message').length,1);
+    });
     await ok(alice.context,`/api/alerts/${aliceAlert.id}`,'PATCH',{expectedGeneration:aliceAlert.generation,threshold:59000});
     aliceAlert=(await ok(alice.context,'/api/alerts')).alerts[0];
-    await nav(alice.page,'行情与警报');await alice.page.getByRole('switch').click();await expect(alice.page.getByRole('switch')).toHaveAttribute('aria-checked','true');
-    await check('real shared scheduler latches breached alert and delivers through local transport',async()=>{await until(async()=>{const a=(await ok(alice.context,'/api/alerts')).alerts[0];return a.last?.outcome==='sent'&&a.triggered&&!a.pending;},'scheduler delivery');assert.equal(transport.filter(e=>e.operation==='message').length,2);assert.equal(transport.filter(e=>e.operation==='message').at(-1).priority,'2');const a=(await ok(alice.context,'/api/alerts')).alerts[0];assert.equal(a.status,'latched');assert.equal(a.last.receiptAvailable,true);assert.equal(JSON.stringify(a).includes('LOCALRECEIPT'),false);});
+    await check('real shared scheduler latches breached alert and delivers through local transport',async()=>{await until(async()=>{const a=(await ok(alice.context,'/api/alerts')).alerts[0];return a.last?.outcome==='sent'&&a.triggered&&!a.pending;},'scheduler delivery',8000);assert.equal(transport.filter(e=>e.operation==='message').length,2);assert.equal(transport.filter(e=>e.operation==='message').at(-1).priority,'2');const a=(await ok(alice.context,'/api/alerts')).alerts[0];assert.equal(a.status,'latched');assert.equal(a.last.receiptAvailable,true);assert.equal(JSON.stringify(a).includes('LOCALRECEIPT'),false);});
     await check('scheduler delivery charges only owner quota',async()=>{assert.equal((await ok(alice.context,'/api/status')).daily.attempts,2);assert.equal((await ok(bob.context,'/api/status')).daily.attempts,0);assert.equal((await ok(bob.context,'/api/alerts')).alerts[0].triggered,false);});
     await alice.page.getByRole('switch').click();await alice.page.getByRole('dialog').getByRole('button',{name:'暂停监控',exact:true}).click();await expect(alice.page.getByRole('switch')).toHaveAttribute('aria-checked','false');
   });
   await journey('06 actual process restart persists sessions, roles, alerts and quotas',async()=>{
-    await stopServer();await startServer();
+    await stopServer();const tradeCallsBeforeRestart=transport.filter(e=>e.operation==='trades').length;await startServer();
+    await check('restart loads three fresh catalogs and retains idle demand',async()=>{
+      const catalog=await ok(alice.context,'/api/markets');assert.equal(catalog.stale,false);assert.equal(catalog.markets.length,12);
+      assert.deepEqual(transport.filter(e=>e.child===server.label&&e.operation==='catalog').map(e=>e.venue).sort(),['binance','mexc','okx']);
+      assert.equal(transport.filter(e=>e.operation==='trades').length,tradeCallsBeforeRestart);
+      assert.deepEqual((await ok(alice.context,'/api/status')).prices,[]);assert.deepEqual((await ok(bob.context,'/api/status')).prices,[]);
+    });
     await alice.page.reload();await bob.page.reload();await expect(alice.page.getByRole('button',{name:'退出登录'})).toBeVisible();await expect(row(bob.page,'LOCAL Bob alert')).toBeVisible();
     await check('restart retains same genuine cookie and identities',async()=>{assert.equal((await alice.context.cookies(origin)).find(c=>c.name==='better-auth.session_token').value,sessionCookie);assert.equal((await ok(alice.context,'/api/status')).user.id,aliceId);assert.equal((await ok(bob.context,'/api/status')).user.id,bobId);});
     await check('restart retains admin role, settings, channel and daily count',async()=>{const status=await ok(alice.context,'/api/status');assert.equal(status.user.role,'admin');assert.equal(status.settings.dailyLimit,7);assert.equal(status.channel.privateTokenPresent,true);assert.equal(status.daily.attempts,2);});
@@ -178,6 +237,11 @@ try {
     const replay=await browser.newContext();try{await replay.addCookies([{name:'better-auth.session_token',value:sessionCookie,url:origin}]);await check('copied pre-logout cookie revoked in database',async()=>assert.equal((await api(replay,'/api/status')).status,401));}finally{await replay.close();}
     await check('other tenant remains authenticated after Alice logout',async()=>assert.equal((await ok(bob.context,'/api/status')).user.id,bobId));
     await check('browser has no runtime exceptions',async()=>assert.deepEqual(browserErrors,[]));await check('no unexpected external traffic attempts',async()=>assert.deepEqual(violations,[]));
+    await check('compiled server uses only public CCXT method fixtures for exchange work',async()=>{
+      assert(transport.filter(e=>e.provider==='ccxt-method-fixture'&&e.operation==='catalog').length>=6);
+      assert(transport.filter(e=>e.provider==='ccxt-method-fixture'&&e.operation==='trades').every(e=>e.method==='watchTrades'));
+      assert(transport.every(e=>['ccxt-method-fixture','pushover'].includes(e.provider)));
+    });
   });
 } catch(error) { console.error(error.stack);process.exitCode=1; }
 finally {
@@ -185,10 +249,11 @@ finally {
   try{await stopServer();}catch(error){cleanupErrors.push(error.message);}
   for(const record of children)if(!record.exit){cleanupErrors.push(`${record.label} required forced cleanup`);record.child.kill('SIGKILL');try{await waitExit(record,1000);}catch(error){cleanupErrors.push(error.message);}}
   clearTimeout(watchdog);
+  if(Object.keys(compiledInputs).length)try{assert.deepEqual(await fingerprints(),compiledInputs,'Source/build inputs changed during compiled integration');}catch(error){cleanupErrors.push(error.message);}
   if(timedOut)cleanupErrors.push('55 second integration deadline exceeded');
   if(cleanupErrors.length){console.error('Cleanup failures:',cleanupErrors);process.exitCode=1;}
   if(directory)await rm(directory,{recursive:true,force:true});
-  const evidence={mode:'REAL_LOCAL',scope:'Compiled Node entry point + actual dist/web, real SQLite/Better Auth OTP/session cookies; only outbound provider transports substituted',passed:results.length===7&&results.every(r=>r.passed)&&!process.exitCode,assertions,journeys:results,apiRequests,generatedOtpEmails:messages.filter(m=>m.otp).length,localEmailMessages:messages.length,providerCalls:transport,dependencyCache:process.env.OPEN_ALERT_TEST_NODE_MODULES??null,childExits:children.map(({label,exit})=>({label,...exit})),browserErrors,violations,cleanupErrors,durationMs:Date.now()-startedAt,limitations:['SQLite only; PostgreSQL and Cloudflare not covered by this script','Console fakeemail captures real generated OTP; SMTP/Resend external delivery not tested','OKX and Pushover are local process fetch substitutes; no live provider requests','TradingView embed blocked; mobile is Chromium iPhone emulation, not iOS Safari','Built assets and compiled server must be rebuilt before execution']};
+  const evidence={mode:'REAL_LOCAL',scope:'Compiled Node entry point + actual dist/web, real SQLite/Better Auth OTP/session cookies, API and scheduler; public CCXT Pro methods and outbound notification fetch substituted only in test children',passed:results.length===7&&results.every(r=>r.passed)&&!process.exitCode,assertions,journeys:results,apiRequests,generatedOtpEmails:messages.filter(m=>m.otp).length,localEmailMessages:messages.length,providerCalls:transport,fixtureReady,compiledInputs,guardEvidence:{guardProbes,browserBlocked,unexpectedAttempts:violations.length},dependencyCache:process.env.OPEN_ALERT_TEST_NODE_MODULES??null,childExits:children.map(({label,exit})=>({label,...exit})),browserErrors,violations,cleanupErrors,durationMs:Date.now()-startedAt,limitations:['SQLite only; PostgreSQL and Cloudflare not covered by this script','Console fakeemail captures real generated OTP; SMTP/Resend external delivery not tested','Public CCXT Pro classes use test-only loadMarkets/watchTrades/fetchTrades fixtures for Binance/OKX/MEXC; HTTP/WS exchange parsers and live connectivity are not covered','Pushover is a local process fetch substitute; no live provider requests','TradingView embed blocked; mobile is Chromium iPhone emulation, not iOS Safari','Built assets and compiled server must be rebuilt before execution']};
   await writeFile(join(outputs,'open-alert-browser-check-results-LOCAL.json'),JSON.stringify(evidence,null,2)+'\n');
   console.log(`REAL local result: ${results.filter(r=>r.passed).length}/7 journeys, ${assertions} successful checks; ${apiRequests} actual API requests; ${messages.filter(m=>m.otp).length} real generated OTP emails; cleanup failures=${cleanupErrors.length}; ${evidence.durationMs}ms`);
 }
