@@ -7,7 +7,26 @@ export type RuleStatus = 'disabled' | 'armed' | 'queued' | 'sending' | 'latched'
 export type DeliveryOutcome = 'sent' | 'failed' | 'expired' | 'cancelled' | 'uncertain' | 'daily_limit';
 export type HealthState = 'healthy' | 'degraded' | 'unhealthy' | 'starting';
 
-export const instrumentSchema = z.string().regex(/^[A-Z0-9]{1,24}-USDT-SWAP$/);
+export type Venue = 'binance' | 'okx' | 'mexc';
+export type MarketType = 'spot' | 'swap';
+/** This representation belongs exclusively to legacy OKX linear USDT swaps. */
+export const legacyInstrumentSchema = z.string().regex(/^[A-Z0-9]{1,24}-USDT-SWAP$/);
+export const nativeMarketIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:/+\-]+$/);
+export interface InstrumentIdentity { venue: Venue; type: MarketType; nativeId: string }
+/** Percent encoding must round-trip exactly: one identity has one representation. */
+export function parseInstrumentIdentity(value: string): InstrumentIdentity | null {
+  if (legacyInstrumentSchema.safeParse(value).success) return { venue: 'okx', type: 'swap', nativeId: value };
+  if (value.length > 400) return null;
+  const match = /^(binance|okx|mexc):(spot|swap):([^:]+)$/.exec(value);
+  if (!match) return null;
+  try {
+    const nativeId = decodeURIComponent(match[3]!);
+    if (!nativeMarketIdSchema.safeParse(nativeId).success || encodeURIComponent(nativeId) !== match[3]) return null;
+    if (match[1] === 'okx' && match[2] === 'swap' && legacyInstrumentSchema.safeParse(nativeId).success) return null;
+    return { venue: match[1] as Venue, type: match[2] as MarketType, nativeId };
+  } catch { return null; }
+}
+export const instrumentSchema = z.string().min(1).max(400).refine(value => parseInstrumentIdentity(value) !== null, 'invalid instrument identity');
 export const notificationOptionsSchema = z.strictObject({
   priority: z.number().int().min(-2).max(2),
   retry: z.number().int().min(30).max(3600),
@@ -45,6 +64,13 @@ export interface Market {
   tickSize: string;
   state: 'live';
   tradingViewSymbol: string;
+  /** Optional only for compatibility with existing legacy fixtures. Production sources populate all fields. */
+  venue?: Venue;
+  type?: MarketType;
+  nativeId?: string;
+  symbol?: string;
+  settle?: 'USDT' | null;
+  contractSize?: number | null;
 }
 export interface PendingDelivery {
   triggerId: Id;
@@ -131,7 +157,7 @@ export interface SystemStatus {
     notifications: ComponentHealth;
     email: ComponentHealth;
   };
-  scheduler: { pollIntervalMs: 5000; lastPollAt: EpochMs | null; coordinatorId: 'coordinator-v1' };
+  scheduler: { pollIntervalMs: 5000; lastPollAt: EpochMs | null; coordinatorId: 'coordinator-v1'; marketMode?: 'stream' | 'polling' };
   prices: PriceTick[];
   channel: ChannelProfile;
   capabilities: { google: boolean; emailOtp: boolean; inviteOnly: boolean; canAdmin: boolean };

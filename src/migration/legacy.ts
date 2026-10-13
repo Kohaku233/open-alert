@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { normalizeEmail } from '../auth/email.js';
 import type { AppConfig } from '../config.js';
 import type { SqlDatabase, SqlStatement, SqlValue } from '../contracts/db.js';
-import { alertInputSchema, notificationOptionsSchema } from '../contracts/domain.js';
+import { alertInputSchema, legacyInstrumentSchema, notificationOptionsSchema } from '../contracts/domain.js';
 import { APP_MIGRATIONS } from '../db/migration-sources.js';
 import { AUTH_MIGRATIONS } from '../auth/migration-sources.js';
 import { migrationChecksum } from '../db/migrations.js';
@@ -26,19 +26,19 @@ const lastSchema = z.strictObject({
   id: id.optional(), outcome: z.enum(['sent','failed','expired','cancelled','uncertain','daily_limit']),
   at: epoch.optional(), attempts: z.number().int().min(0).max(3).optional(), code: z.string().max(200).nullable().optional(),
   receipt: z.null().optional(), generation: generation.optional(),
-  instrument: alertInputSchema.shape.instrument.optional(), name: legacyName.optional(),
+  instrument: legacyInstrumentSchema.optional(), name: legacyName.optional(),
   side: alertInputSchema.shape.side.optional(), threshold: price.optional(), price: price.optional(),
   timestamp: epoch.optional(), createdAt: epoch.optional(), notification: notificationOptionsSchema.optional(),
 });
 const pendingSchema = z.strictObject({
   id, generation: generation.optional(), phase: z.enum(['queued','sending']), attempts: z.number().int().min(0).max(3),
-  nextAt: epoch.optional(), createdAt: epoch.optional(), instrument: alertInputSchema.shape.instrument.optional(),
+  nextAt: epoch.optional(), createdAt: epoch.optional(), instrument: legacyInstrumentSchema.optional(),
   name: legacyName.optional(), side: alertInputSchema.shape.side.optional(), threshold: price.optional(),
   price: price.optional(), timestamp: epoch.optional(), notification: notificationOptionsSchema.optional(),
 });
 const ruleSchema = z.strictObject({ generation, triggered: z.boolean().optional(), latched: z.boolean().optional(),
   pending: pendingSchema.nullable(), last: lastSchema.nullable() });
-const alertSchema = ruleSchema.extend({ id, name: legacyName, instrument: alertInputSchema.shape.instrument.optional(),
+const alertSchema = ruleSchema.extend({ id, name: legacyName, instrument: legacyInstrumentSchema.optional(),
   side: alertInputSchema.shape.side, threshold: price, enabled: z.boolean(), createdAt: epoch.optional(), updatedAt: epoch.optional() });
 const configSchema = z.strictObject({ enabled: z.boolean(), upper: price.nullable().optional(), lower: price.nullable().optional(),
   dailyLimit: z.number().int().min(1).max(20), notification: notificationOptionsSchema });
