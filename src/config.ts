@@ -52,6 +52,8 @@ const envSchema = z.object({
   INVITE_ONLY: booleanEnv(true),
   BOOTSTRAP_TOKEN: optionalText,
   PUSHOVER_APP_TOKEN: optionalText,
+  BINANCE_RELAY_URL: optionalText,
+  BINANCE_RELAY_TOKEN: optionalText,
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MAX_USERS: limit(1_000, 100_000),
   MAX_ALERTS_PER_USER: limit(20, 100),
@@ -67,6 +69,19 @@ const envSchema = z.object({
       const origin = new URL(env.DEV_ORIGIN);
       if (env.NODE_ENV !== 'development' || !['localhost','127.0.0.1','[::1]'].includes(origin.hostname) || origin.protocol !== 'http:' || origin.origin !== env.DEV_ORIGIN) issue('DEV_ORIGIN');
     } catch { issue('DEV_ORIGIN'); }
+  }
+  if (Boolean(env.BINANCE_RELAY_URL) !== Boolean(env.BINANCE_RELAY_TOKEN)) issue('BINANCE_RELAY_TOKEN');
+  if (env.BINANCE_RELAY_TOKEN && !/^[A-Za-z0-9_-]{32,256}$/.test(env.BINANCE_RELAY_TOKEN)) issue('BINANCE_RELAY_TOKEN');
+  if (env.BINANCE_RELAY_URL) {
+    if (env.DEPLOYMENT !== 'cloudflare') issue('BINANCE_RELAY_URL');
+    // The bounded relay owns eight streams; refuse an application capacity that
+    // could request more symbols and exhaust the shared relay request budget.
+    if (env.MAX_GLOBAL_INSTRUMENTS > 8) issue('MAX_GLOBAL_INSTRUMENTS');
+    try {
+      const url = new URL(env.BINANCE_RELAY_URL);
+      if (url.protocol !== 'https:' || url.username || url.password || /[?#\\\\]/.test(env.BINANCE_RELAY_URL) ||
+          env.BINANCE_RELAY_URL.trim() !== env.BINANCE_RELAY_URL || /%/.test(url.pathname)) issue('BINANCE_RELAY_URL');
+    } catch { issue('BINANCE_RELAY_URL'); }
   }
   if (env.DEPLOYMENT === 'cloudflare' && env.DB_DRIVER !== 'd1') issue('DB_DRIVER');
   if (env.DEPLOYMENT === 'node' && env.DB_DRIVER === 'd1') issue('DB_DRIVER');
@@ -156,6 +171,8 @@ export function loadConfig(input: Readonly<Record<string, unknown>>) {
     inviteOnly: env.INVITE_ONLY,
     bootstrapToken: env.BOOTSTRAP_TOKEN,
     sharedPushoverAppToken: env.PUSHOVER_APP_TOKEN,
+    binanceRelay: env.BINANCE_RELAY_URL && env.BINANCE_RELAY_TOKEN
+      ? Object.freeze({url:env.BINANCE_RELAY_URL,token:env.BINANCE_RELAY_TOKEN}) : null,
     port: env.PORT,
     secureCookies: new URL(env.APP_URL).protocol === 'https:',
     limits: Object.freeze({

@@ -89,6 +89,27 @@ test('validation errors disclose field names only, even for secret input', () =>
   });
 });
 
+test('Binance relay is paired, HTTPS-only and server-side Cloudflare polling configuration', () => {
+  const cloudflare={...base,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1',MAX_GLOBAL_INSTRUMENTS:'8'};
+  const token='test_relay_token_'.repeat(3);
+  assert.equal(loadConfig(cloudflare).binanceRelay,null);
+  assert.deepEqual(loadConfig({...cloudflare,BINANCE_RELAY_URL:'https://relay.example.com',BINANCE_RELAY_TOKEN:token}).binanceRelay,{url:'https://relay.example.com',token});
+  for(const patch of [{BINANCE_RELAY_URL:'https://relay.example.com'}, {BINANCE_RELAY_TOKEN:token},
+    {BINANCE_RELAY_URL:'http://localhost:8788',BINANCE_RELAY_TOKEN:token},
+    {BINANCE_RELAY_URL:'https://relay.example.com?token=x',BINANCE_RELAY_TOKEN:token},
+    {BINANCE_RELAY_URL:'https://user:pass@relay.example.com',BINANCE_RELAY_TOKEN:token},
+    {BINANCE_RELAY_URL:'https://relay.example.com',BINANCE_RELAY_TOKEN:'short'}]) {
+    assert.throws(()=>loadConfig({...cloudflare,...patch}),ConfigurationError);
+  }
+  assert.throws(()=>loadConfig({...base,BINANCE_RELAY_URL:'https://relay.example.com',BINANCE_RELAY_TOKEN:token}),ConfigurationError);
+  for (const MAX_GLOBAL_INSTRUMENTS of ['9', '200', undefined]) {
+    assert.throws(() => loadConfig({ ...cloudflare, MAX_GLOBAL_INSTRUMENTS,
+      BINANCE_RELAY_URL: 'https://relay.example.com', BINANCE_RELAY_TOKEN: token }),
+      (error: unknown) => error instanceof ConfigurationError && error.fields.includes('MAX_GLOBAL_INSTRUMENTS'));
+  }
+  assert.equal(loadConfig({ ...base, MAX_GLOBAL_INSTRUMENTS: '200' }).limits.globalInstruments, 200);
+});
+
 test('request schemas reject ownership injection, implicit rearm and coerced prices', () => {
   const input = { name: 'BTC upper', instrument: 'BTC-USDT-SWAP', side: 'upper', threshold: 100_000 };
   assert.equal(createAlertSchema.parse(input).enabled, true);
