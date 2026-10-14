@@ -1,12 +1,12 @@
 import { t } from './i18n.js';
-import type { ApiResponse, ApiRouteMap } from '../src/contracts/api.js';
+import type { ApiRouteMap } from '../src/contracts/api.js';
 export interface AuthCapabilities {
     google: boolean;
     emailOtp: boolean;
     registration: 'invite' | 'open' | 'closed';
 }
 export class AppError extends Error {
-    constructor(public code: string, message: string, public status = 0, public requestId = '', public retryAfter: string | null = null, public retryAt = 0) {
+    constructor(public code: string, message: string, public status = 0, public requestId = '', public retryAfter: string | null = null, public retryAt = 0, public endpoint = '') {
         super(message);
         this.name = 'AppError';
     }
@@ -36,6 +36,20 @@ export function subscribeBusinessCooldown(listener: (error: AppError) => void): 
 function isBusinessApi(path: string): boolean {
     const url = new URL(path, window.location.href);
     return url.origin === window.location.origin && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') && url.pathname !== '/api/auth-capabilities';
+}
+function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+function traceId(value: unknown): string { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(value) ? value : ''; }
+function responseProblem(response: Response, path: string, method: string, requestId: string): AppError {
+    let code = 'invalid_response', message = t("服务暂时返回异常数据，请稍后重新读取状态。");
+    if (response.headers.get('cf-mitigated') === 'challenge') {
+        code = 'upstream_challenge'; message = t("Cloudflare 要求浏览器验证。请刷新页面完成验证后重试。");
+    } else if (response.status === 401) { code = 'unauthenticated'; }
+    else if (response.status === 403) { code = 'forbidden'; }
+    else if (method !== 'GET') {
+        code = 'request_uncertain'; message = t("未收到操作结果，可能已经生效。请重新读取状态；测试通知请先查看手机，避免重复发送。");
+    } else if (response.status >= 500) { code = 'service_unavailable'; }
+    const endpoint = new URL(path, window.location.href).pathname.replace(/(\/api\/(?:alerts|admin\/users)\/)[^/]+/, '$1:id');
+    return new AppError(code, message, response.status, requestId, null, 0, endpoint);
 }
 export async function request<T>(path: string, method = 'GET', body?: unknown, options: {
     signal?: AbortSignal;
@@ -74,27 +88,33 @@ export async function request<T>(path: string, method = 'GET', body?: unknown, o
         for (const listener of cooldownListeners)
             listener(businessCooldown);
     }
-    let envelope: ApiResponse<T>;
+    const headerRequestId = traceId(response.headers.get('X-Request-ID')) || traceId(response.headers.get('CF-Ray'));
+    let envelope: unknown;
     try {
-        envelope = await response.json() as ApiResponse<T>;
+        envelope = await response.json() as unknown;
     }
     catch {
-        throw limited ?? new AppError('invalid_response', t("服务返回了无法读取的响应，请稍后重试。"), response.status);
+        throw limited ?? responseProblem(response, path, method, headerRequestId);
     }
     if (limited) {
-        if (envelope && typeof envelope.requestId === 'string')
-            limited.requestId = envelope.requestId;
+        limited.requestId = (record(envelope) && traceId(envelope.requestId)) || headerRequestId;
         throw limited;
     }
-    if (!envelope || typeof envelope.ok !== 'boolean' || typeof envelope.requestId !== 'string') {
-        throw new AppError('invalid_response', t("服务响应格式不正确，请联系部署管理员。"), response.status);
+    const requestId = (record(envelope) && traceId(envelope.requestId)) || headerRequestId;
+    // Request IDs are diagnostic metadata. A missing ID must not discard valid
+    // business data; native auth or upstream error bodies remain invalid here.
+    if (!record(envelope) || typeof envelope.ok !== 'boolean') {
+        throw responseProblem(response, path, method, requestId);
     }
     if (!envelope.ok) {
-        throw new AppError(envelope.error.code, envelope.error.message, response.status, envelope.requestId, response.headers.get('Retry-After'));
+        if (!record(envelope.error) || typeof envelope.error.code !== 'string' ||
+            !/^[a-z_]{1,64}$/.test(envelope.error.code) || typeof envelope.error.message !== 'string')
+            throw responseProblem(response, path, method, requestId);
+        throw new AppError(envelope.error.code, envelope.error.message, response.status, requestId, response.headers.get('Retry-After'));
     }
     if (!response.ok || !('data' in envelope))
-        throw new AppError('invalid_response', t("服务响应不完整，请稍后重试。"), response.status, envelope.requestId);
-    return envelope.data;
+        throw responseProblem(response, path, method, requestId);
+    return envelope.data as T;
 }
 export function api<K extends keyof ApiRouteMap>(route: K, body?: ApiRouteMap[K]['request'], id?: string): Promise<ApiRouteMap[K]['response']> {
     const [method, rawPath] = route.split(' ');
@@ -146,7 +166,8 @@ export function errorText(error: unknown, now = Date.now()): string {
     if (error instanceof AppError) {
         const text = messages[error.code] ?? error.message;
         const wait = error.retryAt ? (error.retryAt > now ? t(" 重试等待：{0} 秒。", Math.ceil((error.retryAt - now) / 1000)) : t(" 等待已结束，可手动重试操作。")) : error.retryAfter ? t(" 重试等待：{0}。", error.retryAfter) : '';
-        return `${text}${wait}${error.requestId ? t(" 请求编号：{0}", error.requestId) : ''}`;
+        const source = error.endpoint ? t(" 接口：{0}，HTTP {1}。", error.endpoint, error.status) : '';
+        return `${text}${wait}${source}${error.requestId ? t(" 请求编号：{0}", error.requestId) : ''}`;
     }
     return t("操作未完成，请检查网络并重试。");
 }

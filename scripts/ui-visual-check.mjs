@@ -195,13 +195,13 @@ try {
     await noOverflow(page);
     await page.screenshot({ path: join(review, profile+'-en.png'), fullPage: true });
     if (profile==='mobile') {
-      const controls = await page.locator('.languages button,.header-actions>button,.icon-button,.instrument-button,.alert-buttons button,button.switch').evaluateAll(nodes => nodes.map(node => ({name:node.getAttribute('aria-label') || node.textContent, width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height})));
+      const controls = await page.locator('.languages button,.header-actions>button,.icon-button,.instrument-button,.alert-buttons button,button.ui-monitor-switch').evaluateAll(nodes => nodes.map(node => ({name:node.getAttribute('aria-label') || node.textContent, width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height})));
       assert(controls.every(control => control.width >= 44 && control.height >= 44),JSON.stringify(controls));
       state.status.settings.enabled=true; await page.reload();
       await expect(page.getByRole('switch')).toHaveAttribute('aria-checked','true');
       await page.screenshot({path:join(review,'mobile-enabled-en.png'),fullPage:true});
-      const thumb=await page.getByRole('switch').evaluate(node => { const s=getComputedStyle(node,'::after'); return {left:s.left,transform:s.transform,width:s.width}; });
-      assert.equal(thumb.left,'3px'); assert.equal(thumb.width,'18px');
+      const thumb=await page.getByRole('switch').evaluate(node => { const track=node.getBoundingClientRect(),handle=node.querySelector('span').getBoundingClientRect();return {right:handle.right <= track.right,width:handle.width}; });
+      assert(thumb.right); assert.equal(thumb.width,20);
       state.status.settings.enabled=false; await page.reload();
     }
     const userRules = state.alerts.map(x => JSON.stringify(x));
@@ -209,6 +209,13 @@ try {
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByLabel('Alert name')).toBeVisible();
     await noOverflow(page);
+    await page.screenshot({path:join(review,profile+'-editor-shadcn-en.png'),fullPage:true});
+    await page.getByRole('dialog').locator('.market-search-trigger').click();
+    await expect(page.locator('.ui-market-popover')).toBeVisible();
+    await noOverflow(page);
+    await page.screenshot({path:join(review,profile+'-market-shadcn-en.png'),fullPage:true});
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.ui-market-popover')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Notifications',exact:true})).toBeVisible();

@@ -13,6 +13,23 @@ Self-hosted, multiuser price alerts for Binance, OKX, and MEXC USDT spot markets
 | Node, directly or with Docker | SQLite or PostgreSQL | Shared scheduler with database leases and fencing |
 | Cloudflare Workers | D1 for accounts, rules, and delivery records | One SQLite Durable Object: `coordinator-v1` |
 
+The React frontend uses actual shadcn/ui registry components backed by Radix UI,
+cmdk, Sonner, Lucide and Tailwind CSS 4. Shared sources live in
+[`web/components/ui`](web/components/ui/README.md), configured by `components.json`.
+The neutral workbench theme supports Chinese and English. The market picker is a
+keyboard-accessible Popover + Command with exchange/product filters; dialogs,
+selects, checkboxes, switches and action feedback use the shared component system.
+
+Business response parsing treats request IDs as optional diagnostics, preserves
+valid envelopes, distinguishes upstream/auth/rate-limit failures, and reports the
+endpoint, HTTP status and server/Cloudflare trace when available. An unreadable
+mutation result is uncertain and is never automatically retried. Native
+`/api/auth/*` responses continue through Better Auth's own client.
+Automatic workspace reads fetch status and alerts every five seconds while the
+tab is visible; the complete market catalog is reused for up to one minute.
+Manual refresh and completed mutations immediately refresh the directory. The
+server still checks current market availability before creating or rearming rules.
+
 The backend evaluates executed trade prices from the selected exchange. An upper rule triggers when `price >= threshold`, and a lower rule triggers when `price <= threshold`, including when the first fresh observation already crosses the threshold. A triggered rule stays latched until the user explicitly rearms it. Editing the threshold does not release the latch. Monitoring is off by default for a new account.
 
 Node uses public CCXT Pro `watchTrades` and checks all accepted fresh observations in a batch. Cloudflare uses regular CCXT `fetchTrades` and samples only the latest valid fresh trade in each response, with a default five-second interval. Rate limiting, request budgets, network and scheduler delays can make the actual interval longer. Polling can miss transient threshold crossings, even within a fetched page; stream reconnects or bounded queue/cache overflow can also leave gaps. Neither mode guarantees every exchange trade. The authenticated status API exposes optional `scheduler.marketMode` (`stream` or `polling`), and the dashboard explains the mode. A fresh trade price does not establish transport connectivity; no recent trade does not prove disconnection.

@@ -81,7 +81,7 @@ async function setup(browser, profile, authenticated = false) {
     const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
     state.requests.push(evidence);
     const send = (data, status = 200, headers = {}) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(data) });
-    const ok = (data, status = 200) => send({ ok: true, data, requestId: 'mock-request' }, status);
+    const ok = (data, status = 200) => send({ ok: true, data, ...(!state.omitRequestIds ? {requestId:'mock-request'} : {}) }, status);
     const fail = (code, status = 409, headers = {}) => send({ ok: false, error: { code, message: `MOCK ${code}` }, requestId: 'mock-request' }, status, headers);
     try {
       const cookies = await context.cookies(origin);
@@ -111,6 +111,7 @@ async function setup(browser, profile, authenticated = false) {
         if (error.wait) await error.wait;
         if (error.bump) state.status.settingsGeneration++;
         if (error.raw) return route.fulfill({status:error.status,headers:error.headers,contentType:'text/html',body:'<h1>MOCK rate limit</h1>'});
+        if (error.payload) return send(error.payload,error.status,error.headers);
         return fail(error.code, error.status, error.headers);
       }
       if (path === '/api/status' && method === 'GET') {
@@ -218,7 +219,7 @@ try {
   });
   await journey('03 alert CRUD, modal keyboard focus and generation guards', async () => {
     await page.getByRole('button', { name: '创建警报', exact: true }).click(); const dialog = page.getByRole('dialog');
-    await check('modal focus inside', async () => assert(await dialog.evaluate(d => d.contains(document.activeElement) && d.matches(':modal'))));
+    await check('modal focus inside', async () => assert(await dialog.evaluate(d => d.contains(document.activeElement) && d.getAttribute('aria-modal') === 'true')));
     await check('no guessed threshold', () => expect(dialog.getByLabel('价格 · USDT')).toHaveValue(''));
     await dialog.getByLabel('警报名称').fill('<img src=x onerror=alert(1)> MOCK'); await dialog.getByLabel('价格 · USDT').fill('62000'); await dialog.getByRole('button', { name: '创建警报', exact:true }).click();
     await check('created row', () => expect(row(page,'<img src=x onerror=alert(1)> MOCK')).toBeVisible());
@@ -231,6 +232,63 @@ try {
     await row(page,'MOCK 已编辑').getByRole('button',{name:'删除',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'删除警报',exact:true}).click();
     await check('deleted row gone', () => expect(row(page,'MOCK 已编辑')).toHaveCount(0));
     await check('delete generation sent', async () => assert.equal(requests(state,'DELETE','/api/alerts/mock-created-1').at(-1).expectedGeneration,1));
+  });
+  await journey('03b shadcn market keyboard, venue identity, disabled results and focus return', async () => {
+    const originalMarkets=state.markets;
+    const template=originalMarkets[0];
+    state.markets=[...originalMarkets,
+      {...template,instrument:'binance:swap:BTCUSDT',venue:'binance',type:'swap',nativeId:'BTCUSDT',symbol:'BTC/USDT:USDT',settle:'USDT',tradingViewSymbol:'BINANCE:BTCUSDT.P'},
+      {...template,instrument:'binance:spot:BTCUSDT',venue:'binance',type:'spot',nativeId:'BTCUSDT',symbol:'BTC/USDT',settle:null,tradingViewSymbol:'BINANCE:BTCUSDT'},
+      {...template,instrument:'mexc:swap:BTC_USDT',venue:'mexc',type:'swap',nativeId:'BTC_USDT',symbol:'BTC/USDT:USDT',available:false},
+      ...Array.from({length:45},(_,i)=>({...template,instrument:`binance:spot:ASSET${i}USDT`,venue:'binance',type:'spot',nativeId:`ASSET${i}USDT`,base:`ASSET${i}`,symbol:`ASSET${i}/USDT`,settle:null,tradingViewSymbol:undefined}))];
+    await refreshNavigation(page);
+    const trigger=page.getByRole('combobox',{name:'查看市场',exact:true});
+    const originalSelection=await trigger.textContent();
+    await trigger.click();
+    const search=page.getByRole('combobox',{name:'搜索市场',exact:true});
+    await check('search auto-focus',()=>expect(search).toBeFocused());
+    await check('bounded market results',()=>expect(page.locator('[cmdk-item]')).toHaveCount(40));
+    await search.fill('BTC');
+    await chooseSelect(page,'交易所','binance');await chooseSelect(page,'市场类型','swap');
+    await check('canonical futures result isolated',()=>expect(page.locator('[cmdk-item]')).toHaveCount(1));
+    await check('filters preserve selection',()=>expect(trigger).toHaveText(originalSelection));
+    await search.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+    await check('keyboard selects Binance futures',()=>expect(trigger).toContainText('Binance · USDT 永续 · BTC / USDT'));
+    await check('selection closes popover and returns focus',()=>expect(trigger).toBeFocused());
+    await trigger.click();await chooseSelect(page,'市场类型','spot');
+    await page.locator('[cmdk-item][data-instrument="binance:spot:BTCUSDT"]').click();
+    await check('spot retains distinct identity',()=>expect(trigger).toContainText('Binance · 现货 · BTC / USDT'));
+    await trigger.click();await chooseSelect(page,'交易所','mexc');await chooseSelect(page,'市场类型','swap');
+    await check('unavailable result disabled',()=>expect(page.locator('[cmdk-item][data-instrument="mexc:swap:BTC_USDT"]')).toHaveAttribute('aria-disabled','true'));
+    await search.focus();await page.keyboard.press('Enter');
+    await check('disabled option cannot replace selected spot',()=>expect(trigger).toContainText('Binance · 现货 · BTC / USDT'));
+    await search.fill('NO_MATCH_123');await check('empty results provide recovery',()=>expect(page.getByText('没有匹配的市场。试试币种名称，或清除交易所和类型筛选。')).toBeVisible());
+    await page.keyboard.press('Escape');await check('Escape returns market trigger focus',()=>expect(trigger).toBeFocused());
+    state.markets=originalMarkets;await refreshNavigation(page);
+    await page.getByRole('button',{name:'创建警报',exact:true}).click();
+    await page.getByRole('dialog').getByLabel('警报名称').focus();await page.keyboard.press('Shift+Tab');
+    await check('modal Tab remains trapped',async()=>assert(await page.getByRole('dialog').evaluate(d=>d.contains(document.activeElement))));
+    await page.keyboard.press('Escape');await check('modal closing restores creating button',()=>expect(page.getByRole('button',{name:'创建警报',exact:true})).toBeFocused());
+    chart = await page.locator('iframe').elementHandle();
+  });
+  await journey('03c response metadata compatibility, upstream diagnostics and no mutation replay', async () => {
+    state.omitRequestIds=true;await refreshNavigation(page);
+    await check('valid snapshot survives missing diagnostic IDs',()=>expect(page.locator('.connection-error')).toHaveCount(0));
+    state.omitRequestIds=false;
+    state.failNext={path:'/api/status',method:'GET',status:503,payload:{error:'upstream_unavailable'},headers:{'CF-Ray':'mock-ray-HKG'}};
+    await page.reload();await expect(page.locator('.connection-error')).toBeVisible();
+    await check('upstream JSON is correctly classified',()=>expect(page.locator('.connection-error')).toContainText('服务暂时不可用'));
+    await check('endpoint and HTTP status are actionable',()=>expect(page.locator('.connection-error')).toContainText('接口：/api/status，HTTP 503'));
+    await check('Cloudflare trace survives malformed envelope',()=>expect(page.locator('.connection-error')).toContainText('mock-ray-HKG'));
+    await page.getByRole('button',{name:'重新读取状态',exact:true}).click();await expect(page.locator('.connection-error')).toHaveCount(0);
+    await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
+    await dialog.getByLabel('警报名称').fill('MOCK uncertain write');await dialog.getByLabel('价格 · USDT').fill('65000');
+    state.failNext={path:'/api/alerts',method:'POST',status:502,raw:true};
+    const before=requests(state,'POST','/api/alerts').length;
+    await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
+    await check('malformed write response requires manual reconciliation',()=>expect(dialog.getByRole('alert')).toContainText('可能已经生效'));
+    await check('uncertain mutation dispatched exactly once',async()=>assert.equal(requests(state,'POST','/api/alerts').length,before+1));
+    await page.keyboard.press('Escape');chart=await page.locator('iframe').elementHandle();
   });
   await journey('04 latch retained on edit; explicit rearm warning and CAS', async () => {
     await row(page,'MOCK 投递不确定').getByRole('button',{name:'编辑',exact:true}).click(); await page.getByRole('dialog').getByLabel('价格 · USDT').fill('58000'); await page.getByRole('button',{name:'保存警报',exact:true}).click();
@@ -245,13 +303,13 @@ try {
   });
   await journey('05 channel retention, secret clearing and explicit test confirmation', async () => {
     await nav(page,'手机通知'); await page.getByRole('button',{name:'保存通知渠道'}).click();
-    await expect(page.getByRole('status').filter({hasText:'通知渠道已保存'})).toBeVisible();
+    await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知渠道已保存'})).toBeVisible();
     await check('blank keys omitted', async () => assert.deepEqual(requests(state,'PUT','/api/channels').at(-1).fields,['provider']));
     await check('save sends no test', async () => assert.equal(requests(state,'POST','/api/test-notification').length,0));
-    await page.getByLabel('替换用户密钥（留空保留）').fill(key); await page.getByLabel('应用令牌来源').selectOption('private'); await page.getByLabel(/^个人应用令牌/).fill(token); await page.getByRole('button',{name:'保存通知渠道'}).click();
+    await page.getByLabel('替换用户密钥（留空保留）').fill(key); await chooseSelect(page,'应用令牌来源','private'); await page.getByLabel(/^个人应用令牌/).fill(token); await page.getByRole('button',{name:'保存通知渠道'}).click();
     await check('key cleared after save', () => expect(page.getByLabel('替换用户密钥（留空保留）')).toHaveValue(''));
     await check('no reflected raw secrets', async () => { const text = await page.locator('body').innerText(); assert(!text.includes(key)&&!text.includes(token)); });
-    await page.getByLabel('应用令牌来源').selectOption('shared'); await page.getByRole('button',{name:'保存通知渠道'}).click();
+    await chooseSelect(page,'应用令牌来源','shared'); await page.getByRole('button',{name:'保存通知渠道'}).click();
     await expect(page.locator('dd').filter({hasText:'使用部署共享令牌'})).toBeVisible();
     await check('explicit null token', async () => assert.equal(requests(state,'PUT','/api/channels').at(-1).appTokenMode,'clear'));
     await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
@@ -262,14 +320,14 @@ try {
     await check('test deliberate confirm body', async () => assert.equal(requests(state,'POST','/api/test-notification').at(-1).confirm,true));
     await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
     await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('confirmed fixture test success', () => expect(page.getByRole('status').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
+    await check('confirmed fixture test success', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
   });
   await journey('06 settings CAS, bounded rate error, monitoring busy lock and stop confirmation', async () => {
     await page.getByLabel('每日通知尝试上限').fill('18'); state.failNext={path:'/api/settings',method:'PATCH',code:'generation_conflict',status:409,bump:true};
     await page.getByRole('button',{name:'保存提醒设置'}).click();
     await check('CAS conflict visible', () => expect(page.getByRole('alert')).toContainText('数据已在其他页面更新'));
     await page.getByRole('button',{name:'重新读取当前设置'}).click(); await page.getByLabel('每日通知尝试上限').fill('18');
-    await page.getByRole('button',{name:'保存提醒设置'}).click(); await expect(page.getByRole('status').filter({hasText:'通知设置已保存'})).toBeVisible();
+    await page.getByRole('button',{name:'保存提醒设置'}).click(); await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知设置已保存'})).toBeVisible();
     await check('fresh settings generation', async () => assert.equal(requests(state,'PATCH','/api/settings').at(-1).expectedGeneration,1));
     await page.clock.install(); await page.clock.pauseAt(new Date());
     state.failNext={path:'/api/test-notification',method:'POST',code:'rate_limited',status:429,headers:{'Retry-After':'10'}};
@@ -287,11 +345,11 @@ try {
     await check('shared wait blocks manual/visibility/timers/mutation: zero requests', async () => assert.equal(businessCount(),blockedCount));
     await check('remaining wait uses existing model clock', () => expect(page.locator('.connection-error')).toContainText('重试等待：1 秒'));
     await page.clock.runFor(1000);
-    await check('expiry automatically restores exactly one snapshot', async () => { await expect(page.locator('.connection-error')).toHaveCount(0); assert.equal(businessCount(),blockedCount+3); });
+    await check('expiry automatically restores exactly one snapshot', async () => { await expect(page.locator('.connection-error')).toHaveCount(0); assert.equal(businessCount(),blockedCount+2); });
     await check('expiry never automatically replays POST', async () => assert.equal(requests(state,'POST','/api/test-notification').length,testsBeforeWait));
     await page.getByRole('button',{name:'发送测试通知',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('expired POST requires explicit manual retry', () => expect(page.getByRole('status').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
+    await check('expired POST requires explicit manual retry', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
     await page.clock.resume();
     await nav(page,'行情与警报');
     let release; state.holdSettings={wait:new Promise(r=>{release=r;})};
@@ -305,9 +363,11 @@ try {
   });
   await journey('07 actual polling preserves chart, missing/stale price and embed failure', async () => {
     const before = requests(state,'GET','/api/status').length; const scriptsBefore=chartScripts;
+    const catalogsBefore=requests(state,'GET','/api/markets').length;
     await check('5-second status polling', () => expect.poll(()=>requests(state,'GET','/api/status').length,{timeout:7000}).toBeGreaterThan(before));
     await check('poll keeps chart node', async () => assert(await chart.evaluate(node=>node.isConnected)));
     await check('poll does not reload embed', async () => assert.equal(chartScripts,scriptsBefore));
+    await check('five-second price poll reuses catalog',async()=>assert.equal(requests(state,'GET','/api/markets').length,catalogsBefore));
     state.status.prices=[]; await refreshNavigation(page);
     await check('missing tick shown, no invented price', () => expect(page.getByText('尚未获得后台价格')).toBeVisible());
     state.status.prices=[{instrument:'BTC-USDT-SWAP',price:60000,timestamp:Date.now(),receivedAt:Date.now()}]; state.stale=true; await refreshNavigation(page);
@@ -316,8 +376,21 @@ try {
     await check('embed failure fallback', () => expect(page.getByText('图表暂时无法连接')).toBeVisible());
     await check('safe symbol external fallback', () => expect(page.getByRole('link',{name:'在 TradingView 打开',exact:true})).toHaveAttribute('href','https://www.tradingview.com/chart/?symbol=OKX%3ABTCUSDT.P'));
     state.chartFail=false; await page.getByRole('button',{name:'重试图表'}).click(); await expect(page.locator('iframe')).toBeVisible();
-    await page.locator('.chart-toolbar .market-search summary').click(); await page.getByLabel('市场搜索结果').selectOption('ETH-USDT-SWAP'); await expect(page.locator('iframe')).toBeVisible();
+    await page.getByRole('combobox',{name:'查看市场',exact:true}).click(); await page.getByRole('combobox',{name:'搜索市场',exact:true}).fill('ETH'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await expect(page.locator('iframe')).toBeVisible();
     await check('symbol change recreates once', async () => { const content=await page.locator('.tradingview-widget-container script').textContent(); assert.equal(JSON.parse(content).symbol,'OKX:ETHUSDT.P'); });
+  });
+  await journey('07b one-minute catalog expiry and immediate manual refresh', async () => {
+    const cached=await setup(browser,'desktop',true),p=cached.page,s=cached.state;
+    await p.clock.install({time:new Date()});await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    const catalogsBefore=requests(s,'GET','/api/markets').length;
+    for(let i=0;i<13;i++){await p.clock.runFor(5000);await new Promise(resolve=>setTimeout(resolve,60));}
+    await check('catalog refreshes after expiry without sliding renewal',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+1));
+    s.failNext={path:'/api/status',method:'GET',status:503,code:'service_unavailable'};
+    await p.clock.runFor(5000);await expect(p.locator('.connection-error')).toBeVisible();
+    const manualBefore=requests(s,'GET','/api/markets').length;
+    await p.getByRole('button',{name:'重新读取状态',exact:true}).click();await expect(p.locator('.connection-error')).toHaveCount(0);
+    await check('manual retry refreshes cached catalog immediately',async()=>assert.equal(requests(s,'GET','/api/markets').length,manualBefore+1));
+    await cached.context.close();
   });
   await journey('08 logout expires native cookie and discards delayed workspace response', async () => {
     let release; const held={wait:new Promise(r=>{release=r;})}; state.holdStatus=held;
@@ -334,7 +407,7 @@ try {
     await m.goto(origin+'/dashboard'); await expect(m.getByRole('switch')).toBeVisible(); await expect(m.locator('iframe')).toBeVisible();
     await noOverflow(m); await m.screenshot({path:join(outputs,'open-alert-ui-mobile-MOCK.png'),fullPage:true});
     const frame=await m.locator('iframe').elementHandle(); await m.getByRole('button',{name:'创建警报',exact:true}).click();
-    await check('mobile native modal focus', async () => assert(await m.getByRole('dialog').evaluate(d=>d.contains(document.activeElement)&&d.matches(':modal'))));
+    await check('mobile native modal focus', async () => assert(await m.getByRole('dialog').evaluate(d=>d.contains(document.activeElement)&&d.getAttribute('aria-modal') === 'true')));
     await noOverflow(m); await m.keyboard.press('Escape');
     await check('Escape closes modal', () => expect(m.getByRole('dialog')).toHaveCount(0));
     await check('modal restores focus', async () => assert(await m.getByRole('button',{name:'创建警报',exact:true}).evaluate(b=>b===document.activeElement)));
@@ -376,10 +449,10 @@ try {
     await check('date cooldown zero requests across all read triggers and POST',async()=>assert.equal(businessRequests(s).length,before));
     await check('HTTP-date countdown reaches one second',()=>expect(p.locator('.connection-error')).toContainText('重试等待：1 秒'));
     let release; s.holdStatus={wait:new Promise(r=>{release=r;})};
-    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length).toBe(before+3);
+    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length).toBe(before+2);
     for(let i=0;i<3;i++) { await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click(); await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange'))); }
     await p.clock.runFor(3000);
-    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length,before+3));
+    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length,before+2));
     release(); await check('visibility never aborts valid in-flight snapshot',()=>expect(p.locator('.connection-error')).toHaveCount(0));
     await check('snapshot refresh does not replay blocked editor POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
     // A mutation clicked during an admitted read must observe its delayed 429.
@@ -549,7 +622,12 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===14&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===17&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/14 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/17 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+}
+
+async function chooseSelect(page,label,value) {
+  await page.getByRole('combobox',{name:label,exact:true}).click();
+  await page.locator('[role="option"][data-value="'+value+'"]').click();
 }

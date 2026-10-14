@@ -1,5 +1,11 @@
 import { t, useLanguage } from '../i18n.js';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { Check, ChevronsUpDown } from 'lucide-react';
+import { Button } from './ui/button.js';
+import { Label } from './ui/label.js';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover.js';
+import { Command, CommandInput, CommandItem, CommandList } from './ui/command.js';
+import { FieldSelect } from './FieldSelect.js';
 import type { DirectoryMarket, MarketType, Venue } from '../markets.js';
 import { findMarket, marketIdentity, marketKey, marketLabel, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 export const MARKET_RESULT_LIMIT = 40;
@@ -15,6 +21,8 @@ export function MarketPicker({ label, markets, value, onChange, disabled = false
 }) {
     const language = useLanguage();
     const id = useId();
+    const searchRef = useRef<HTMLInputElement>(null);
+    const [open, setOpen] = useState(false);
     const [term, setTerm] = useState('');
     const [venue, setVenue] = useState<Venue | ''>('');
     const [type, setType] = useState<MarketType | ''>('');
@@ -38,33 +46,43 @@ export function MarketPicker({ label, markets, value, onChange, disabled = false
         matching.sort((a, b) => Number(selectableMarket(b)) - Number(selectableMarket(a)) || marketLabel(a.instrument, a).localeCompare(marketLabel(b.instrument, b), 'en'));
         return { results: matching.slice(0, MARKET_RESULT_LIMIT), count: matching.length };
     }, [markets, term, venue, type, language]);
-    const visibleValue = results.find(market => sameMarket(market.instrument, value))?.instrument ?? '';
     const unavailable = !!value && !available;
     return <div className="market-search">
-    <details>
-      <summary aria-disabled={disabled || undefined} onClick={event => { if (disabled)
-        event.preventDefault(); }}>
+    <Popover open={open && !disabled} onOpenChange={next => { if (!disabled || !next) setOpen(next); }}>
+      <PopoverTrigger asChild><Button type="button" className="market-search-trigger" role="combobox" aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
         <span className="market-search-label">{label}</span>
         <span className="market-search-selection">{value ? marketLabel(value, selected) : t("请选择市场")}{unavailable && <span className="amber-text">{t(" · 不可用，已保留")}</span>}</span>
-      </summary>
-      <div className="market-search-body">
-        <fieldset disabled={disabled}>
-          <label htmlFor={`${id}-term`}>{t("搜索市场")}<input id={`${id}-term`} type="search" maxLength={100} value={term} onChange={event => setTerm(event.target.value)} placeholder={t("币种、交易对或原生代码")} autoComplete="off" spellCheck={false} aria-describedby={`${id}-count`}/></label>
-          <div className="market-search-filters"><label htmlFor={`${id}-venue`}>{t("交易所")}<select id={`${id}-venue`} aria-label={t("交易所")} value={venue} onChange={event => setVenue(event.target.value as Venue | '')}><option value="">{t("全部交易所")}</option>{(Object.keys(venueLabels) as Venue[]).map(item => <option key={item} value={item}>{venueLabels[item]}</option>)}</select></label><label htmlFor={`${id}-type`}>{t("市场类型")}<select id={`${id}-type`} aria-label={t("市场类型")} value={type} onChange={event => setType(event.target.value as MarketType | '')}><option value="">{t("全部类型")}</option><option value="spot">{t("现货")}</option><option value="swap">{t("USDT 永续")}</option></select></label></div>
+        <ChevronsUpDown className="market-trigger-chevron" aria-hidden="true" />
+      </Button></PopoverTrigger>
+      <PopoverContent className="ui-market-popover" align="start" aria-label={t("搜索市场")} onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }}>
+        <Command shouldFilter={false} label={t("搜索市场")}>
+          <CommandInput ref={searchRef} id={`${id}-term`} aria-label={t("搜索市场")} maxLength={100} value={term} onValueChange={setTerm} placeholder={t("币种、交易对或原生代码")} autoComplete="off" spellCheck={false} aria-describedby={`${id}-count`} />
+          <div className="market-search-filters">
+            <Label htmlFor={`${id}-venue`}>{t("交易所")}<FieldSelect id={`${id}-venue`} label={t("交易所")} value={venue || 'all'} onValueChange={next => setVenue(next === 'all' ? '' : next as Venue)} options={[{value:'all',label:t("全部交易所")},...(Object.keys(venueLabels) as Venue[]).map(item => ({value:item,label:venueLabels[item]}))]} /></Label>
+            <Label htmlFor={`${id}-type`}>{t("市场类型")}<FieldSelect id={`${id}-type`} label={t("市场类型")} value={type || 'all'} onValueChange={next => setType(next === 'all' ? '' : next as MarketType)} options={[{value:'all',label:t("全部类型")},{value:'spot',label:t("现货")},{value:'swap',label:t("USDT 永续")}]} /></Label>
+          </div>
           <p className="small muted" id={`${id}-count`} role="status">{count > MARKET_RESULT_LIMIT ? t("找到 {0} 个市场，显示前 {1} 个。请缩小搜索或筛选范围。", count, MARKET_RESULT_LIMIT) : t("找到 {0} 个市场。", count)}</p>
-          {!!results.length && <label htmlFor={`${id}-results`}>{t("市场搜索结果")}<select id={`${id}-results`} className="market-search-results" size={Math.min(results.length + 1, 6)} value={visibleValue} onChange={event => {
-                const next = findMarket(markets, event.target.value);
-                if (selectableMarket(next))
-                    onChange(next!.instrument);
-            }} aria-describedby={`${id}-count ${id}-help`}><option value="" disabled>{visibleValue ? t("选择其他市场") : t("请选择搜索结果")}</option>{results.map(market => <option key={market.instrument} value={market.instrument} disabled={!selectableMarket(market)}>{marketLabel(market.instrument, market)}{selectableMarket(market) ? '' : t(" · 不可用")}</option>)}</select></label>}
-          {!results.length && <p className="market-search-empty">{markets.length ? t("没有匹配的市场。试试币种名称，或清除交易所和类型筛选。") : t("市场目录暂时为空。请重新读取状态。")}</p>}
-          <p className="small muted" id={`${id}-help`}>{t("选择后保存的是此交易所的此市场。搜索和筛选不会改变已选市场；不可用结果不能选择。")}</p>
-        </fieldset>
-        {error && <p className="form-error" role="alert">{t("目录刷新未完成：")}{error}</p>}
-        {(error || !markets.length) && onRetry && <button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</button>}
-        {stale && <p className="small amber-text">{t("市场目录已过期。保存时由服务端再次确认可用性。")}</p>}
-      </div>
-    </details>
+          <CommandList aria-label={t("市场搜索结果")} className="market-command-list">
+            {results.map(market => {
+              const identity=marketIdentity(market.instrument,market);
+              return <CommandItem key={market.instrument} value={market.instrument} data-instrument={market.instrument} aria-label={marketLabel(market.instrument,market)} disabled={!selectableMarket(market)} className="market-command-item" onSelect={() => {
+                if (disabled || !selectableMarket(market)) return;
+                onChange(market.instrument); setOpen(false);
+              }}>
+                <span className="market-result-symbol"><strong>{identity.base} / {identity.quote}</strong><small>{identity.nativeId}</small></span>
+                <span className="market-result-scope"><span>{identity.venue ? venueLabels[identity.venue] : ''}</span><small>{identity.type ? typeLabels[identity.type] : ''}{selectableMarket(market) ? '' : t(" · 不可用")}</small></span>
+                <Check className={sameMarket(market.instrument,value) ? 'market-check' : 'market-check invisible'} aria-hidden="true" />
+              </CommandItem>;
+            })}
+            {!results.length && <p className="market-search-empty">{markets.length ? t("没有匹配的市场。试试币种名称，或清除交易所和类型筛选。") : t("市场目录暂时为空。请重新读取状态。")}</p>}
+          </CommandList>
+          <div className="market-search-help"><p className="small muted">{t("选择后保存的是此交易所的此市场。搜索和筛选不会改变已选市场；不可用结果不能选择。")}</p>
+          {error && <p className="form-error" role="alert">{t("目录刷新未完成：")}{error}</p>}
+          {(error || !markets.length) && onRetry && <Button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</Button>}
+          {stale && <p className="small amber-text">{t("市场目录已过期。保存时由服务端再次确认可用性。")}</p>}</div>
+        </Command>
+      </PopoverContent>
+    </Popover>
     {unavailable && <p className="small amber-text market-selection-note">{t("已保留原市场。当前目录无法确认它可用，不能用它创建新警报。")}</p>}
   </div>;
 }

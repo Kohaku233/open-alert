@@ -1,26 +1,22 @@
-import { t } from '../i18n.js';
-import { Icon } from './Icon.js';
-import { useEffect, useId, useRef } from 'react';
+import { useRef } from 'react';
 import type { ReactNode } from 'react';
+import { Dialog as DialogRoot, DialogContent, DialogTitle } from './ui/dialog.js';
 export function Dialog({ title, children, onClose, busy = false }: {
     title: string;
     children: ReactNode;
     onClose: () => void;
     busy?: boolean;
 }) {
-    const ref = useRef<HTMLDialogElement>(null);
-    const id = useId();
-    useEffect(() => {
-        const dialog = ref.current!;
-        const previous = document.activeElement as HTMLElement | null;
-        dialog.showModal();
-        return () => { dialog.close(); previous?.focus(); };
-    }, []);
-    return <dialog ref={ref} aria-labelledby={id} onCancel={event => { event.preventDefault(); if (!busy)
-        onClose(); }}>
-    <div className="dialog-heading"><h2 id={id}>{title}</h2><button type="button" onClick={onClose} disabled={busy} aria-label={t("关闭对话框")}><Icon name="close"/></button></div>
-    {children}
-  </dialog>;
+    const previousFocus = useRef(document.activeElement as HTMLElement | null);
+    return <DialogRoot open onOpenChange={open => { if (!open && !busy) onClose(); }}>
+      <DialogContent className="app-dialog" closeDisabled={busy} aria-modal="true" aria-describedby={undefined}
+        onEscapeKeyDown={event => { if (busy) event.preventDefault(); }}
+        onPointerDownOutside={event => event.preventDefault()}
+        onCloseAutoFocus={event => { event.preventDefault(); previousFocus.current?.focus(); }}>
+        <div className="dialog-heading"><DialogTitle>{title}</DialogTitle></div>
+        {children}
+      </DialogContent>
+    </DialogRoot>;
 }
 export function FormError({ message }: {
     message: string;

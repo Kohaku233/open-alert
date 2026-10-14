@@ -1,3 +1,8 @@
+import { FieldSelect } from './FieldSelect.js';
+import { Checkbox } from './ui/checkbox.js';
+import { Button } from './ui/button.js';
+import { Input } from './ui/input.js';
+import { Label } from './ui/label.js';
 import { t } from '../i18n.js';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
@@ -59,9 +64,9 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
     <form onSubmit={event => void save(event)}><fieldset disabled={busy || pending || !!model.error}>
       <MarketPicker label={t("警报市场")} markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()}/>
       <p className="small muted">{t("始终按这里保存的交易所和市场判断，与当前参考图表选择无关。")}</p>
-      <label>{t("警报名称")}<input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：突破前高")} autoFocus/></label>
-      <div className="form-row"><label>{t("触发条件")}<select value={side} onChange={event => setSide(event.target.value as 'upper' | 'lower')}><option value="upper">{t("达到或高于")}</option><option value="lower">{t("达到或低于")}</option></select></label><label>{t("价格 · ")}{quote}<input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)}/></label></div>
-      <label className="check-label"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)}/>{t("启用这条警报")}</label>
+      <Label>{t("警报名称")}<Input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：突破前高")} autoFocus/></Label>
+      <div className="form-row"><Label>{t("触发条件")}<FieldSelect label={t("触发条件")} value={side} onValueChange={value => setSide(value as 'upper' | 'lower')} disabled={busy || pending || !!model.error} options={[{value:'upper',label:t("达到或高于")},{value:'lower',label:t("达到或低于")}]} /></Label><Label>{t("价格 · ")}{quote}<Input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)}/></Label></div>
+      <Label className="check-label"><Checkbox checked={enabled} onCheckedChange={checked => setEnabled(checked === true)} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/>{t("启用这条警报")}</Label>
     </fieldset>
     {!available && unchangedMarket && <p className="warning">{t("原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。")}</p>}
     {pending && <p className="warning">{t("该警报的通知正在排队或发送，请等待完成后再修改。")}</p>}
@@ -70,6 +75,6 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
     {alert?.triggered && <p className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</p>}
     {!data?.status.settings.enabled && <p className="small muted">{t("你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。")}</p>}
     <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")}</p>
-    <FormError message={error || model.error}/><button className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</button></form>
+    <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>
   </Dialog>;
 }

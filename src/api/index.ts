@@ -70,7 +70,7 @@ export function createApi(d:ApiDependencies) {
     if(current.generation!==expectedGeneration)throw new HttpError(409,'generation_conflict');
     return current;
   }
-  app.use('/api/*',async(c,next)=>{c.set('requestId',crypto.randomUUID());c.header('Cache-Control','no-store');c.header('X-Content-Type-Options','nosniff');await next();});
+  app.use('/api/*',async(c,next)=>{const requestId=crypto.randomUUID();c.set('requestId',requestId);c.header('X-Request-ID',requestId);c.header('Cache-Control','no-store');c.header('X-Content-Type-Options','nosniff');await next();});
   app.onError((error,c)=>{
     let problem:HttpError;
     if(error instanceof HttpError)problem=error;

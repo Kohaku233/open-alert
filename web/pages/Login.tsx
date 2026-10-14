@@ -1,3 +1,6 @@
+import { Button } from '../components/ui/button.js';
+import { Input } from '../components/ui/input.js';
+import { Label } from '../components/ui/label.js';
 import { t } from '../i18n.js';
 import { Icon } from '../components/Icon.js';
 import { useEffect, useState } from 'react';
@@ -109,15 +112,15 @@ export function Login({ onSignedIn }: {
     return <main className="login-layout">
     <section className="login-intro"><div className="signal-mark" aria-hidden="true"><span /><span /><span /></div><h1>{t("盯住价格，")}<br />{t("把提醒交给哨站。")}</h1><p>{t("Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。")}</p><div className="intro-detail"><strong>{t("达到或高于 / 达到或低于")}</strong><p>{t("以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。")}</p></div><p className="small muted">{t("后台运行时无需保持页面打开。")}</p></section>
     <section className="login-panel" aria-labelledby="login-heading"><h2 id="login-heading">{t("登录我的哨站")}</h2><p className="muted small">{capabilities ? registrationCopy : t("正在读取可用登录方式…")}</p>
-      {capError && <><FormError message={capError}/><button onClick={() => void loadCapabilities()}>{t("重试读取登录方式")}</button></>}
-      <button className="google-button" disabled={!capabilities?.google || busy} onClick={() => void google()}><Icon name="google"/>{t("使用 Google 登录")}</button>
+      {capError && <><FormError message={capError}/><Button onClick={() => void loadCapabilities()}>{t("重试读取登录方式")}</Button></>}
+      <Button className="google-button" disabled={!capabilities?.google || busy} onClick={() => void google()}><Icon name="google"/>{t("使用 Google 登录")}</Button>
       {capabilities && !capabilities.google && <p className="small muted">{t("此部署尚未配置 Google 登录。")}</p>}
       <div className="form-divider"><span>{t("邮箱验证码")}</span></div>
-      {!sentEmail ? <form onSubmit={event => void sendOtp(event)}><label>{t("邮箱地址")}<input type="email" autoComplete="email" autoCapitalize="none" required value={email} disabled={busy || !capabilities?.emailOtp} onChange={event => setEmail(event.target.value)} placeholder={t("你的邮箱地址")}/></label><button className="primary wide" disabled={busy || !capabilities?.emailOtp || cooldown > 0}>{busy ? t("正在发送…") : cooldown > 0 ? t("{0} 秒后可重新发送", cooldown) : t("发送登录验证码")}</button></form>
-            : <form onSubmit={event => void signIn(event)}><p className="otp-notice" role="status">{t("如果此邮箱符合登录条件，验证码将发送至 ")}<strong>{sentEmail}</strong>{t("。请查收邮件与垃圾邮件。")}</p><label>{t("邮件中的验证码")}<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoFocus value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, ''))} disabled={busy}/></label><button className="primary wide" disabled={busy || !capabilities?.emailOtp}>{busy ? t("正在验证…") : t("验证并登录")}</button><div className="inline-actions"><button type="button" disabled={busy || cooldown > 0} onClick={() => void sendOtp()}>{cooldown > 0 ? t("{0} 秒后重发", cooldown) : t("重新发送")}</button><button type="button" disabled={busy} onClick={() => { setSentEmail(''); setOtp(''); setError(''); }}>{t("更换邮箱")}</button></div></form>}
+      {!sentEmail ? <form onSubmit={event => void sendOtp(event)}><Label>{t("邮箱地址")}<Input type="email" autoComplete="email" autoCapitalize="none" required value={email} disabled={busy || !capabilities?.emailOtp} onChange={event => setEmail(event.target.value)} placeholder={t("你的邮箱地址")}/></Label><Button variant="default" className="primary wide" disabled={busy || !capabilities?.emailOtp || cooldown > 0}>{busy ? t("正在发送…") : cooldown > 0 ? t("{0} 秒后可重新发送", cooldown) : t("发送登录验证码")}</Button></form>
+            : <form onSubmit={event => void signIn(event)}><p className="otp-notice" role="status">{t("如果此邮箱符合登录条件，验证码将发送至 ")}<strong>{sentEmail}</strong>{t("。请查收邮件与垃圾邮件。")}</p><Label>{t("邮件中的验证码")}<Input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoFocus value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, ''))} disabled={busy}/></Label><Button variant="default" className="primary wide" disabled={busy || !capabilities?.emailOtp}>{busy ? t("正在验证…") : t("验证并登录")}</Button><div className="inline-actions"><Button type="button" disabled={busy || cooldown > 0} onClick={() => void sendOtp()}>{cooldown > 0 ? t("{0} 秒后重发", cooldown) : t("重新发送")}</Button><Button type="button" disabled={busy} onClick={() => { setSentEmail(''); setOtp(''); setError(''); }}>{t("更换邮箱")}</Button></div></form>}
       <FormError message={error}/>
       {capabilities && !capabilities.emailOtp && <p className="warning">{t("邮箱登录尚未启用。部署管理员需要配置可用的邮件服务，完成后才能发送验证码。")}</p>}
-      <button className="text-button setup-link" onClick={() => setShowSetup(value => !value)}>{t("部署登录方式说明")}</button>
+      <Button variant="ghost" className="text-button setup-link" onClick={() => setShowSetup(value => !value)}>{t("部署登录方式说明")}</Button>
       {showSetup && <div className="setup-note"><p>{t("Google：管理员在服务端配置 OAuth 客户端，回调地址为当前站点的 ")}<code>/api/auth/callback/google</code>。</p><p>{t("邮箱：管理员配置 SMTP（Node）或 Resend 与已验证的发件地址。密钥只配置在服务端。")}</p><p>{t("登录方式不可用时请联系部署管理员。")}</p></div>}
       <p className="small muted login-footnote">{t("会话由安全 Cookie 管理。此页面不会保存登录令牌。")}</p>
     </section>

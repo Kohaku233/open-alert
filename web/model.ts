@@ -8,6 +8,8 @@ export interface WorkspaceData {
     markets: Market[];
     marketStale: boolean;
 }
+interface CatalogData { markets: Market[]; stale: boolean }
+const CATALOG_REFRESH_MS = 60000;
 export function useWorkspace(onUnauthorized: () => void) {
     const [data, setData] = useState<WorkspaceData | null>(null);
     const [failure, setFailure] = useState<unknown>(null);
@@ -22,8 +24,9 @@ export function useWorkspace(onUnauthorized: () => void) {
     const mounted = useRef(true);
     const recoveryAt = useRef(0);
     const unauthorized = useRef(onUnauthorized);
+    const catalog = useRef<{ data: CatalogData; expiresAt: number } | null>(null);
     unauthorized.current = onUnauthorized;
-    const read = useCallback((duringMutation = false): Promise<void> => {
+    const read = useCallback((duringMutation = false, forceCatalog = false): Promise<void> => {
         if (!mounted.current || (lock.current && !duringMutation))
             return Promise.resolve();
         if (current.current)
@@ -39,6 +42,8 @@ export function useWorkspace(onUnauthorized: () => void) {
         // An admitted manual/poll read also satisfies pending expiry recovery.
         recoveryAt.current = 0;
         const controller = new AbortController();
+        const cachedCatalog = catalog.current;
+        const fetchCatalog = forceCatalog || !cachedCatalog || Date.now() >= cachedCatalog.expiresAt;
         const promise = (async () => {
             try {
                 // Keep the flight until all siblings settle, including a delayed 429 header.
@@ -48,10 +53,8 @@ export function useWorkspace(onUnauthorized: () => void) {
                     request<{
                         alerts: Alert[];
                     }>('/api/alerts', 'GET', undefined, { signal: controller.signal }),
-                    request<{
-                        markets: Market[];
-                        stale: boolean;
-                    }>('/api/markets', 'GET', undefined, { signal: controller.signal }),
+                    fetchCatalog ? request<CatalogData>('/api/markets', 'GET', undefined, { signal: controller.signal })
+                        : Promise.resolve(cachedCatalog!.data),
                 ]);
                 if (!mounted.current || controller.signal.aborted)
                     return;
@@ -61,6 +64,10 @@ export function useWorkspace(onUnauthorized: () => void) {
                 const [status, alerts, markets] = results;
                 if (status.status !== 'fulfilled' || alerts.status !== 'fulfilled' || markets.status !== 'fulfilled')
                     return;
+                // Only a fetched directory advances expiry; frequent quote reads
+                // must not keep an old catalog alive indefinitely.
+                if (fetchCatalog)
+                    catalog.current = { data: markets.value, expiresAt: Date.now() + CATALOG_REFRESH_MS };
                 setData({ status: status.value, alerts: alerts.value.alerts, markets: markets.value.markets, marketStale: markets.value.stale });
                 // A separate business request may have received 429 while this snapshot ran.
                 const cooldown = getBusinessCooldown();
@@ -85,7 +92,7 @@ export function useWorkspace(onUnauthorized: () => void) {
         current.current = { controller, promise };
         return promise;
     }, []);
-    const refresh = useCallback(() => read(), [read]);
+    const refresh = useCallback(() => read(false, true), [read]);
     useEffect(() => {
         mounted.current = true;
         const onCooldown = (cause: AppError) => { recoveryAt.current = cause.retryAt; setFailure(cause); };
@@ -99,16 +106,16 @@ export function useWorkspace(onUnauthorized: () => void) {
             setNow(time);
             if (recoveryAt.current && time >= recoveryAt.current && !document.hidden && !lock.current && !current.current) {
                 recoveryAt.current = 0;
-                void refresh();
+                void read();
             }
         }, 1000);
         const interval = window.setInterval(() => { if (!document.hidden && !lock.current)
-            void refresh(); }, 5000);
+            void read(); }, 5000);
         const onVisible = () => { if (!document.hidden && !lock.current)
             void refresh(); };
         document.addEventListener('visibilitychange', onVisible);
         return () => { mounted.current = false; unsubscribe(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
-    }, [refresh]);
+    }, [refresh, read]);
     const mutate = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
         if (!mounted.current)
             throw new DOMException('Workspace unmounted', 'AbortError');
@@ -125,7 +132,7 @@ export function useWorkspace(onUnauthorized: () => void) {
                 throw new DOMException('Workspace unmounted', 'AbortError');
             assertBusinessReady();
             const result = await action();
-            await read(true);
+            await read(true, true);
             return result;
         }
         catch (cause) {
@@ -133,7 +140,7 @@ export function useWorkspace(onUnauthorized: () => void) {
             // in particular a 429 must never trigger a follow-up burst or replay the action.
             if (mounted.current && cause instanceof AppError) {
                 if (cause.code === 'generation_conflict')
-                    await read(true);
+                    await read(true, true);
                 if (cause.status === 401)
                     unauthorized.current();
             }

@@ -66,7 +66,7 @@ async function stopServer() {
 async function startServer() {
   server=launch([...preloads,...marketPreload,join(root,'dist/server/runtime/node.js')],`compiled-server-${children.length}`);
   let readinessStatus = null;
-  try { await until(async()=>{if(server.exit)throw new Error(`Server exited early: ${server.logs}`);try {const r=await fetch(origin+'/api/auth-capabilities',{signal:AbortSignal.timeout(400)});readinessStatus=r.status;return r.ok&&(await r.json()).data.emailOtp;}catch{return false;}},'compiled server readiness'); } catch(error) { throw new Error(`${error.message}; HTTP status ${readinessStatus}; ${server.logs}`); }
+  try { await until(async()=>{if(server.exit)throw new Error(`Server exited early: ${server.logs}`);try {const r=await fetch(origin+'/api/auth-capabilities',{signal:AbortSignal.timeout(400)});readinessStatus=r.status;return r.ok&&(await r.json()).data.emailOtp;}catch{return false;}},'compiled server readiness',12000); } catch(error) { throw new Error(`${error.message}; HTTP status ${readinessStatus}; ${server.logs}`); }
   assert.match(server.logs,/setup ready/); assertions++;
 }
 async function api(context,path,method='GET',body,headers={}) {
@@ -106,11 +106,12 @@ async function login(profile,email,rejectWrong=false) {
 const nav=(page,name)=>page.getByRole('navigation',{name:'主导航'}).getByRole('link',{name,exact:true}).click();
 const row=(page,name)=>page.locator('.alert-row').filter({has:page.getByText(name,{exact:true})});
 async function selectMarket(picker,instrument,venue='okx',type='swap') {
-  await picker.locator('summary').click();
-  await picker.getByLabel('搜索市场').fill(instrument);
-  await picker.getByLabel('交易所',{exact:true}).selectOption(venue);
-  await picker.getByLabel('市场类型',{exact:true}).selectOption(type);
-  await picker.getByLabel('市场搜索结果').selectOption(instrument);
+  const page=picker.page();
+  await picker.getByRole('combobox').click();
+  await page.getByRole('combobox',{name:'搜索市场',exact:true}).fill(instrument);
+  await chooseSelect(page,'交易所',venue);
+  await chooseSelect(page,'市场类型',type);
+  await page.locator('[cmdk-item][data-instrument="'+instrument+'"]').click();
 }
 async function createAlert(profile,name,instrument,threshold,enabled=true) {
   const {page,context}=profile;await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
@@ -188,11 +189,11 @@ try {
     await check('mobile real UI has no horizontal overflow',async()=>assert(await bob.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)));
   });
   await journey('05 isolated settings, encrypted channel and local provider test',async()=>{
-    await nav(alice.page,'手机通知');await alice.page.getByLabel('Pushover 用户密钥').fill('LOCALUSER'.padEnd(30,'1'));await alice.page.getByLabel('应用令牌来源').selectOption('private');await alice.page.getByLabel(/^个人应用令牌/).fill('LOCALTOKEN'.padEnd(30,'2'));await alice.page.getByRole('button',{name:'保存通知渠道'}).click();await expect(alice.page.getByRole('status').filter({hasText:'通知渠道已保存'})).toBeVisible();
+    await nav(alice.page,'手机通知');await alice.page.getByLabel('Pushover 用户密钥').fill('LOCALUSER'.padEnd(30,'1'));await chooseSelect(alice.page,'应用令牌来源','private');await alice.page.getByLabel(/^个人应用令牌/).fill('LOCALTOKEN'.padEnd(30,'2'));await alice.page.getByRole('button',{name:'保存通知渠道'}).click();await expect(alice.page.locator('[data-sonner-toast]').filter({hasText:'通知渠道已保存'})).toBeVisible();
     await check('saving channel does not deliver a notification',async()=>assert.equal(transport.filter(e=>e.operation==='message').length,0));
-    await alice.page.getByLabel('每日通知尝试上限').fill('7');await alice.page.getByRole('button',{name:'保存提醒设置'}).click();await expect(alice.page.getByRole('status').filter({hasText:'通知设置已保存'})).toBeVisible();
+    await alice.page.getByLabel('每日通知尝试上限').fill('7');await alice.page.getByRole('button',{name:'保存提醒设置'}).click();await expect(alice.page.locator('[data-sonner-toast]').filter({hasText:'通知设置已保存'})).toBeVisible();
     await check('channel metadata and settings do not leak to Bob',async()=>{const own=await ok(alice.context,'/api/status'),other=await ok(bob.context,'/api/status');assert.equal(own.channel.privateTokenPresent,true);assert.equal(own.settings.dailyLimit,7);assert.equal(other.channel.configured,false);assert.equal(other.channel.userKeyPresent,false);assert.equal(other.settings.dailyLimit,20);assert.equal(JSON.stringify(own).includes('LOCALUSER'),false);});
-    await alice.page.getByRole('button',{name:'发送测试通知',exact:true}).click();await alice.page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();await expect(alice.page.getByRole('status').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible();
+    await alice.page.getByRole('button',{name:'发送测试通知',exact:true}).click();await alice.page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();await expect(alice.page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible();
     await check('compiled provider sends once only through fake transport',async()=>{assert.equal(transport.filter(e=>e.operation==='message').length,1);assert.equal(transport.find(e=>e.operation==='message').priority,'0');assert.equal((await ok(alice.context,'/api/status')).daily.attempts,1);assert.equal((await ok(bob.context,'/api/status')).daily.attempts,0);});
     const db=new DatabaseSync(environment.SQLITE_PATH,{readOnly:true});
     try {
@@ -257,4 +258,9 @@ finally {
   const evidence={mode:'REAL_LOCAL',scope:'Compiled Node entry point + actual dist/web, real SQLite/Better Auth OTP/session cookies, API and scheduler; public CCXT Pro methods and outbound notification fetch substituted only in test children',passed:results.length===7&&results.every(r=>r.passed)&&!process.exitCode,assertions,journeys:results,apiRequests,generatedOtpEmails:messages.filter(m=>m.otp).length,localEmailMessages:messages.length,providerCalls:transport,fixtureReady,compiledInputs,guardEvidence:{guardProbes,browserBlocked,unexpectedAttempts:violations.length},dependencyCache:process.env.OPEN_ALERT_TEST_NODE_MODULES??null,childExits:children.map(({label,exit})=>({label,...exit})),browserErrors,violations,cleanupErrors,durationMs:Date.now()-startedAt,limitations:['SQLite only; PostgreSQL and Cloudflare not covered by this script','Console fakeemail captures real generated OTP; SMTP/Resend external delivery not tested','Public CCXT Pro classes use test-only loadMarkets/watchTrades/fetchTrades fixtures for Binance/OKX/MEXC; HTTP/WS exchange parsers and live connectivity are not covered','Pushover is a local process fetch substitute; no live provider requests','TradingView embed blocked; mobile is Chromium iPhone emulation, not iOS Safari','Built assets and compiled server must be rebuilt before execution']};
   await writeFile(join(outputs,'open-alert-browser-check-results-LOCAL.json'),JSON.stringify(evidence,null,2)+'\n');
   console.log(`REAL local result: ${results.filter(r=>r.passed).length}/7 journeys, ${assertions} successful checks; ${apiRequests} actual API requests; ${messages.filter(m=>m.otp).length} real generated OTP emails; cleanup failures=${cleanupErrors.length}; ${evidence.durationMs}ms`);
+}
+
+async function chooseSelect(page,label,value) {
+  await page.getByRole('combobox',{name:label,exact:true}).click();
+  await page.locator('[role="option"][data-value="'+value+'"]').click();
 }

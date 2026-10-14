@@ -1,4 +1,7 @@
 export const english: Record<string, string> = {
+  "服务暂时返回异常数据，请稍后重新读取状态。": "The service returned unexpected data. Refresh status shortly.",
+  "Cloudflare 要求浏览器验证。请刷新页面完成验证后重试。": "Cloudflare requires browser verification. Reload, complete verification, then retry.",
+  " 接口：{0}，HTTP {1}。": " Endpoint: {0}; HTTP {1}.",
   "未收到操作结果，可能已经生效。请重新读取状态；测试通知请先查看手机，避免重复发送。": "No response received; the action may have succeeded. Refresh status. Check your phone before sending another test.",
   "无法连接服务，请检查网络后重试。": "Cannot reach the service. Check your connection and retry.",
   "请求过于频繁，请稍后重试。": "Too many requests. Please try again later.",
