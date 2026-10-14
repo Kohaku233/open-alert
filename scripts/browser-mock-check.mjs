@@ -120,6 +120,13 @@ async function setup(browser, profile, authenticated = false) {
         if (state.holdStatus) { const release = state.holdStatus; state.holdStatus = null; await release.wait; }
         return ok(snapshot);
       }
+      if (path === '/api/quote' && method === 'GET') {
+        if (state.quoteFail) return fail('service_unavailable',503);
+        const instrument=url.searchParams.get('instrument');
+        if (state.quoteHold) await state.quoteHold;
+        const quoteNow=await page.evaluate(()=>Date.now());
+        return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
+      }
       if (path === '/api/markets' && method === 'GET') return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
       if (path === '/api/alerts' && method === 'GET') return ok({ alerts: state.alerts });
       if (path === '/api/alerts' && method === 'POST') {
@@ -368,10 +375,12 @@ try {
     await check('poll keeps chart node', async () => assert(await chart.evaluate(node=>node.isConnected)));
     await check('poll does not reload embed', async () => assert.equal(chartScripts,scriptsBefore));
     await check('five-second price poll reuses catalog',async()=>assert.equal(requests(state,'GET','/api/markets').length,catalogsBefore));
-    state.status.prices=[]; await refreshNavigation(page);
-    await check('missing tick shown, no invented price', () => expect(page.getByText('尚未获得后台价格')).toBeVisible());
-    state.status.prices=[{instrument:'BTC-USDT-SWAP',price:60000,timestamp:Date.now(),receivedAt:Date.now()}]; state.stale=true; await refreshNavigation(page);
-    await check('stale tick explicit', () => expect(page.getByText(/价格已过期，停止触发/)).toBeVisible());
+    state.status.prices=[]; state.quotePrice=60123; await refreshNavigation(page);
+    await check('viewing quote does not need monitored tick', () => expect(page.locator('.price-block')).toContainText('60,123'));
+    state.quoteFail=true;
+    await check('failed quote retains old value and shows pause honestly', () => expect(page.getByText(/报价更新暂停/)).toBeVisible({timeout:7000}));
+    await check('quote error is visible', () => expect(page.getByText(/行情报价更新失败/)).toBeVisible());
+    state.quoteFail=false;
     state.chartFail=true; await page.getByRole('button',{name:'重连图表'}).click();
     await check('embed failure fallback', () => expect(page.getByText('图表暂时无法连接')).toBeVisible());
     await check('safe symbol external fallback', () => expect(page.getByRole('link',{name:'在 TradingView 打开',exact:true})).toHaveAttribute('href','https://www.tradingview.com/chart/?symbol=OKX%3ABTCUSDT.P'));
@@ -440,7 +449,7 @@ try {
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':new Date(time.getTime()+17000).toUTCString()}};
     await p.clock.runFor(5000);
     await check('HTTP-date parsed against browser now',()=>expect(p.locator('.connection-error')).toContainText('重试等待：12 秒'));
-    const before = businessRequests(s).length;
+    const before = businessRequests(s).length, quoteBefore=requests(s,'GET','/api/quote').length;
     await check('editor visibly disabled during cooldown',()=>expect(p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true})).toBeDisabled());
     await check('editor blocked before action callback',()=>expect(p.getByRole('dialog').getByRole('alert')).toContainText('请求过于频繁'));
     await p.keyboard.press('Escape');
@@ -449,10 +458,10 @@ try {
     await check('date cooldown zero requests across all read triggers and POST',async()=>assert.equal(businessRequests(s).length,before));
     await check('HTTP-date countdown reaches one second',()=>expect(p.locator('.connection-error')).toContainText('重试等待：1 秒'));
     let release; s.holdStatus={wait:new Promise(r=>{release=r;})};
-    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length).toBe(before+2);
+    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore).toBe(before+2);
     for(let i=0;i<3;i++) { await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click(); await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange'))); }
     await p.clock.runFor(3000);
-    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length,before+2));
+    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+2));
     release(); await check('visibility never aborts valid in-flight snapshot',()=>expect(p.locator('.connection-error')).toHaveCount(0));
     await check('snapshot refresh does not replay blocked editor POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
     // A mutation clicked during an admitted read must observe its delayed 429.
@@ -488,13 +497,13 @@ try {
     for(const [name,value,raw] of [['invalid','nonsense',false],['missing',null,false],['past','Mon, 12 Oct 2026 13:00:00 GMT',false],['negative','-2',false],['zero','0',true]]) {
       s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:value===null?{}:{'Retry-After':value},raw};
       await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：60 秒');
-      const before = businessRequests(s).length;
+      const before = businessRequests(s).length, quoteBefore=requests(s,'GET','/api/quote').length;
       await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click();
       await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await p.clock.runFor(59000);
       await check(`${name} header fallback zero requests before expiry`,async()=>assert.equal(businessRequests(s).length,before));
       await p.clock.runFor(1000);
-      await check(`${name} header fallback automatically resumes at expiry`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length,before+3);});
+      await check(`${name} header fallback automatically resumes at expiry`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+3);});
     }
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':'120'}};
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');
@@ -616,15 +625,47 @@ try {
     await check('timeout leaves email alternative enabled',()=>expect(p.getByRole('button',{name:'发送登录验证码'})).toBeEnabled());
     await fixture.context.close();
   });
+  await journey('15 selected market independent quotes, alert defaults/filter and MEXC perpetual widget',async()=>{
+    const fixture=await setup(browser,'desktop',true),p=fixture.page,s=fixture.state;
+    const template=s.markets[0],originalAlerts=structuredClone(s.alerts);
+    s.markets=['binance','okx','mexc'].flatMap(venue=>['spot','swap'].map(type=>{
+      const nativeId=venue==='okx'?`BTC-USDT${type==='swap'?'-SWAP':''}`:venue==='mexc'&&type==='swap'?'BTC_USDT':'BTCUSDT';
+      return {...template,instrument:venue==='okx'&&type==='swap'?nativeId:`${venue}:${type}:${nativeId}`,venue,type,nativeId,base:'BTC',symbol:`BTC/USDT${type==='swap'?':USDT':''}`,settle:type==='swap'?'USDT':null,tradingViewSymbol:`${venue.toUpperCase()}:BTCUSDT${type==='swap'?'.P':''}`};
+    }));
+    s.status.prices=[];
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    for(const market of s.markets){
+      await p.getByRole('combobox',{name:'查看市场',exact:true}).click();
+      await chooseSelect(p,'交易所',market.venue);await chooseSelect(p,'市场类型',market.type);
+      await p.locator(`[cmdk-item][data-instrument="${market.instrument}"]`).click();
+      await check(`${market.instrument} independent quote without monitored tick`,()=>expect(p.locator('.price-block')).toContainText('最新报价'));
+      await check(`${market.instrument} exact widget mapping`,async()=>assert.equal(JSON.parse(await p.locator('.tradingview-widget-container script').textContent()).symbol,market.tradingViewSymbol));
+      await check(`${market.instrument} panel scope`,()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.filter(a=>a.instrument===market.instrument).length));
+      await p.getByRole('button',{name:'创建警报',exact:true}).click();
+      await check(`${market.instrument} new alert inherits exact venue and product`,()=>expect(p.getByRole('dialog').getByRole('combobox',{name:'警报市场'})).toContainText(`${market.venue==='binance'?'Binance':market.venue.toUpperCase()} · ${market.type==='spot'?'现货':'USDT 永续'}`));
+      if(market.venue==='mexc'&&market.type==='swap'){
+        await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK MEXC perpetual');
+        await p.getByRole('dialog').getByLabel('价格 · USDT').fill('65000');
+        await p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true}).click();await expect(p.getByRole('dialog')).toHaveCount(0);
+        await check('saved alert preserves exact MEXC perpetual instrument',async()=>assert.equal(s.alerts.at(-1).instrument,'mexc:swap:BTC_USDT'));
+      }else{await p.keyboard.press('Escape');}
+    }
+    await check('switching never mutates existing alert identities/generations',async()=>assert.deepEqual(s.alerts.slice(0,originalAlerts.length),originalAlerts));
+    await p.getByRole('button',{name:'全部警报',exact:true}).click();
+    await check('all alerts management remains available',()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.length+1));
+    await p.getByRole('button',{name:'当前市场',exact:true}).click();
+    await check('current MEXC market only shows MEXC rule',()=>expect(p.locator('.alert-row')).toHaveCount(1));
+    await fixture.context.close();
+  });
   await check('no runtime JS errors', async () => assert.deepEqual(runtimeErrors,[]));
   await check('no unknown API or schema violations', async () => assert.deepEqual(violations,[]));
   await check('no external requests except intercepted embed', async () => assert.deepEqual(externalAttempts,[]));
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===17&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===18&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/17 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/18 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

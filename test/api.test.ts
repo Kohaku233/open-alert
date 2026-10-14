@@ -20,7 +20,7 @@ async function fixture(overrides:Record<string,string>={}) {
  let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0;
  let catalogOverride:CatalogSnapshot|undefined;
  const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
- const app=createApp({...services,notifications,catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const app=createApp({...services,notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
  const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
  async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
  const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
@@ -166,5 +166,17 @@ test('bootstrap is atomic under concurrent verified sessions and missing admin t
   const missing=await f.call('/api/admin/users/no-such-user','PATCH',{disabled:true},winner.cookie);
   assert.equal(missing.status,404,await missing.clone().text());
   assert.equal((await f.db.query('SELECT user_id FROM user_settings WHERE user_id=?',['no-such-user'])).length,0);
+ }finally{await f.close();}
+});
+
+test('view quote requires session, validates canonical market and never saves or wakes alert monitoring',async()=>{
+ const f=await fixture();try{
+  assert.equal((await f.call('/api/quote?instrument=BTC-USDT-SWAP')).status,401);
+  const alice=await f.login('quote@example.com');
+  for(const query of ['', '?instrument=forged', '?instrument=BTC-USDT-SWAP&extra=1', '?instrument=BTC-USDT-SWAP&instrument=ETH-USDT-SWAP', '?instrument=FAKE-USDT-SWAP'])assert.equal((await f.call('/api/quote'+query,'GET',undefined,alice.cookie)).status,400);
+  const response=await f.body(await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie));
+  assert.equal(response.data.instrument,'BTC-USDT-SWAP');assert.equal(response.data.price,123);assert.equal(response.data.timestamp,null);
+  assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,0);assert.equal((await f.repositories.settings.get(alice.id))!.enabled,false);assert.equal(f.wakes(),0);
+  f.setStale(true);assert.equal((await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie)).status,503);
  }finally{await f.close();}
 });

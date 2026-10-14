@@ -7,11 +7,12 @@ import { useEffect, useState } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import type { WorkspaceModel } from '../model.js';
 import { api, errorText } from '../api.js';
-import { alertState, breached, formatPrice, formatTime, freshTick, healthLabels, outcomeLabels, safeChartSymbol } from '../utils.js';
+import { alertState, breached, formatPrice, formatTime, healthLabels, outcomeLabels, safeChartSymbol } from '../utils.js';
 import { TradingChart } from '../components/TradingChart.js';
 import { AlertEditor } from '../components/AlertEditor.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { MarketPicker } from '../components/MarketPicker.js';
+import { useMarketQuote } from '../useMarketQuote.js';
 import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 type ConfirmAction = {
     kind: 'delete' | 'rearm';
@@ -30,6 +31,7 @@ export function Dashboard({ model, active, notify, navigate }: {
     useEffect(() => { if (active)
         setChartVisited(true); }, [active]);
     const [selected, setSelected] = useState('');
+    const [showAllAlerts, setShowAllAlerts] = useState(false);
     const [editor, setEditor] = useState<{
         alert: Alert | null;
     } | null>(null);
@@ -43,13 +45,15 @@ export function Dashboard({ model, active, notify, navigate }: {
         }
     }, [data?.markets, selected]);
     const market = useRetainedMarket(data?.markets ?? [], selected);
+    const quoteState = useMarketQuote(selected, active && selectableMarket(findMarket(data?.markets ?? [], selected)));
     if (!data)
         return <section hidden={!active} className="page-loading"><h1>{t("我的监控")}</h1><p>{error || t("正在读取你的警报与行情…")}</p></section>;
     const available = selectableMarket(findMarket(data.markets, selected));
     const identity = marketIdentity(selected, market);
     const source = identity.venue ? venueLabels[identity.venue] : t("所选交易所");
-    const tick = data.status.prices.find(item => sameMarket(item.instrument, selected));
-    const fresh = freshTick(tick);
+    const tick = quoteState.quote;
+    const fresh = available && !!tick && !quoteState.error && Date.now() - tick.observedAt < 15000;
+    const visibleAlerts = showAllAlerts ? data.alerts : data.alerts.filter(alert => sameMarket(alert.instrument, selected));
     const settings = data.status.settings;
     const marketMode = data.status.scheduler.marketMode;
     const modeCopy = marketMode === 'polling'
@@ -96,23 +100,25 @@ export function Dashboard({ model, active, notify, navigate }: {
     const rearmHit = confirm && confirm.kind === 'rearm' && breached(confirm.alert.side, confirm.alert.threshold, rearmTick);
     return <section hidden={!active} aria-label={t("行情与警报")}>
     <div className="page-heading"><h1>{t("行情与警报")}</h1><Button variant="default" className="primary" onClick={() => setEditor({ alert: null })} disabled={busy || !available || !!error || data.alerts.length >= 20}><Icon name="plus"/>{t("创建警报")}</Button></div>
-    <div className="market-header"><div className="market-title"><h2>{identity.base || identity.nativeId || '—'} <span className="quote">/ {identity.quote || '—'}</span></h2><span className="contract">{source} · {identity.type ? typeLabels[identity.type] : t("市场类型未知")}</span></div><div className="price-block"><strong>{tick ? formatPrice(tick.price) : '—'}{tick && <small className="price-unit"> {marketQuote(selected, market)}</small>}</strong><span>{tick ? `${fresh ? t("{0} 最新成交价", source) : t("价格已过期，停止触发")} · ${formatTime(tick.timestamp)}` : t("尚未获得后台价格")}</span></div><div className="health"><span className={`dot ${fresh ? 'live' : 'stale'}`}/><span>{fresh ? t("成交价新鲜") : tick ? t("成交价已过期") : t("暂无新鲜成交价")}</span><small>{t("今日通知尝试 ")}{data.status.daily.attempts} / {data.status.daily.limit}</small></div></div>
+    <div className="market-header"><div className="market-title"><h2>{identity.base || identity.nativeId || '—'} <span className="quote">/ {identity.quote || '—'}</span></h2><span className="contract">{source} · {identity.type ? typeLabels[identity.type] : t("市场类型未知")}</span></div><div className="price-block"><strong>{tick ? formatPrice(tick.price) : '—'}{tick && <small className="price-unit"> {marketQuote(selected, market)}</small>}</strong><span>{tick ? `${fresh ? t("{0} 最新报价", source) : t("报价更新暂停")} · ${formatTime(tick.observedAt)}` : quoteState.error ? t("报价暂时不可用") : t("正在获取所选市场报价…")}</span></div><div className="health"><span className={`dot ${fresh ? 'live' : 'stale'}`}/><span>{fresh ? t("报价已更新") : tick ? t("报价待更新") : t("等待市场报价")}</span><small>{t("今日通知尝试 ")}{data.status.daily.attempts} / {data.status.daily.limit}</small></div></div>
+    {quoteState.error && <p className="warning inline-warning" role="status">{t("行情报价更新失败，将自动重试。")}{quoteState.error}</p>}
     <div className="workspace"><section className="chart-panel" aria-label={t("TradingView 参考图表")}><div className="chart-toolbar"><MarketPicker label={t("查看市场")} markets={data.markets} value={selected} onChange={setSelected} disabled={busy} stale={data.marketStale} error={error} onRetry={() => void model.refresh()}/></div>
       {chartVisited && market && safeChartSymbol(market.tradingViewSymbol, market) ? <TradingChart symbol={market.tradingViewSymbol} source={source}/> : <div className="empty-chart"><div><strong>{selected ? t("此市场暂无已验证的参考图表") : t("请选择要查看的市场")}</strong><p>{t("警报使用所选交易所的后台最新成交价；TradingView 仅供参考。")}</p>{!data.markets.length && <p>{t("市场目录暂时不可用，请重新读取状态。")}</p>}</div></div>}
       {data.marketStale && <p className="warning inline-warning">{t("市场目录已过期，新增市场仍需服务端确认支持。")}</p>}
     </section><aside className="alerts-panel"><div className="panel-heading"><div><h2>{t("价格警报 ")}<span>{data.alerts.length} / 20</span></h2><p>{t("每条触发一次，重新武装后再生效")}</p></div><Tooltip><TooltipTrigger asChild><Button type="button" size="icon" className="icon-button" aria-label={t("创建价格警报")} disabled={busy || !available || !!error || data.alerts.length >= 20} onClick={() => setEditor({ alert: null })}><Icon name="plus"/></Button></TooltipTrigger><TooltipContent>{t("创建价格警报")}</TooltipContent></Tooltip></div>
       <div className="global-switch"><span>{t("监控总开关")}</span><Switch checked={settings.enabled} aria-label={t("监控总开关")} className="ui-monitor-switch" disabled={busy || (!settings.enabled && (!data.status.channel.configured || settingsPending || !!error))} onCheckedChange={checked => checked ? void enableMonitoring() : openConfirm({ kind: 'disable' })}/></div><p className="limits-note">{t("最多 20 条警报、8 个市场；包含暂停的警报。")}</p>
-      <div className="alerts-list">{data.alerts.length ? data.alerts.map(alert => <article className="alert-row" key={alert.id}><div className="alert-top"><strong className="alert-name">{alert.name}</strong><span className={`state-label ${alert.triggered ? 'latched' : ''} ${alert.last?.outcome === 'uncertain' ? 'uncertain' : ''}`}>{alertState(alert)}</span></div><Button className="instrument-button" onClick={() => setSelected(alert.instrument)}>{marketLabel(alert.instrument, findMarket(data.markets, alert.instrument))}</Button><div className="alert-detail"><span>{alert.side === 'upper' ? t("达到或高于") : t("达到或低于")}</span><strong>{formatPrice(alert.threshold)} <small>{marketQuote(alert.instrument, findMarket(data.markets, alert.instrument))}</small></strong></div>
+      <div className="alert-scope" role="group" aria-label={t("警报范围")}><Button variant="ghost" aria-pressed={!showAllAlerts} onClick={() => setShowAllAlerts(false)}>{t("当前市场")}</Button><Button variant="ghost" aria-pressed={showAllAlerts} onClick={() => setShowAllAlerts(true)}>{t("全部警报")}</Button><small>{visibleAlerts.length}</small></div>
+      <div className="alerts-list">{visibleAlerts.length ? visibleAlerts.map(alert => <article className="alert-row" key={alert.id}><div className="alert-top"><strong className="alert-name">{alert.name}</strong><span className={`state-label ${alert.triggered ? 'latched' : ''} ${alert.last?.outcome === 'uncertain' ? 'uncertain' : ''}`}>{alertState(alert)}</span></div><Button className="instrument-button" onClick={() => setSelected(alert.instrument)}>{marketLabel(alert.instrument, findMarket(data.markets, alert.instrument))}</Button><div className="alert-detail"><span>{alert.side === 'upper' ? t("达到或高于") : t("达到或低于")}</span><strong>{formatPrice(alert.threshold)} <small>{marketQuote(alert.instrument, findMarket(data.markets, alert.instrument))}</small></strong></div>
         {alert.pending && <p className="pending-inline">{alert.pending.phase === 'queued' ? t("已排队，等待投递") : t("已开始发送，请勿重复操作")}{t(" · 已尝试 ")}{alert.pending.attempts}{t(" 次")}</p>}
         {alert.triggered && !alert.pending && <p className="pending-inline">{t("已触发并锁定；编辑不会解除锁定。")}{alert.last?.outcome === 'uncertain' ? t("可能已经送达，请先查看手机。") : ''}</p>}
         {!settings.enabled && !alert.triggered && <p className="pending-inline">{t("总开关关闭时不会触发。")}</p>}
-        <div className="rule-result">{alert.last && <><span className={alert.last.outcome === "uncertain" ? "uncertain" : "muted"}>{outcomeLabels[alert.last.outcome]}</span><time dateTime={new Date(alert.last.at).toISOString()}>{formatTime(alert.last.at)}</time></>}</div><div className="alert-buttons"><Button disabled={busy || !!alert.pending || !!error} onClick={() => setEditor({ alert })}>{t("编辑")}</Button><Button disabled={busy || !!alert.pending || !alert.triggered || !!error} onClick={() => openConfirm({ kind: 'rearm', alert })}>{t("重新武装")}</Button><Button disabled={busy || !!alert.pending || !!error} onClick={() => openConfirm({ kind: 'delete', alert })}>{t("删除")}</Button></div></article>) : <div className="empty-list"><strong>{t("还没有价格警报")}</strong><p>{t("选择交易所和市场，填写你关心的价格。创建后需明确打开监控总开关。")}</p><Button onClick={() => setEditor({ alert: null })} disabled={!available || busy || !!error}>{t("创建第一条警报")}</Button></div>}</div>
+        <div className="rule-result">{alert.last && <><span className={alert.last.outcome === "uncertain" ? "uncertain" : "muted"}>{outcomeLabels[alert.last.outcome]}</span><time dateTime={new Date(alert.last.at).toISOString()}>{formatTime(alert.last.at)}</time></>}</div><div className="alert-buttons"><Button disabled={busy || !!alert.pending || !!error} onClick={() => setEditor({ alert })}>{t("编辑")}</Button><Button disabled={busy || !!alert.pending || !alert.triggered || !!error} onClick={() => openConfirm({ kind: 'rearm', alert })}>{t("重新武装")}</Button><Button disabled={busy || !!alert.pending || !!error} onClick={() => openConfirm({ kind: 'delete', alert })}>{t("删除")}</Button></div></article>) : <div className="empty-list"><strong>{showAllAlerts ? t("还没有价格警报") : t("此市场暂无警报")}</strong><p>{t("选择交易所和市场，填写你关心的价格。创建后需明确打开监控总开关。")}</p><Button onClick={() => setEditor({ alert: null })} disabled={!available || busy || !!error}>{t("创建第一条警报")}</Button></div>}</div>
       <div className="monitor-control"><span>{t("后台监控 ")}{healthLabels[data.status.health.scheduler.state]}</span><span>{loadedAt ? t("更新于 {0}", new Date(loadedAt).toLocaleTimeString('zh-CN', { hour12: false })) : t("尚未更新")}</span></div></aside></div>
     <details className="monitor-notes"><summary>{t("监控说明与限制")}</summary><div>    <div className={`banner ${settings.enabled && data.status.channel.configured ? 'active' : ''}`}>
       {!data.status.channel.configured ? <><strong>{t("先配置手机通知。")}</strong>{t(" 添加你的 Pushover 用户密钥，再明确启用监控。")}<Button variant="ghost" className="text-button" onClick={() => navigate('/notifications')}>{t("配置通知")}</Button></> : settings.enabled ? t("监控已启用。每条警报触发一次，后台运行时无需保持页面打开。") : t("监控已暂停。已有警报不会触发，启用后首次满足条件的新鲜价格也会触发。")}
     </div>
     <p className="history-note" aria-label={t("行情采集模式")}>{modeCopy}</p>
-    <p className="history-note">{t("仅采集启用且未锁定规则所需的成交价。暂停规则或只查看市场不请求报价；其他用户规则可能共享价格。近期无成交不代表断线。")}</p>
+    <p className="history-note">{t("查看市场时每 5 秒更新报价，无需创建警报。后台监控仅采集启用且未锁定规则所需的成交价；参考报价不会触发警报。近期无成交不代表断线。")}</p>
     </div></details>
     {!confirm && <FormError message={actionError}/>}
     {editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} onClose={() => setEditor(null)} notify={notify}/>}

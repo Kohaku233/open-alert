@@ -18,7 +18,8 @@ export interface NotificationPort {
 }
 export interface ApiDependencies {
   config: AppConfig; db: SqlDatabase; repositories: Repositories; auth: OpenAlertAuth;
-  catalog: { get(): Promise<CatalogSnapshot> };
+  catalog: { get(): Promise<CatalogSnapshot>; resolve?(instrument: string): Promise<{ market: CatalogMarket | null; stale: boolean; available: boolean }> };
+  quotes?: { get(market: Market): Promise<import('../markets/quotes.js').MarketQuote> };
   runtime: { snapshot(): Promise<RuntimeSnapshot> };
   notifications: NotificationPort;
   wake(): Promise<void>;

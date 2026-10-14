@@ -4,24 +4,15 @@ import { record } from './normalize.js';
 import type { MarketSource, MarketSourceOptions } from './source.js';
 
 export interface VercelRelayOptions { url: string; token: string; bypass?: string }
-export function createVercelBinanceSource(options: Omit<MarketSourceOptions, 'factory'> & {
-  relay?: VercelRelayOptions; fetchImplementation?: typeof fetch;
-}): MarketSource {
-  if (!options.relay || options.mode !== 'polling') throw new Error('invalid_relay_configuration');
-  const relay = options.relay;
+/** Shared, bounded relay transport. Credentials never follow redirects. */
+export function createVercelRelayReader(relay: VercelRelayOptions, nativeFetch: typeof fetch = globalThis.fetch, timeoutMs = 8000) {
   const base = new URL(relay.url);
   if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash ||
       !/^[A-Za-z0-9_-]{32,256}$/.test(relay.token)) throw new Error('invalid_relay_configuration');
   const url = `${base.href.replace(/\/$/, '')}/api/market`;
-  const nativeFetch = options.fetchImplementation ?? globalThis.fetch;
-  const now = options.now ?? Date.now;
-  let symbols: string[] = [], snapshot: Record<string, unknown> = {}, stopped = false;
-  let refreshWork: Promise<void> | null = null;
-  async function read(method: 'GET' | 'POST', body?: unknown): Promise<unknown> {
+  return async (method: 'GET' | 'POST', body?: unknown): Promise<unknown> => {
     const response = await nativeFetch(url, {
-      // Workers supports manual/follow only. Reject redirects via !response.ok
-      // below so relay credentials are never forwarded to a redirect target.
-      method, redirect: 'manual', signal: AbortSignal.timeout(options.requestTimeoutMs ?? 8000),
+      method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: { authorization: `Bearer ${relay.token}`, accept: 'application/json',
         ...(relay.bypass ? { 'x-vercel-protection-bypass': relay.bypass } : {}),
         ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -33,7 +24,16 @@ export function createVercelBinanceSource(options: Omit<MarketSourceOptions, 'fa
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength > 8 * 1024 * 1024) throw new Error('relay_response_capacity');
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  }
+  };
+}
+export function createVercelBinanceSource(options: Omit<MarketSourceOptions, 'factory'> & {
+  relay?: VercelRelayOptions; fetchImplementation?: typeof fetch;
+}): MarketSource {
+  if (!options.relay || options.mode !== 'polling') throw new Error('invalid_relay_configuration');
+  const now = options.now ?? Date.now;
+  let symbols: string[] = [], snapshot: Record<string, unknown> = {}, stopped = false;
+  let refreshWork: Promise<void> | null = null;
+  const read = createVercelRelayReader(options.relay, options.fetchImplementation, options.requestTimeoutMs);
   const transport: typeof fetch = async (input, init) => {
     const request = new URL(input instanceof Request ? input.url : String(input));
     if (request.origin !== 'https://fapi.binance.com' || (init?.method ?? 'GET') !== 'GET') {

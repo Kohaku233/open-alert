@@ -92,3 +92,24 @@ for (const venue of ['binance', 'okx', 'mexc']) {
   };
 }
 event({ type: 'ccxt-fixtures-ready', venues: ['binance', 'okx', 'mexc'], methods: ['loadMarkets', 'watchTrades', 'fetchTrades', 'close'] });
+
+// Display clients use regular CCXT and do not create monitor demand.
+for(const venue of ['binance','okx','mexc']){
+ const prototype=ccxt[venue].prototype;
+ prototype.loadMarkets=async function(reload){
+  assert.equal(reload,true);assert.equal(this.options.tradesLimit,100);
+  const products=venue==='binance'?this.options.fetchMarkets.types.map(t=>t==='linear'?'swap':'spot'):['spot','swap'];
+  this.markets=Object.fromEntries(rows(venue,products).map(m=>[m.symbol,m]));
+  event({type:'transport',provider:'display-quote-fixture',venue,operation:'display_catalog'});
+  return structuredClone(this.markets);
+ };
+ prototype.fetchTicker=async function(symbol){
+  assert(this.markets[symbol]);event({type:'transport',provider:'display-quote-fixture',venue,operation:'display_quote',symbol});
+  return {symbol,last:symbol.startsWith('BTC/')?60000:3000,timestamp:Date.now()};
+ };
+ prototype.fetchTrades=async function(symbol,since,limit){
+  assert(this.markets[symbol]);assert.equal(since,undefined);assert.equal(limit,100);
+  event({type:'transport',provider:'display-quote-fixture',venue,operation:'display_quote',symbol,method:'fetchTrades'});
+  return [{symbol,price:symbol.startsWith('BTC/')?60000:3000,timestamp:Date.now()}];
+ };
+}

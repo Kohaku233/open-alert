@@ -2,8 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createVercelBinanceSource } from '../src/markets/vercel-relay.js';
 import { publicExchangeFixture } from './runtime-cloudflare-fixtures.js';
+import { createMarketQuoteService } from '../src/markets/quotes.js';
+import { normalizeMarket } from '../src/markets/normalize.js';
 
 const token = 'a'.repeat(64);
+test('independent Binance perpetual quote uses actual CCXT parser and Tokyo relay without alert demand',async()=>{
+  let at=Date.now(),posts=0,redirect=false;
+  const quotes=createMarketQuoteService({relay:{url:'https://relay.example.test',token,bypass:'test-bypass'},now:()=>at,
+    fetchImplementation:async(input,init)=>{
+      assert.equal(new URL(String(input)).hostname,'relay.example.test');assert.equal(init?.redirect,'manual');
+      assert.equal(new Headers(init?.headers).get('authorization'),`Bearer ${token}`);
+      if(redirect)return Response.json({}, {status:302,headers:{location:'https://untrusted.example.test'}});
+      if(init?.method==='POST'){
+        posts++;assert.deepEqual(JSON.parse(String(init.body)),{symbols:['BTCUSDT']});
+        return Response.json({capturedAt:at,trades:{BTCUSDT:[{a:1,f:1,l:1,p:'123',q:'1',T:at-60000,m:false}]}});
+      }
+      return Response.json(publicExchangeFixture(new URL('https://fapi.binance.com/fapi/v1/exchangeInfo'),at)!.body);
+    }});
+  const market=normalizeMarket('binance',{id:'BTCUSDT',symbol:'BTC/USDT:USDT',base:'BTC',quote:'USDT',type:'swap',active:true,spot:false,swap:true,future:false,option:false,contract:true,linear:true,inverse:false,settle:'USDT',contractSize:1,precision:{price:0.1}},4)!;
+  try{
+    const quote=await quotes.get(market);assert.equal(quote.price,123);assert.equal(quote.timestamp,at-60000);assert.equal(quote.observedAt,at);assert.equal(posts,1);
+    at+=5000;redirect=true;await assert.rejects(quotes.get(market),/relay_unavailable/);
+  }finally{await quotes.stop();}
+});
 test('one relay batch serves multiple futures and keeps native spot isolated; failures invalidate futures', async () => {
   let at = Date.now(), serial = 1, fail: false | number = false, requests = 0;
   const transport: typeof fetch = async (input, init) => {

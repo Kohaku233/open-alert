@@ -7,7 +7,7 @@ import { DisabledAccountError } from '../auth/index.js';
 import { RepositoryConflict } from '../contracts/db.js';
 import type { AlertRecord, ChannelRecord } from '../contracts/db.js';
 import type { ApiErrorCode, SessionPrincipal } from '../contracts/api.js';
-import { createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
+import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from './markets.js';
@@ -54,6 +54,12 @@ export function createApi(d:ApiDependencies) {
     return {id:a.id,name:a.name,instrument:a.instrument,side:a.side,threshold:a.threshold,enabled:a.enabled,generation:a.generation,triggered:a.triggered,triggerId:a.triggerId,pending,last:last&&last.phase!=='queued'&&last.phase!=='sending'?{triggerId:last.triggerId,outcome:last.phase,at:last.updatedAt,attempts:last.attempts,code:last.code,receiptAvailable:!!last.receipt}:null,status:pending?pending.phase:!a.enabled?'disabled':a.triggered?'latched':'armed',createdAt:a.createdAt,updatedAt:a.updatedAt};
   }
   async function market(instrument:string) {
+    if(d.catalog.resolve){
+      const selected=await d.catalog.resolve(instrument);
+      if(selected.stale)throw new HttpError(503,'service_unavailable');
+      if(!selected.market || !selected.available)throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});
+      return selected.market;
+    }
     const catalog=await d.catalog.get(),selected=catalog.markets.find(m=>m.instrument===instrument);
     if(!selected) {
       if(marketSourceStale(catalog,{instrument} as Market))throw new HttpError(503,'service_unavailable');
@@ -61,6 +67,7 @@ export function createApi(d:ApiDependencies) {
     }
     if(marketSourceStale(catalog,selected))throw new HttpError(503,'service_unavailable');
     if(!marketAvailable(catalog,selected))throw new HttpError(400,'invalid_request',{instrument:'Unsupported live market'});
+    return selected;
   }
   async function mutableAlert(userId:string,id:string,expectedGeneration:number) {
     const current=await d.repositories.alerts.getForUser(userId,id);
@@ -130,6 +137,13 @@ export function createApi(d:ApiDependencies) {
     const query=marketQuerySchema.safeParse(c.req.query());
     if(!query.success)throw new HttpError(400,'invalid_request',fields(query.error));
     return ok(c,searchMarkets(await d.catalog.get(),query.data));
+  });
+  app.get('/api/quote',async c=>{
+    if(Object.values(c.req.queries()).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
+    const query=z.strictObject({instrument:instrumentSchema}).safeParse(c.req.query());
+    if(!query.success)throw new HttpError(400,'invalid_request');
+    if(!d.quotes)throw new HttpError(503,'service_unavailable');
+    return ok(c,await d.quotes.get(await market(query.data.instrument)));
   });
   app.get('/api/alerts',async c=>ok(c,{alerts:await Promise.all((await d.repositories.alerts.listForUser(uid(c))).map(a=>hydrate(uid(c),a)))}));
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),alert)},201);});

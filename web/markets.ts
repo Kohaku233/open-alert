@@ -78,13 +78,9 @@ export function useRetainedMarket(markets: readonly DirectoryMarket[], instrumen
         retained.current = undefined;
     return current ?? retained.current;
 }
-const verifiedOKXBases = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'DOT', 'LTC', 'BCH', 'TRX']);
-// Explicit chart allowlist. Embedded chart selection never changes alert identity.
 export function verifiedChartSymbol(symbol: string, market?: DirectoryMarket): boolean {
     const match = /^(OKX|BINANCE|MEXC):([A-Z0-9]+)USDT(\.P)?$/.exec(symbol);
-    if (!match || !verifiedOKXBases.has(match[2]!))
-        return false;
-    if (match[1] === 'MEXC' && match[3])
+    if (!match || match[2]!.length > 24)
         return false;
     if (!market)
         return true;

@@ -210,6 +210,19 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    const status=await api<SystemStatus>('/api/status','GET',undefined,aliceCookie);assert.equal(status.settings.enabled,false);assert.notEqual(status.health.overall,'healthy');assert.equal(status.health.scheduler.code,'idle_no_active_alerts');assert.equal(status.scheduler.lastPollAt,idle.lastPollAt);assert.equal(status.prices[0]!.timestamp,idle.prices.find(price=>price.instrument==='BTC-USDT-SWAP')!.timestamp);
    assert.equal((await mf.listDurableObjectIds('COORDINATOR')).length,1);assert.deepEqual(unexpected,[]);
   });
+  await t.test('independent authenticated quote uses bounded resolver and never wakes or modifies idle rules',async()=>{
+   assert.equal((await request('/api/quote?instrument=BTC-USDT-SWAP')).status,401);
+   const original=(await api<{alerts:Alert[]}>('/api/alerts','GET',undefined,aliceCookie)).alerts;
+   const engineBefore=await snapshot(),polls=tickerRequests,catalogs=catalogRequests;
+   const quote=await api<{instrument:string;price:number;timestamp:number|null;observedAt:number}>('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,aliceCookie);
+   assert.equal(quote.instrument,'BTC-USDT-SWAP');assert.equal(quote.price,100);assert.ok(quote.observedAt>=quote.timestamp!);
+   assert.equal(tickerRequests,polls+1);assert.equal(catalogRequests,catalogs,'Quote reuses validated metadata instead of loading another full catalog');
+   assert.deepEqual(await api('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,aliceCookie),quote);assert.equal(tickerRequests,polls+1);
+   assert.deepEqual((await api<{alerts:Alert[]}>('/api/alerts','GET',undefined,aliceCookie)).alerts,original);
+   assert.deepEqual((await snapshot()).prices,engineBefore.prices);assert.equal(await alarm(),null);
+   assert.equal((await api<SystemStatus>('/api/status','GET',undefined,aliceCookie)).settings.enabled,false);
+   for(const path of ['/quote?instrument=BTC-USDT-SWAP','/market?instrument=BTC-USDT-SWAP'])assert.notEqual((await request(path)).status,200);
+  });
  } finally {
   await mf.dispose();
   await rm(persistence,{recursive:true,force:true});

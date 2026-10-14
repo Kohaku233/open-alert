@@ -36,7 +36,7 @@ Node uses public CCXT Pro `watchTrades` and checks all accepted fresh observatio
 
 Cloudflare can use an authenticated Vercel Hobby Function in Tokyo for Binance USDT perpetuals. One request batches up to eight monitored markets and preserves executed-trade timestamps and IDs. No persistent Node server or WebSocket listener is required. Spot and other exchanges retain their native paths. See [Binance Vercel relay](docs/binance-vercel-relay.md) for deployment and live Function verification.
 
-Only enabled, unlatched rules for enabled monitoring/accounts create price demand. Paused or disabled rules do not request quotes, and an idle runtime makes no trade requests. Opening the searchable market picker loads metadata but does not subscribe to the selected market; another user's active rule may supply a shared price. The picker searches the catalog locally by venue, type and pair, and shows up to 40 results. TradingView is display-only and is limited to the existing verified OKX perpetual symbols for BTC, ETH, SOL, XRP, DOGE, ADA, AVAX, LINK, DOT, LTC, BCH and TRX. Binance, MEXC and spot chart mappings remain disabled.
+Only enabled, unlatched rules for enabled monitoring/accounts create alert-engine trade demand. Viewing the dashboard independently requests the selected market's quote every 5 seconds, even without saved rules. Display snapshots never evaluate alerts or enable monitoring; polling stops when the page is hidden or another tab is active. Quotes share a bounded 5-second cache and reuse validated catalog metadata. The picker searches locally by venue, type and pair, with up to 40 results. New alerts inherit the exact selected venue/product/pair; existing rules keep their saved identity. The panel defaults to the current market, with an All alerts option. TradingView remains display-only; spot and perpetual mappings are enabled for Binance, OKX and MEXC. Listing availability is determined by TradingView, with no cross-exchange substitution.
 
 Market catalogs and confirmed delistings are held in process memory, not persisted to the database. On a Node process restart or Durable Object recreation, the source starts ineligible and fails closed until a fresh complete catalog load succeeds for the relevant venue. Saved rules survive, but the adapter has no durable catalog/delisting history. See [CCXT runtime integration](docs/ccxt-runtime.md) for sampling, restart behavior and offline verification.
 
@@ -141,7 +141,7 @@ Node 使用公共 CCXT Pro `watchTrades` 成交流，逐条评估批次中收到
 
 Cloudflare 的 Binance 永续行情可通过东京 Vercel Hobby Function 获取。每轮一次批量调用，最多 8 个监控市场，保留真实成交时间与 ID；无需常驻 Node 主机。现货和其他交易所保持原路径。配置与实测见 [Binance Vercel 中继](docs/binance-vercel-relay.md)。
 
-仅已开启监控、账户可用且未锁定的启用规则产生价格采集需求。暂停或禁用规则不请求报价，空闲运行时不请求成交。打开市场搜索只读取目录，不会为所选市场采集成交；其他用户的启用规则可能提供共享价格。当前搜索在浏览器内按交易所、市场类型与交易对筛选，最多展示 40 个结果。TradingView 仅供参考，只开放已有验证映射的 OKX 永续图表：BTC、ETH、SOL、XRP、DOGE、ADA、AVAX、LINK、DOT、LTC、BCH、TRX；Binance、MEXC 与现货映射尚未开放。
+仅已开启监控、账户可用且未锁定的启用规则产生警报引擎的成交采集需求。查看仪表盘时独立获取所选市场的报价，默认每 5 秒更新，不需要先保存规则；参考报价不会判断警报或启用监控，隐藏页面或切换到其他页面后停止轮询。报价共享有界的 5 秒缓存，并复用已验证的市场目录。市场搜索按交易所、类型与交易对筛选，最多展示 40 个结果。新建警报默认使用所选市场的完整标识；已有规则保留原来的交易所和市场。右侧默认显示当前市场，可切换到全部警报。TradingView 仅供参考，已开放三家交易所的现货和永续映射；具体币种是否收录由 TradingView 决定，不会替换成其他交易所的图表。
 
 市场目录和已确认下架状态只保存在当前进程内存，不写入数据库。Node 进程重启或 Durable Object 实例重建后，行情源默认不可评估；对应交易所必须完成新的完整目录加载，才能恢复评估（fail closed）。已保存规则保留，但适配器没有持久化目录或下架历史。采样、重启边界与离线验证详见 [CCXT 运行说明](docs/ccxt-runtime.md)。
 

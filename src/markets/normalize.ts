@@ -7,7 +7,6 @@ export type NormalizedMarket = Market & {
 };
 export const VENUES: readonly Venue[] = ['binance', 'okx', 'mexc'];
 export const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const chartBases = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'DOT', 'LINK', 'LTC', 'BCH', 'TRX']);
 const currency = (v: unknown): v is string => currencyCodeSchema.safeParse(v).success;
 const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1e12;
 
@@ -47,7 +46,7 @@ export function normalizeMarket(venue: Venue, raw: unknown, precisionMode: numbe
     instrument: instrumentId(venue, type, nativeId), venue, type, nativeId, symbol: expectedSymbol,
     base: raw.base, quote: 'USDT', settle: type === 'swap' ? 'USDT' : null,
     contractSize: type === 'swap' ? raw.contractSize as number : null,
-    tickSize: String(tickSize), state: 'live', tradingViewSymbol: chartBases.has(raw.base) && (venue !== 'mexc' || type === 'spot') ? `${venue.toUpperCase()}:${raw.base}USDT${type === 'swap' ? '.P' : ''}` : '',
+    tickSize: String(tickSize), state: 'live', tradingViewSymbol: `${venue.toUpperCase()}:${raw.base}USDT${type === 'swap' ? '.P' : ''}`,
   };
 }
 

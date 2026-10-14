@@ -117,6 +117,7 @@ async function createAlert(profile,name,instrument,threshold,enabled=true) {
   const {page,context}=profile;await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
   await selectMarket(dialog.locator('.market-search'),instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));
   await dialog.getByLabel('启用这条警报').setChecked(enabled);await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
+  await page.getByRole('button',{name:'全部警报',exact:true}).click();
   await expect(row(page,name)).toBeVisible();return (await ok(context,'/api/alerts')).alerts.find(a=>a.name===name);
 }
 const watchdog=setTimeout(()=>{timedOut=true;for(const r of children)if(!r.exit)r.child.kill('SIGTERM');void browser?.close();},55000);
@@ -242,7 +243,7 @@ try {
     await check('compiled server uses only public CCXT method fixtures for exchange work',async()=>{
       assert(transport.filter(e=>e.provider==='ccxt-method-fixture'&&e.operation==='catalog').length>=6);
       assert(transport.filter(e=>e.provider==='ccxt-method-fixture'&&e.operation==='trades').every(e=>e.method==='watchTrades'));
-      assert(transport.every(e=>['ccxt-method-fixture','pushover'].includes(e.provider)));
+      assert(transport.every(e=>['ccxt-method-fixture','display-quote-fixture','pushover'].includes(e.provider)));
     });
   });
 } catch(error) { console.error(error.stack);process.exitCode=1; }

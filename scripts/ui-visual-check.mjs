@@ -119,6 +119,13 @@ async function setup(browser, profile, authenticated = false) {
         if (state.holdStatus) { const release = state.holdStatus; state.holdStatus = null; await release.wait; }
         return ok(snapshot);
       }
+      if (path === '/api/quote' && method === 'GET') {
+        if (state.quoteFail) return fail('service_unavailable',503);
+        const instrument=url.searchParams.get('instrument');
+        if (state.quoteHold) await state.quoteHold;
+        const quoteNow=await page.evaluate(()=>Date.now());
+        return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
+      }
       if (path === '/api/markets' && method === 'GET') return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
       if (path === '/api/alerts' && method === 'GET') return ok({ alerts: state.alerts });
       if (path === '/api/alerts' && method === 'POST') {

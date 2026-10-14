@@ -1,5 +1,5 @@
 import { parseInstrumentIdentity } from '../contracts/domain.js';
-import type { ComponentHealth, MarketType, PriceTick, Venue } from '../contracts/domain.js';
+import type { ComponentHealth, Market, MarketType, PriceTick, Venue } from '../contracts/domain.js';
 import type { CatalogSnapshot } from '../api/ports.js';
 import { VENUES, normalizeCatalog, record } from './normalize.js';
 import type { NormalizedMarket } from './normalize.js';
@@ -14,6 +14,9 @@ export interface CcxtExchange {
   precisionMode: number;
   has: Record<string, unknown>;
   loadMarkets(reload?: boolean): Promise<unknown>;
+  fetchTicker?(symbol: string): Promise<unknown>;
+  /** Display clients reuse already validated catalog metadata, avoiding a second full catalog fetch. */
+  seedMarket?(market: Market): void;
   fetchTrades(symbol: string, since?: number, limit?: number): Promise<unknown>;
   watchTrades?(symbol: string, since?: number, limit?: number): Promise<unknown>;
   close(): Promise<unknown>;

@@ -15,6 +15,9 @@ import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { createVercelBinanceSource } from '../markets/vercel-relay.js';
+import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js';
+import { marketAvailable, marketSourceStale } from '../api/markets.js';
+import type { Market } from '../contracts/domain.js';
 import { D1SqlDatabase } from '../db/d1.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
 async function databaseServices(env: CloudflareBindings) {
@@ -34,7 +37,7 @@ async function workerApp(env:CloudflareBindings) {
       const response=await coordinator().fetch('https://coordinator.internal'+path);
       if(!response.ok)throw new Error('coordinator_unavailable');return await response.json() as T;
     }
-    return createApp({...services,auth,notifications,catalog:{get:()=>coordinatorJson<CatalogSnapshot>('/catalog')},runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async()=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST'});if(!response.ok)throw new Error('coordinator_unavailable');}});
+    return createApp({...services,auth,notifications,quotes:{get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument))},catalog:{get:()=>coordinatorJson<CatalogSnapshot>('/catalog'),resolve:instrument=>coordinatorJson('/market?instrument='+encodeURIComponent(instrument))},runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async()=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST'});if(!response.ok)throw new Error('coordinator_unavailable');}});
   })();workerCache.set(env,promise);promise.catch(()=>{workerCache.delete(env);});}
   return promise;
 }
@@ -55,6 +58,7 @@ export class Coordinator {
   private running:Promise<void>|null=null;
   private revision=0;
   private active=false;
+  private quotes: ReturnType<typeof createMarketQuoteService> | null=null;
   private alarmWrites:Promise<unknown>=Promise.resolve();
   private writeAlarm<T>(operation:()=>Promise<T>):Promise<T> {
     const result=this.alarmWrites.then(operation);
@@ -63,6 +67,7 @@ export class Coordinator {
   constructor(private readonly state:DurableObjectState,env:CloudflareBindings) {
     this.initialized=state.blockConcurrencyWhile(async()=>{
       const services=await databaseServices(env);
+      this.quotes=createMarketQuoteService({fetchImplementation:globalThis.fetch,...(services.config.binanceRelay?{relay:services.config.binanceRelay}:{})});
       return createScheduler({...services,notifications:createNotificationService(services),
         marketSource:(services.config.binanceRelay ? createVercelBinanceSource : createPublicCcxtMarketSource)({mode:'polling',fetchImplementation:globalThis.fetch,
           ...(services.config.binanceRelay ? { relay: services.config.binanceRelay } : {}),
@@ -107,11 +112,27 @@ export class Coordinator {
     if(path==='/catalog'&&request.method==='GET'){
       await engine.refreshCatalog();return Response.json(engine.getMarkets());
     }
+    if(path==='/market'&&request.method==='GET'){
+      await engine.refreshCatalog();
+      const instrument=new URL(request.url).searchParams.get('instrument')??'';
+      const catalog=engine.getMarkets(),market=catalog.markets.find(m=>m.instrument===instrument)??null;
+      return Response.json({market,stale:marketSourceStale(catalog,market??{instrument} as Market),available:!!market&&marketAvailable(catalog,market)});
+    }
     if(path==='/snapshot'&&request.method==='GET'){
       // First read after eviction or a lost wake repairs active work, but never polls idle prices.
       await this.reconcile();
       const status=engine.getStatus();
       return Response.json({health:status.health,lastPollAt:status.lastPollAt,prices:engine.getPrices(),marketMode:'polling'});
+    }
+    if(path==='/quote'&&request.method==='GET'){
+      try {
+        await engine.refreshCatalog();
+        const instrument=new URL(request.url).searchParams.get('instrument');
+        const catalog=engine.getMarkets(),market=catalog.markets.find(m=>m.instrument===instrument);
+        if(!market || !this.quotes)return new Response(null,{status:400});
+        if(marketSourceStale(catalog,market)||!marketAvailable(catalog,market))return new Response(null,{status:503});
+        return Response.json(await this.quotes.get(market));
+      } catch {return new Response(null,{status:503});}
     }
     return new Response('Not found',{status:404});
   }

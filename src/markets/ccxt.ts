@@ -1,6 +1,6 @@
 import ccxt from 'ccxt';
 import type { ConstructorArgs } from 'ccxt';
-import { currencyCodeSchema, type Venue } from '../contracts/domain.js';
+import { currencyCodeSchema, parseInstrumentIdentity, type Venue } from '../contracts/domain.js';
 import { createCcxtMarketSource } from './source.js';
 import { normalizeCatalog, record } from './normalize.js';
 import type { CcxtExchange, ExchangeSettings, MarketSourceOptions } from './source.js';
@@ -183,9 +183,25 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
         return markets;
       };
     }
+    const displayMarkets = new Map<string, unknown>();
     return {
       precisionMode: exchange.precisionMode, has: exchange.has,
       loadMarkets: reload => exchange.loadMarkets(reload),
+      fetchTicker: symbol => exchange.fetchTicker(symbol),
+      seedMarket: market => {
+        const identity = parseInstrumentIdentity(market.instrument);
+        if (!identity || identity.venue !== venue || identity.type !== settings.product ||
+            market.nativeId !== identity.nativeId || market.venue !== venue || market.type !== identity.type ||
+            market.symbol !== `${market.base}/USDT${identity.type === 'swap' ? ':USDT' : ''}` || market.quote !== 'USDT' || market.state !== 'live') throw new Error('invalid_quote_market');
+        const swap = identity.type === 'swap';
+        displayMarkets.delete(market.instrument);
+        displayMarkets.set(market.instrument, { id: market.nativeId, symbol: market.symbol, base: market.base, quote: 'USDT',
+          active: true, type: identity.type, spot: !swap, swap, future: false, option: false, contract: swap,
+          linear: swap, inverse: false, settle: swap ? 'USDT' : undefined, contractSize: swap ? market.contractSize : undefined,
+          precision: { price: Number(market.tickSize) } });
+        if (displayMarkets.size > 64) displayMarkets.delete(displayMarkets.keys().next().value!);
+        exchange.setMarkets([...displayMarkets.values()] as Parameters<typeof exchange.setMarkets>[0]);
+      },
       // Request the recent page without CCXT's since filter. The source selects
       // one latest valid sample and rejects cursor regression and exact replay.
       // This also avoids MEXC spot's since+until requirement.
