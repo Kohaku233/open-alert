@@ -40,6 +40,8 @@
     "ccxt": "4.5.85",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.13",
+    "http-proxy-agent": "7.0.2",
+    "https-proxy-agent": "7.0.6",
     "nodemailer": "10.1.0",
     "pg": "8.23.1",
     "protobufjs": "7.6.6",

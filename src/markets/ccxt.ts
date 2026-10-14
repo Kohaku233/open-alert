@@ -1,9 +1,9 @@
 import ccxt from 'ccxt';
 import type { ConstructorArgs } from 'ccxt';
 import { currencyCodeSchema, type Venue } from '../contracts/domain.js';
-import { createCcxtMarketSource } from './source.js';
-import { record } from './normalize.js';
-import type { CcxtExchange, ExchangeFactory, ExchangeSettings, MarketSourceOptions } from './source.js';
+import { createCcxtMarketSource, SymbolTradesUnavailableError } from './source.js';
+import { normalizeCatalog, record } from './normalize.js';
+import type { CcxtExchange, ExchangeSettings, MarketSourceOptions } from './source.js';
 
 const rawString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const otherCurrency = (value: unknown) => currencyCodeSchema.safeParse(value).success && value !== 'USDT';
@@ -73,13 +73,57 @@ export function publicExchangeConfig(venue: Venue, settings: ExchangeSettings, f
     },
   };
 }
-export function createPublicCcxtFactory(options: { fetchImplementation?: typeof fetch } = {}): ExchangeFactory {
+/** A provider must obtain the complete, unfiltered official USD-M
+ * /fapi/v1/exchangeInfo envelope during this invocation. capturedAt is the local
+ * epoch-millisecond time when that response was captured, using the same clock
+ * as now; it must never be a new timestamp attached to an old cached response.
+ * serverTime is exchange metadata, not evidence of local snapshot freshness.
+ * Completeness/provenance are provider obligations: a local parser cannot prove
+ * that an otherwise valid upstream envelope has not been filtered.
+ */
+export interface BinanceSwapCatalogSnapshot {
+  exchangeInfo: unknown;
+  capturedAt: number;
+}
+export type BinanceSwapCatalogProvider = () => Promise<BinanceSwapCatalogSnapshot>;
+export interface PublicCcxtFactoryOptions {
+  fetchImplementation?: typeof fetch;
+  /** Polling-only transport override; Spot and other venues keep the native transport. */
+  binanceSwapFetchImplementation?: typeof fetch;
+  /** Used only by a Binance client explicitly scoped to swap. */
+  binanceSwapCatalog?: BinanceSwapCatalogProvider;
+  /** Local capture clock; defaults to Date.now. Override together with the provider in tests. */
+  now?: () => number;
+  maxCatalogMarkets?: number;
+}
+
+export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}): (venue: Venue, settings: ExchangeSettings) => CcxtExchange {
   return (venue, settings): CcxtExchange => {
+    if ((options.binanceSwapCatalog || options.binanceSwapFetchImplementation) && venue === 'binance' && !settings.product) throw new Error('invalid_product_scope');
+    if (options.binanceSwapFetchImplementation && venue === 'binance' && settings.product === 'swap' && settings.mode !== 'polling') throw new Error('relay_requires_polling');
     const classes = settings.mode === 'stream' ? ccxt.pro : ccxt;
-    const exchange = new classes[venue](publicExchangeConfig(venue, settings, options.fetchImplementation));
+    const transport = venue === 'binance' && settings.product === 'swap' ? options.binanceSwapFetchImplementation ?? options.fetchImplementation : options.fetchImplementation;
+    const exchange = new classes[venue](publicExchangeConfig(venue, settings, transport));
     // loadMarkets normally calls fetchCurrencies if has says true; suppress its
     // credential-dependent implementations explicitly, regardless of venue options.
     exchange.has.fetchCurrencies = false;
+    if (options.binanceSwapFetchImplementation && venue === 'binance' && settings.product === 'swap') {
+      const handleErrors = exchange.handleErrors.bind(exchange);
+      exchange.handleErrors = (status, reason, url, method, headers, body, response, requestHeaders, requestBody) => {
+        // Injected fetch errors can be wrapped as NetworkError. Decode the
+        // explicit non-200 protocol after CCXT parses HTTP, outside that catch.
+        const request = new URL(url);
+        if (status === 503 && method === 'GET' && request.origin === 'https://fapi.binance.com' &&
+            request.pathname === '/fapi/v1/aggTrades' && [...request.searchParams.keys()].length === 2 &&
+            request.searchParams.getAll('symbol').length === 1 && request.searchParams.getAll('limit').length === 1 &&
+            request.searchParams.get('limit') === '100' && record(response) && Object.keys(response).length === 3 &&
+            response.code === -1 && response.msg === 'no_fresh_trade' && response.symbol === request.searchParams.get('symbol')) {
+          const market = Object.values(exchange.markets ?? {}).find(m => m?.id === response.symbol && m.swap === true && m.linear === true && m.settle === 'USDT');
+          if (market) throw new SymbolTradesUnavailableError(market.symbol);
+        }
+        return handleErrors(status, reason, url, method, headers, body, response, requestHeaders, requestBody);
+      };
+    }
     // CCXT's public fetch handles transport, JSON and exchange errors first. Its
     // market parsers default missing/wrong-type product collections to [] and
     // silently discard some malformed rows. Validate before committing a partial map.
@@ -104,6 +148,58 @@ export function createPublicCcxtFactory(options: { fetchImplementation?: typeof 
       return response;
     };
     if (typeof exchange.precisionMode !== 'number') throw new Error('invalid_ccxt_precision_mode');
+    const precisionMode = exchange.precisionMode;
+    if (options.binanceSwapCatalog && venue === 'binance' && settings.product === 'swap') {
+      const provider = options.binanceSwapCatalog;
+      const now = options.now ?? Date.now;
+      const maxMarkets = options.maxCatalogMarkets ?? 20_000;
+      if (!Number.isSafeInteger(maxMarkets) || maxMarkets < 1 || maxMarkets > 50_000) throw new RangeError('invalid_market_source_limit');
+      // Keep CCXT's native loadMarkets concurrency/reload semantics and setMarkets.
+      // Pro's implicit load consequently uses the same validated seeded maps,
+      // without falling back to exchangeInfo REST or credentialed currencies.
+      exchange.fetchMarkets = async () => {
+        const startedAt = now();
+        if (!Number.isSafeInteger(startedAt) || startedAt < 0) throw new Error('invalid_catalog_capture');
+        const snapshot: unknown = await provider();
+        const completedAt = now();
+        if (!record(snapshot) || !Number.isSafeInteger(snapshot.capturedAt) ||
+            !Number.isSafeInteger(completedAt) || completedAt < startedAt ||
+            (snapshot.capturedAt as number) < startedAt || (snapshot.capturedAt as number) > completedAt) {
+          throw new Error('invalid_catalog_capture');
+        }
+        const info = snapshot.exchangeInfo;
+        if (!record(info) || !Object.hasOwn(info, 'symbols') || !Array.isArray(info.symbols) ||
+            !rawString(info.timezone) || !Number.isSafeInteger(info.serverTime) || (info.serverTime as number) < 0 ||
+            !Array.isArray(info.assets) || !Array.isArray(info.rateLimits) || !Array.isArray(info.exchangeFilters)) {
+          throw new Error('invalid_catalog_collection');
+        }
+        const rows = info.symbols;
+        // Bound the complete response, including excluded USDC/inactive/future rows.
+        if (rows.length > maxMarkets) throw new Error('catalog_capacity');
+        validateRawCatalog('binance', 'swap', rows);
+        const rawIds = new Set<string>();
+        for (const row of rows) {
+          if (!record(row) || !rawString(row.symbol) || !rawString(row.baseAsset) || !rawString(row.quoteAsset) ||
+              !rawString(row.marginAsset) || !rawString(row.status ?? row.contractStatus) ||
+              typeof row.contractType !== 'string' || !Array.isArray(row.filters)) throw new Error('invalid_catalog_row');
+          if (rawIds.has(row.symbol)) throw new Error('duplicate_market');
+          rawIds.add(row.symbol);
+        }
+        const markets = exchange.parseMarkets(rows);
+        if (markets.length !== rows.length) throw new Error('invalid_catalog_row');
+        const ids = new Set<string>(), symbols = new Set<string>();
+        for (const market of markets) {
+          if (!market || !rawString(market.id) || !rawString(market.symbol) || market.spot !== false ||
+              market.contract !== true || market.type !== 'swap' && market.type !== 'future') throw new Error('invalid_catalog_row');
+          if (ids.has(market.id) || symbols.has(market.symbol)) throw new Error('duplicate_market');
+          ids.add(market.id); symbols.add(market.symbol);
+        }
+        // Check before setMarkets indexes by symbol and could collapse duplicate
+        // rows or supply defaults that hide incomplete supported metadata.
+        normalizeCatalog('binance', Object.fromEntries(markets.map(market => [market!.symbol, market])), precisionMode, maxMarkets);
+        return markets;
+      };
+    }
     return {
       precisionMode: exchange.precisionMode, has: exchange.has,
       loadMarkets: reload => exchange.loadMarkets(reload),
@@ -116,12 +212,20 @@ export function createPublicCcxtFactory(options: { fetchImplementation?: typeof 
     };
   };
 }
-export function createPublicCcxtMarketSource(options: Omit<MarketSourceOptions, 'factory'> & { fetchImplementation?: typeof fetch }) {
-  const { fetchImplementation, ...sourceOptions } = options;
+export function createPublicCcxtMarketSource(options: Omit<MarketSourceOptions, 'factory'> & PublicCcxtFactoryOptions) {
+  const { fetchImplementation, binanceSwapFetchImplementation, binanceSwapCatalog, ...sourceOptions } = options;
+  const splitProducts = sourceOptions.splitProducts ?? (sourceOptions.venues ?? ['binance','okx','mexc']).filter(v => v === 'binance');
+  if ((binanceSwapCatalog || binanceSwapFetchImplementation) && (sourceOptions.venues ?? ['binance','okx','mexc']).includes('binance') && !splitProducts.includes('binance')) {
+    throw new Error('invalid_product_scope');
+  }
   // REST latest sampling shares OKX's 100-row page cap. Pro retains all stream
   // updates in a separate, larger cache; saturation remains a completeness fault.
   const maxBatch = options.maxBatch ?? (options.mode === 'stream' ? 1000 : 100);
   if (options.mode === 'polling' && maxBatch > 100) throw new RangeError('public_trade_page_capacity');
-  return createCcxtMarketSource({ ...sourceOptions, splitProducts: sourceOptions.splitProducts ?? (sourceOptions.venues ?? ['binance','okx','mexc']).filter(v => v === 'binance'), maxBatch,
-    factory: createPublicCcxtFactory(fetchImplementation ? { fetchImplementation } : {}) });
+  return createCcxtMarketSource({ ...sourceOptions, splitProducts, maxBatch,
+    factory: createPublicCcxtFactory({ ...(fetchImplementation ? { fetchImplementation } : {}),
+      ...(binanceSwapCatalog ? { binanceSwapCatalog } : {}),
+      ...(binanceSwapFetchImplementation ? { binanceSwapFetchImplementation } : {}),
+      ...(sourceOptions.now ? { now: sourceOptions.now } : {}),
+      ...(sourceOptions.maxCatalogMarkets !== undefined ? { maxCatalogMarkets: sourceOptions.maxCatalogMarkets } : {}) }) });
 }

@@ -5,6 +5,10 @@ import { VENUES, normalizeCatalog, record } from './normalize.js';
 import type { NormalizedMarket } from './normalize.js';
 
 export type MarketMode = 'stream' | 'polling';
+/** A validated adapter outcome for one requested symbol, never a transport fault. */
+export class SymbolTradesUnavailableError extends Error {
+  constructor(readonly symbol: string) { super('no_fresh_trade'); }
+}
 /** Structural port keeps mock factories and Cloudflare bundles independent of Node Pro. */
 export interface CcxtExchange {
   precisionMode: number;
@@ -312,8 +316,19 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
         const raw = await deadline(() => exchange.fetchTrades(market.symbol, undefined, maxBatch), Math.max(1, Math.min(timeout, Math.ceil(end - performance.now()))), s.controller.signal);
         if (stopped || epoch !== s.epoch) return;
         if (demand.get(id) === d && s.catalog.get(id) === market && catalogFresh(s)) { accept(s, market, d, raw); d.nextPollAt = now() + pollInterval; }
-      } catch {
-        if (demand.get(id) === d && s.catalog.get(id) === market && catalogFresh(s)) await fault(s, epoch, 'poll_unavailable');
+      } catch (error) {
+        if (stopped || epoch !== s.epoch) return;
+        if (demand.get(id) === d && s.catalog.get(id) === market && catalogFresh(s)) {
+          if (error instanceof SymbolTradesUnavailableError && error.symbol === market.symbol) {
+            // Discard unconsumed observations too, but keep the cursor/IDs so a
+            // later cached replay cannot become a new crossing after recovery.
+            queued -= d.queue.length; d.queue = []; d.latest = null;
+            if (d.code !== 'trade_replay_capacity') d.code = 'no_fresh_trade';
+            d.nextPollAt = now() + pollInterval;
+            continue;
+          }
+          await fault(s, epoch, 'poll_unavailable');
+        }
         return;
       }
     }
