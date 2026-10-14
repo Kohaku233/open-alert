@@ -124,7 +124,9 @@ async function setup(browser, profile, authenticated = false) {
         if (state.quoteFail) return fail('service_unavailable',503);
         const instrument=url.searchParams.get('instrument');
         if (state.quoteHold) await state.quoteHold;
-        const quoteNow=await page.evaluate(()=>Date.now());
+        let quoteNow;
+        try { quoteNow=await page.evaluate(()=>Date.now()); }
+        catch(error) { if(/Target page, context or browser has been closed/.test(error.message))return;throw error; }
         return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
       }
       if (path === '/api/markets' && method === 'GET') return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
