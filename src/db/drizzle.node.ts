@@ -6,6 +6,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { SqliteRemoteDatabase } from 'drizzle-orm/sqlite-proxy';
 import { SQLiteDatabase } from './sqlite.js';
 import { PostgresDatabase } from './postgres.js';
+import { executeSqliteProxyQuery, type SqliteProxyStatement } from './sqlite-proxy.js';
 import { bindings } from './sql.js';
 import type { SqlValue } from '../contracts/db.js';
 /** Auth uses the adapter's physical connection, never a separately opened database. */
@@ -17,10 +18,8 @@ export async function createAuthDrizzle(db: SQLiteDatabase | PostgresDatabase, s
   const proxy = proxyDrizzle(async (sql, params: SqlValue[], method) => {
     // SQLite async interactive transactions would interleave unrelated repository writes.
     if (/^\s*(?:begin|commit|rollback|savepoint|release)\b/i.test(sql)) throw new Error('Interactive SQLite auth transactions are unsupported');
-    const statement = db.rawConnection.prepare(sql) as unknown as { setReturnArrays(enabled: boolean): void; all(...values: SqlValue[]): unknown[][]; get(...values: SqlValue[]): unknown[] | undefined; run(...values: SqlValue[]): unknown };
-    if (method === 'run') { statement.run(...bindings(params)); return { rows: [] }; }
-    statement.setReturnArrays(true);
-    return { rows: method === 'get' ? (statement.get(...bindings(params)) ?? []) : statement.all(...bindings(params)) };
+    const statement = db.rawConnection.prepare(sql) as unknown as SqliteProxyStatement;
+    return executeSqliteProxyQuery(explain => db.rawConnection.prepare(explain) as unknown as { all(): unknown }, statement, bindings(params), method) as { rows: any[] };
   }, { schema });
   return proxy;
 }
