@@ -19,7 +19,9 @@ export function createVercelBinanceSource(options: Omit<MarketSourceOptions, 'fa
   let refreshWork: Promise<void> | null = null;
   async function read(method: 'GET' | 'POST', body?: unknown): Promise<unknown> {
     const response = await nativeFetch(url, {
-      method, redirect: 'error', signal: AbortSignal.timeout(options.requestTimeoutMs ?? 8000),
+      // Workers supports manual/follow only. Reject redirects via !response.ok
+      // below so relay credentials are never forwarded to a redirect target.
+      method, redirect: 'manual', signal: AbortSignal.timeout(options.requestTimeoutMs ?? 8000),
       headers: { authorization: `Bearer ${relay.token}`, accept: 'application/json',
         ...(relay.bypass ? { 'x-vercel-protection-bypass': relay.bypass } : {}),
         ...(body ? { 'content-type': 'application/json' } : {}) },
