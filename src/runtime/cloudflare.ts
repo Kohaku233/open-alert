@@ -14,7 +14,7 @@ import type { CatalogSnapshot,RuntimeSnapshot } from '../api/ports.js';
 import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
-import { createBinanceRelayFetch } from '../markets/binance-relay.js';
+import { createVercelBinanceSource } from '../markets/vercel-relay.js';
 import { D1SqlDatabase } from '../db/d1.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
 async function databaseServices(env: CloudflareBindings) {
@@ -64,9 +64,8 @@ export class Coordinator {
     this.initialized=state.blockConcurrencyWhile(async()=>{
       const services=await databaseServices(env);
       return createScheduler({...services,notifications:createNotificationService(services),
-        marketSource:createPublicCcxtMarketSource({mode:'polling',fetchImplementation:globalThis.fetch,
-          ...(services.config.binanceRelay ? {binanceSwapFetchImplementation:createBinanceRelayFetch({
-            ...services.config.binanceRelay,fetchImplementation:globalThis.fetch,timeoutMs:8000}),catalogTtlMs:60_000} : {}),
+        marketSource:(services.config.binanceRelay ? createVercelBinanceSource : createPublicCcxtMarketSource)({mode:'polling',fetchImplementation:globalThis.fetch,
+          ...(services.config.binanceRelay ? { relay: services.config.binanceRelay } : {}),
           maxDemand:services.config.limits.globalInstruments,requestTimeoutMs:8000,pollBudgetMs:10000})});
     });
   }

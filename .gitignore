@@ -32,6 +32,7 @@ private/
 backups/
 backup/
 *.sqlite*
+!src/auth/schema.sqlite.ts
 *.db
 *.db-*
 *.dump
@@ -51,6 +52,7 @@ new-channel*.json
 test-output/
 test-results/
 playwright-report/
+.impeccable/review/
 coverage/
 *.log
 *.zip

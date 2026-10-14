@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -219,8 +220,8 @@ test('Wrangler CLI migrates disposable local D1 and emits only a bounded safe su
   try {
     const config = join(directory, 'wrangler.jsonc');
     await writeFile(config, JSON.stringify({ name: 'schema-cli-test', compatibility_date: '2026-10-11', d1_databases: [{ binding: 'DB', database_name: 'schema-test', database_id: '00000000-0000-0000-0000-000000000001' }] }));
-    const projectRoot = new URL('..', import.meta.url).pathname;
-    const args = ['--import', 'tsx', new URL('../scripts/d1-migrate.ts', import.meta.url).pathname, '--local', '--max-users', '7', '--invite-only', 'true', '--database', 'schema-test', '--config', config, '--persist-to', join(directory, 'state')];
+    const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+    const args = ['--import', 'tsx', fileURLToPath(new URL('../scripts/d1-migrate.ts', import.meta.url)), '--local', '--max-users', '7', '--invite-only', 'true', '--database', 'schema-test', '--config', config, '--persist-to', join(directory, 'state')];
     const run = () => spawnSync(process.execPath, args, { cwd: projectRoot, encoding: 'utf8', timeout: 55_000, maxBuffer: 1024 * 1024, env: { ...process.env, CLOUDFLARE_API_TOKEN: 'fixture-secret-never-print', WRANGLER_SEND_METRICS: 'false' } });
     const first = run();
     assert.equal(first.status, 0, first.stderr);

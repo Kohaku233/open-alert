@@ -1,7 +1,7 @@
 import ccxt from 'ccxt';
 import type { ConstructorArgs } from 'ccxt';
 import { currencyCodeSchema, type Venue } from '../contracts/domain.js';
-import { createCcxtMarketSource, SymbolTradesUnavailableError } from './source.js';
+import { createCcxtMarketSource } from './source.js';
 import { normalizeCatalog, record } from './normalize.js';
 import type { CcxtExchange, ExchangeSettings, MarketSourceOptions } from './source.js';
 
@@ -107,23 +107,6 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
     // loadMarkets normally calls fetchCurrencies if has says true; suppress its
     // credential-dependent implementations explicitly, regardless of venue options.
     exchange.has.fetchCurrencies = false;
-    if (options.binanceSwapFetchImplementation && venue === 'binance' && settings.product === 'swap') {
-      const handleErrors = exchange.handleErrors.bind(exchange);
-      exchange.handleErrors = (status, reason, url, method, headers, body, response, requestHeaders, requestBody) => {
-        // Injected fetch errors can be wrapped as NetworkError. Decode the
-        // explicit non-200 protocol after CCXT parses HTTP, outside that catch.
-        const request = new URL(url);
-        if (status === 503 && method === 'GET' && request.origin === 'https://fapi.binance.com' &&
-            request.pathname === '/fapi/v1/aggTrades' && [...request.searchParams.keys()].length === 2 &&
-            request.searchParams.getAll('symbol').length === 1 && request.searchParams.getAll('limit').length === 1 &&
-            request.searchParams.get('limit') === '100' && record(response) && Object.keys(response).length === 3 &&
-            response.code === -1 && response.msg === 'no_fresh_trade' && response.symbol === request.searchParams.get('symbol')) {
-          const market = Object.values(exchange.markets ?? {}).find(m => m?.id === response.symbol && m.swap === true && m.linear === true && m.settle === 'USDT');
-          if (market) throw new SymbolTradesUnavailableError(market.symbol);
-        }
-        return handleErrors(status, reason, url, method, headers, body, response, requestHeaders, requestBody);
-      };
-    }
     // CCXT's public fetch handles transport, JSON and exchange errors first. Its
     // market parsers default missing/wrong-type product collections to [] and
     // silently discard some malformed rows. Validate before committing a partial map.

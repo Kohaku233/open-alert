@@ -1,0 +1,459 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T14:08:54.009139+00:00",
+  "title": "Design System: Open Alert",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Canvas Black",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Panel Charcoal",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field Graphite",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline Gray",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "text": {
+        "role": "primary",
+        "displayName": "Workbench White",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Quiet Gray",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Armed Lime",
+        "tonalRamp": [
+          "oklch(15% 0.1 125)",
+          "oklch(26.4% 0.1 125)",
+          "oklch(37.9% 0.1 125)",
+          "oklch(49.3% 0.1 125)",
+          "oklch(60.7% 0.1 125)",
+          "oklch(72.1% 0.1 125)",
+          "oklch(83.6% 0.1 125)",
+          "oklch(95% 0.1 125)"
+        ]
+      },
+      "amber": {
+        "role": "tertiary",
+        "displayName": "Uncertainty Amber",
+        "tonalRamp": [
+          "oklch(15% 0.07 75)",
+          "oklch(26.4% 0.07 75)",
+          "oklch(37.9% 0.07 75)",
+          "oklch(49.3% 0.07 75)",
+          "oklch(60.7% 0.07 75)",
+          "oklch(72.1% 0.07 75)",
+          "oklch(83.6% 0.07 75)",
+          "oklch(95% 0.07 75)"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Error Rose",
+        "tonalRamp": [
+          "oklch(15% 0.04 20)",
+          "oklch(26.4% 0.04 20)",
+          "oklch(37.9% 0.04 20)",
+          "oklch(49.3% 0.04 20)",
+          "oklch(60.7% 0.04 20)",
+          "oklch(72.1% 0.04 20)",
+          "oklch(83.6% 0.04 20)",
+          "oklch(95% 0.04 20)"
+        ]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Control Gray",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "secondary-hover": {
+        "role": "neutral",
+        "displayName": "Hover Charcoal",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "primary-hover": {
+        "role": "neutral",
+        "displayName": "Hover White",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "selected-language": {
+        "role": "neutral",
+        "displayName": "Selected Charcoal",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "dialog": {
+        "role": "neutral",
+        "displayName": "Dialog Charcoal",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26.4% 0 0)",
+          "oklch(37.9% 0 0)",
+          "oklch(49.3% 0 0)",
+          "oklch(60.7% 0 0)",
+          "oklch(72.1% 0 0)",
+          "oklch(83.6% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "warning-bg": {
+        "role": "neutral",
+        "displayName": "Warning Charcoal",
+        "tonalRamp": [
+          "oklch(15% 0.01 75)",
+          "oklch(26.4% 0.01 75)",
+          "oklch(37.9% 0.01 75)",
+          "oklch(49.3% 0.01 75)",
+          "oklch(60.7% 0.01 75)",
+          "oklch(72.1% 0.01 75)",
+          "oklch(83.6% 0.01 75)",
+          "oklch(95% 0.01 75)"
+        ]
+      },
+      "warning-border": {
+        "role": "neutral",
+        "displayName": "Warning Edge",
+        "tonalRamp": [
+          "oklch(15% 0.03 75)",
+          "oklch(26.4% 0.03 75)",
+          "oklch(37.9% 0.03 75)",
+          "oklch(49.3% 0.03 75)",
+          "oklch(60.7% 0.03 75)",
+          "oklch(72.1% 0.03 75)",
+          "oklch(83.6% 0.03 75)",
+          "oklch(95% 0.03 75)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Login Display",
+        "purpose": "Login headline; inherits the current interface language font."
+      },
+      "headline": {
+        "displayName": "Page Headline",
+        "purpose": "Page titles; inherits current language font."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "Panel and settings headings."
+      },
+      "body": {
+        "displayName": "Chinese Interface",
+        "purpose": "Default interface stack."
+      },
+      "english-interface": {
+        "displayName": "Sora Interface",
+        "purpose": "Self-hosted English UI via html:lang(en)."
+      },
+      "label": {
+        "displayName": "Form Label",
+        "purpose": "Field labels and settings details."
+      },
+      "small": {
+        "displayName": "Supporting Copy",
+        "purpose": "Compact explanations."
+      },
+      "quote": {
+        "displayName": "Tabular Quote",
+        "purpose": "Current market price."
+      },
+      "threshold": {
+        "displayName": "Alert Threshold",
+        "purpose": "Prominent saved rule price."
+      }
+    },
+    "shadows": [
+      {
+        "name": "toast",
+        "value": "0 6px 32px #0006",
+        "purpose": "Temporary action feedback."
+      },
+      {
+        "name": "dialog",
+        "value": "0 20px 80px #0007",
+        "purpose": "Native modal above the workbench."
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-transition",
+        "value": "background .16s, border-color .16s",
+        "purpose": "Button hover states."
+      },
+      {
+        "name": "workspace-enter",
+        "value": "workbench-enter .32s cubic-bezier(.16,1,.3,1)",
+        "purpose": "8px vertical workspace entry."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation:none!important; transition:none!important",
+        "purpose": "Respect prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "footer-gutter",
+        "value": "1599px"
+      },
+      {
+        "name": "workspace-compact",
+        "value": "1200px"
+      },
+      {
+        "name": "settings-padding-inherited",
+        "value": "1100px"
+      },
+      {
+        "name": "workspace-stack",
+        "value": "900px"
+      },
+      {
+        "name": "inherited-narrow-layout",
+        "value": "760px"
+      },
+      {
+        "name": "mobile-actions",
+        "value": "600px"
+      },
+      {
+        "name": "single-column-form",
+        "value": "380px"
+      }
+    ],
+    "focus": {
+      "outline": "2px solid var(--accent)",
+      "offset": "3px"
+    },
+    "provenance": {
+      "mode": "source-extracted production design record",
+      "sources": [
+        "web/main.tsx",
+        "web/styles.css",
+        "web/workbench.css",
+        "web/App.tsx",
+        "web/i18n.ts",
+        "web/components/Icon.tsx",
+        "web/components/TradingChart.tsx",
+        "web/components/Dialog.tsx",
+        "web/pages/Dashboard.tsx",
+        "web/pages/Login.tsx",
+        "web/pages/Notifications.tsx",
+        "web/pages/Account.tsx",
+        "web/pages/Admin.tsx",
+        "public/icon.svg",
+        "public/fonts/OFL.txt"
+      ],
+      "rasterAssetsShipped": false,
+      "fontLicense": "SIL Open Font License 1.1; public/fonts/OFL.txt",
+      "tonalRamps": "Synthesized display metadata; not extracted application tokens.",
+      "notCanonized": "Inherited Google button blue fill and enabled switch cream thumb are retained component details, not expanded into the reusable palette."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "White action with the shipped inline plus icon.",
+      "html": "<button type=\"button\" class=\"ds-primary\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M12 4v16M4 12h16\"/></svg>Create alert</button>",
+      "css": ".ds-primary{font:inherit;border:1px solid var(--border,#333333);border-radius:6px;padding:8px 12px;min-height:38px;cursor:pointer;transition:background .16s,border-color .16s;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--text,#ededed);color:var(--bg,#111111);border-color:var(--text,#ededed);font-weight:500}.ds-primary svg{width:18px;height:18px}.ds-primary:hover{background:#ccc;border-color:#ccc}.ds-primary:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-primary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-primary{min-width:44px;min-height:44px}}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet outlined action.",
+      "html": "<button type=\"button\" class=\"ds-secondary\">Refresh status</button>",
+      "css": ".ds-secondary{font:inherit;border:1px solid var(--border,#333333);border-radius:6px;padding:8px 12px;min-height:38px;cursor:pointer;transition:background .16s,border-color .16s;background:transparent;color:var(--text,#ededed)}.ds-secondary:hover{background:#292929}.ds-secondary:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-secondary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-secondary{min-width:44px;min-height:44px}}"
+    },
+    {
+      "name": "Text Action",
+      "kind": "button",
+      "refersTo": "button-text",
+      "description": "Muted chart and supporting action.",
+      "html": "<button type=\"button\" class=\"ds-text\">Reconnect chart</button>",
+      "css": ".ds-text{font:inherit;font-size:11px;border:0;padding:6px 0;min-height:32px;background:transparent;color:var(--muted,#a3a3a3);text-align:left;cursor:pointer}.ds-text:hover{color:var(--text,#ededed);text-decoration:underline}.ds-text:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-text{min-width:44px;min-height:44px}}"
+    },
+    {
+      "name": "Labeled Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Filled form field with explicit label.",
+      "html": "<label class=\"ds-label\">Alert name<input class=\"ds-input\" placeholder=\"For example: previous high\" /></label>",
+      "css": ".ds-label{display:flex;flex-direction:column;gap:8px;margin:18px 0;font-size:12px;color:var(--text,#ededed)}.ds-input{font:inherit;width:100%;min-width:0;min-height:43px;color:var(--text,#ededed);background:var(--field,#202020);border:1px solid #555555;border-radius:6px;padding:10px 12px;caret-color:var(--accent,#b6f36a)}.ds-input::placeholder{color:#a3a3a3}.ds-input:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-input{min-height:44px}}"
+    },
+    {
+      "name": "Workbench Navigation",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "Neutral links with a lime current-page underline.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"#dashboard\" aria-current=\"page\">Markets &amp; alerts</a><a href=\"#notifications\">Phone notifications</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:stretch;gap:26px;height:46px}.ds-nav a{display:flex;align-items:center;font-size:13px;white-space:nowrap;text-decoration:none;color:var(--muted,#a3a3a3);border-bottom:2px solid transparent}.ds-nav a:hover{color:var(--text,#ededed)}.ds-nav a[aria-current=page]{color:var(--text,#ededed);border-color:var(--accent,#b6f36a)}.ds-nav a:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-nav{gap:24px;overflow-x:auto}.ds-nav a{font-size:12px;flex-shrink:0}}"
+    },
+    {
+      "name": "Configuration Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Compact outlined configuration status.",
+      "html": "<span class=\"ds-pill\">Not configured</span><span class=\"ds-pill ds-pill-success\">Configured</span>",
+      "css": ".ds-pill{display:inline-block;border:1px solid var(--line,#333333);background:none;color:var(--amber,#f1bd72);border-radius:4px;padding:5px 9px;font-size:11px;white-space:nowrap}.ds-pill-success{color:var(--accent,#b6f36a)}"
+    },
+    {
+      "name": "Settings Panel",
+      "kind": "card",
+      "refersTo": "settings-panel",
+      "description": "Flat charcoal panel used for account and delivery settings.",
+      "html": "<section class=\"ds-panel\"><h2>Account information</h2><p>Only your own alerts, prices and settings are shown.</p></section>",
+      "css": ".ds-panel{background:var(--surface,#171717);color:var(--text,#ededed);border:1px solid var(--border,#333333);border-radius:6px;padding:25px;min-width:0}.ds-panel h2{font-size:18px;font-weight:600;line-height:1.4;margin:0 0 16px}.ds-panel p{max-width:65ch;font-size:12px;line-height:1.7;color:var(--muted,#a3a3a3);margin:0}@media(max-width:1100px){.ds-panel{padding:22px}}@media(max-width:600px){.ds-panel{padding:22px 18px}}"
+    },
+    {
+      "name": "Monitoring Switch",
+      "kind": "custom",
+      "refersTo": "switch",
+      "description": "Actual enabled switch; mobile hit area wraps the visible track.",
+      "html": "<button class=\"ds-switch\" type=\"button\" role=\"switch\" aria-checked=\"true\" aria-label=\"Monitoring enabled\"></button>",
+      "css": ".ds-switch{width:44px;height:28px;min-height:28px;border-radius:14px;background:#555;border:0;padding:2px;position:relative;cursor:pointer;transition:background .16s,border-color .16s}.ds-switch:hover{background:#292929}.ds-switch:after{content:\"\";position:absolute;width:18px;height:18px;border-radius:50%;top:5px;left:5px;background:var(--bg,#111111)}.ds-switch[aria-checked=true]{background:var(--accent,#b6f36a)}.ds-switch[aria-checked=true]:after{left:21px;background:#fff2d5}.ds-switch:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-switch:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-switch{width:44px;height:44px;min-height:44px;background:transparent;padding:0}.ds-switch:before{content:\"\";position:absolute;left:0;top:10px;width:44px;height:24px;border-radius:20px;background:#555}.ds-switch:after{left:3px;top:13px}.ds-switch[aria-checked=true],.ds-switch:hover,.ds-switch[aria-checked=true]:hover{background:transparent}.ds-switch[aria-checked=true]:before{background:var(--accent,#b6f36a)}.ds-switch[aria-checked=true]:after{left:3px;transform:translateX(20px)}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Black-White Workbench",
+    "overview": "A familiar, compact developer workbench puts precise prices and rule actions ahead of decoration. The user selected the black-white direction and Vercel as its sole visual reference. Near-black canvas, flat charcoal panels, quiet separators and white primary actions define the implemented system.\n\nThe original threshold-pulse SVG supplies identity. Restrained lime communicates activity and focus; amber communicates locked states, uncertainty and warnings. Chinese uses the system sans-serif stack, English uses self-hosted Sora, and tabular monospace keeps numeric values stable.",
+    "keyCharacteristics": [
+      "Compact dark surfaces with clear separators.",
+      "White primary actions with restrained semantic accents.",
+      "Self-hosted English type, readable Chinese copy and tabular prices.",
+      "Equal Chinese and English functionality and mobile actions."
+    ],
+    "rules": [
+      {
+        "name": "The State Has Words Rule",
+        "body": "Pair monitoring and delivery colors with readable status labels.",
+        "section": "colors"
+      },
+      {
+        "name": "The Native Chart Rule",
+        "body": "Preserve TradingView controls and attribution when adapting the surrounding workbench.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do use neutral surfaces and white primary actions.",
+      "Do pair state colors with explicit Chinese and English labels.",
+      "Do preserve prominent tabular prices and readable supporting copy.",
+      "Do retain visible keyboard focus and the implemented mobile touch targets.",
+      "Do retain the original SVG identity and native chart affordances."
+    ],
+    "donts": [
+      "Don't reintroduce the discarded plum or circuit palettes.",
+      "Don't use color as the only explanation of monitoring or delivery state.",
+      "Don't load raster replacements for the shipped SVG identity.",
+      "Don't apply the app font or custom controls inside the external TradingView iframe."
+    ]
+  }
+}

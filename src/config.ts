@@ -54,6 +54,7 @@ const envSchema = z.object({
   PUSHOVER_APP_TOKEN: optionalText,
   BINANCE_RELAY_URL: optionalText,
   BINANCE_RELAY_TOKEN: optionalText,
+  BINANCE_RELAY_BYPASS: optionalText,
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MAX_USERS: limit(1_000, 100_000),
   MAX_ALERTS_PER_USER: limit(20, 100),
@@ -74,8 +75,7 @@ const envSchema = z.object({
   if (env.BINANCE_RELAY_TOKEN && !/^[A-Za-z0-9_-]{32,256}$/.test(env.BINANCE_RELAY_TOKEN)) issue('BINANCE_RELAY_TOKEN');
   if (env.BINANCE_RELAY_URL) {
     if (env.DEPLOYMENT !== 'cloudflare') issue('BINANCE_RELAY_URL');
-    // The bounded relay owns eight streams; refuse an application capacity that
-    // could request more symbols and exhaust the shared relay request budget.
+    // One authenticated batch per polling cycle, bounded to eight instruments.
     if (env.MAX_GLOBAL_INSTRUMENTS > 8) issue('MAX_GLOBAL_INSTRUMENTS');
     try {
       const url = new URL(env.BINANCE_RELAY_URL);
@@ -172,7 +172,8 @@ export function loadConfig(input: Readonly<Record<string, unknown>>) {
     bootstrapToken: env.BOOTSTRAP_TOKEN,
     sharedPushoverAppToken: env.PUSHOVER_APP_TOKEN,
     binanceRelay: env.BINANCE_RELAY_URL && env.BINANCE_RELAY_TOKEN
-      ? Object.freeze({url:env.BINANCE_RELAY_URL,token:env.BINANCE_RELAY_TOKEN}) : null,
+      ? Object.freeze({url:env.BINANCE_RELAY_URL,token:env.BINANCE_RELAY_TOKEN,
+          ...(env.BINANCE_RELAY_BYPASS ? {bypass:env.BINANCE_RELAY_BYPASS} : {})}) : null,
     port: env.PORT,
     secureCookies: new URL(env.APP_URL).protocol === 'https:',
     limits: Object.freeze({

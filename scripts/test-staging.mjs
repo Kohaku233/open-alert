@@ -51,7 +51,7 @@ export async function prepareTestExecution(root, { local = false, refresh = fals
     snapshot = await mkdtemp(join(cacheParent, 'run-'));
     await symlink(modules, join(snapshot, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     // Copy only execution inputs. In particular, never copy .env or live database state.
-    for (const name of ['src', 'test', 'scripts', 'migrations', 'dist', 'package.json', 'package-lock.json', 'wrangler.jsonc', 'tsconfig.json', 'tsconfig.build.json']) {
+    for (const name of ['src', 'test', 'scripts', 'relay', 'migrations', 'dist', 'package.json', 'package-lock.json', 'wrangler.jsonc', 'tsconfig.json', 'tsconfig.build.json']) {
       const source = join(root, name);
       if (await exists(source)) await cp(source, join(snapshot, name), { recursive: true, verbatimSymlinks: true });
     }

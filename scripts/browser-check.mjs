@@ -24,8 +24,8 @@ const { expect } = await import(pathToFileURL(join(dirname(playwrightPath),'test
 expect.configure({timeout:3000});
 const results = [], children = [], messages = [], transport = [], violations = [], browserErrors = [], cleanupErrors = [];
 const guardProbes = [], fixtureReady = [], browserBlocked = [];
-const preloads = ['--import',join(root,'scripts/local-test-transport.mjs'),'--import',join(root,'scripts/local-test-types.mjs')];
-const marketPreload = ['--import',join(root,'test/browser-ccxt-fixtures.mjs')];
+const preloads = ['--import',pathToFileURL(join(root,'scripts/local-test-transport.mjs')).href,'--import',pathToFileURL(join(root,'scripts/local-test-types.mjs')).href];
+const marketPreload = ['--import',pathToFileURL(join(root,'test/browser-ccxt-fixtures.mjs')).href];
 let assertions = 0, apiRequests = 0, browser, server, directory, origin, environment, timedOut = false;
 let alice, bob, aliceAlert, bobAlert, aliceId, bobId, sessionCookie, compiledInputs = {};
 async function fingerprints() {
@@ -60,12 +60,13 @@ async function stopServer() {
   server.child.kill('SIGTERM');
   // Node may drain idle keep-alive sockets beyond the CLI's four-second budget.
   const exit=await waitExit(server,8000);
-  assert.deepEqual(exit,{code:0,signal:null},`${server.label} shutdown: ${JSON.stringify(exit)}\n${server.logs}`);
-  assertions++; console.log('  CHECK compiled server exited cleanly after SIGTERM');
+  assert.deepEqual(exit,process.platform === 'win32' ? {code:null,signal:'SIGTERM'} : {code:0,signal:null},`${server.label} shutdown: ${JSON.stringify(exit)}\n${server.logs}`);
+  assertions++; console.log('  CHECK compiled server stopped after SIGTERM (Windows terminates; POSIX drains)');
 }
 async function startServer() {
   server=launch([...preloads,...marketPreload,join(root,'dist/server/runtime/node.js')],`compiled-server-${children.length}`);
-  await until(async()=>{if(server.exit)throw new Error(`Server exited early: ${server.logs}`);try {const r=await fetch(origin+'/api/auth-capabilities',{signal:AbortSignal.timeout(400)});return r.ok&&(await r.json()).data.emailOtp;}catch{return false;}},'compiled server readiness');
+  let readinessStatus = null;
+  try { await until(async()=>{if(server.exit)throw new Error(`Server exited early: ${server.logs}`);try {const r=await fetch(origin+'/api/auth-capabilities',{signal:AbortSignal.timeout(400)});readinessStatus=r.status;return r.ok&&(await r.json()).data.emailOtp;}catch{return false;}},'compiled server readiness'); } catch(error) { throw new Error(`${error.message}; HTTP status ${readinessStatus}; ${server.logs}`); }
   assert.match(server.logs,/setup ready/); assertions++;
 }
 async function api(context,path,method='GET',body,headers={}) {
@@ -112,7 +113,7 @@ async function selectMarket(picker,instrument,venue='okx',type='swap') {
   await picker.getByLabel('市场搜索结果').selectOption(instrument);
 }
 async function createAlert(profile,name,instrument,threshold,enabled=true) {
-  const {page,context}=profile;await page.getByRole('button',{name:'＋ 创建警报'}).click();const dialog=page.getByRole('dialog');
+  const {page,context}=profile;await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
   await selectMarket(dialog.locator('.market-search'),instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));
   await dialog.getByLabel('启用这条警报').setChecked(enabled);await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
   await expect(row(page,name)).toBeVisible();return (await ok(context,'/api/alerts')).alerts.find(a=>a.name===name);
@@ -125,7 +126,7 @@ try {
   environment={PATH:process.env.PATH,HOME:homedir(),NODE_ENV:'test',DEPLOYMENT:'node',DB_DRIVER:'sqlite',SQLITE_PATH:join(directory,'app.sqlite'),APP_URL:origin,PORT:String(port),AUTH_SECRET:randomBytes(32).toString('hex'),ENCRYPTION_KEY:randomBytes(32).toString('hex'),BOOTSTRAP_TOKEN:randomBytes(32).toString('hex'),EMAIL_PROVIDER:'console',INVITE_ONLY:'true',OPEN_ALERT_LOCAL_TEST:'1',...(process.env.OPEN_ALERT_TEST_NODE_MODULES?{OPEN_ALERT_TEST_NODE_MODULES:process.env.OPEN_ALERT_TEST_NODE_MODULES}:{})};
   const launchEnv={...process.env},cachedLib=join(homedir(),'.cache/okx-browser-check/lib');
   try{await access(join(cachedLib,'libXdamage.so.1'));launchEnv.LD_LIBRARY_PATH=[cachedLib,process.env.LD_LIBRARY_PATH].filter(Boolean).join(':');}catch{}
-  browser=await chromium.launch({headless:true,env:launchEnv});console.log(`REAL local integration — Chromium ${browser.version()} — compiled Node + dist/web`);
+  browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL,headless:true,env:launchEnv});console.log(`REAL local integration — Chromium ${browser.version()} — compiled Node + dist/web`);
   await journey('01 actual operator CLI invitation and compiled Node launch',async()=>{
     const probe=launch([...preloads,...marketPreload,'--input-type=module','-e',`
       import assert from 'node:assert/strict';

@@ -47,7 +47,7 @@ export function normalizeMarket(venue: Venue, raw: unknown, precisionMode: numbe
     instrument: instrumentId(venue, type, nativeId), venue, type, nativeId, symbol: expectedSymbol,
     base: raw.base, quote: 'USDT', settle: type === 'swap' ? 'USDT' : null,
     contractSize: type === 'swap' ? raw.contractSize as number : null,
-    tickSize: String(tickSize), state: 'live', tradingViewSymbol: venue === 'okx' && type === 'swap' && chartBases.has(raw.base) ? `OKX:${raw.base}USDT.P` : '',
+    tickSize: String(tickSize), state: 'live', tradingViewSymbol: chartBases.has(raw.base) && (venue !== 'mexc' || type === 'spot') ? `${venue.toUpperCase()}:${raw.base}USDT${type === 'swap' ? '.P' : ''}` : '',
   };
 }
 

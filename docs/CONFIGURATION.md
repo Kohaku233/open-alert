@@ -93,7 +93,8 @@ INVITE_ONLY=true
 | `BOOTSTRAP_TOKEN` | 首位管理员初始化时使用，至少 32 字符；完成后删除 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 可选，必须同时配置；缺少二者时 Google 入口关闭 |
 | `PUSHOVER_APP_TOKEN` | 可选，运营者共享的服务端 application token |
-| `BINANCE_RELAY_TOKEN` | 可选，与私有 relay 的 `RELAY_TOKEN` 一致，32–256 位 URL-safe 随机值；必须配对 `BINANCE_RELAY_URL` |
+| `BINANCE_RELAY_BYPASS` | Vercel 自动化部署保护绕过密钥，仅保存在 Cloudflare Secrets |
+| `BINANCE_RELAY_TOKEN` | 可选，与Vercel Function 的 `BINANCE_RELAY_TOKEN` 一致，32–256 位 URL-safe 随机值；必须配对 `BINANCE_RELAY_URL` |
 
 `AUTH_SECRET`、`ENCRYPTION_KEY`、`BOOTSTRAP_TOKEN` 分别生成，不能复用。数据库备份恢复需要原加密密钥；单纯替换 `ENCRYPTION_KEY` 不能轮换已存凭据。不要把 Secrets 写入 Wrangler vars、前端 `VITE_*` 变量或源码。
 
@@ -101,9 +102,7 @@ INVITE_ONLY=true
 
 ## Binance 永续 relay
 
-Cloudflare 直连 Binance 永续受限时，可将 `BINANCE_RELAY_URL` 设为现有常驻 Node relay 的 HTTPS 基址，并通过 Cloudflare Secrets 设置 `BINANCE_RELAY_TOKEN`。两项必须同时提供，仅允许 Cloudflare 部署；启用后强制 `MAX_GLOBAL_INSTRUMENTS<=8`，每人品种上限也不能超过全局值。源码默认全局值 200 不适用于 relay 模式，需要显式覆盖。现有小规模 Worker 模板已设为 8。
-
-relay 从官方完整合约目录建立市场，再用 CCXT Pro 接收精确品种的实际永续成交；Worker 只对 Binance 永续使用 relay，现货和其他交易所维持原路径。此模式仍是最新成交采样，可能漏掉轮询之间的短暂越界。部署前需要现有 Node 主机、进程托管、HTTPS 入口与可用的交易所网络出口，操作与验证边界见 [Binance relay](binance-futures-relay.md)。不要把 token 放入 URL、Wrangler 公开 vars 或 `VITE_*`。
+Cloudflare 可通过东京 Vercel Hobby Function 批量采集 Binance 永续真实成交。设置 `BINANCE_RELAY_URL`、`BINANCE_RELAY_TOKEN` 和部署保护所需的 `BINANCE_RELAY_BYPASS` Secrets；全局品种限制为 8。URL 为中继项目的 HTTPS 基址，不带 `/api/market`。详见 [Vercel 中继部署与实测](binance-vercel-relay.md)。
 
 ## 限额与注册策略
 

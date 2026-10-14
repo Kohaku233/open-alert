@@ -32,6 +32,8 @@ let assertions = 0, apiRequests = 0, authRequests = 0, chartScripts = 0;
 const check = async (name, fn) => { assertions++; await fn(); };
 const journey = async (name, fn) => { const start = Date.now(); try { await fn(); results.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`); } catch (error) { results.push({ name, passed: false, error: error.stack }); throw error; } };
 const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
+assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
+assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
 for (const name of await readdir(join(root, 'dist/web/assets'))) assets.set(`/assets/${name}`, [`assets/${name}`, name.endsWith('.css') ? 'text/css' : 'application/javascript']);
 const server = createServer(async (req, res) => {
   try { const item = assets.get(new URL(req.url, 'http://localhost').pathname); if (!item) { res.writeHead(404); return res.end('Not found'); } const body = await readFile(join(root, 'dist/web', item[0])); res.writeHead(200, { 'Content-Type': item[1], 'Cache-Control': 'no-store' }); res.end(body); }
@@ -55,7 +57,7 @@ async function setup(browser, profile, authenticated = false) {
   const context = await browser.newContext({ ...options, serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   await context.addInitScript(mark => {
-    const attach = () => { if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;top:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
+    const attach = () => { if (window.top !== window) return; if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
     document.addEventListener('DOMContentLoaded', attach);
   }, label);
   const page = await context.newPage(); page.setDefaultTimeout(6000);
@@ -67,7 +69,7 @@ async function setup(browser, profile, authenticated = false) {
       if (url.href === 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js') {
         chartScripts++;
         if (state.chartFail) return route.abort('failed');
-        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;const host=script.parentElement;const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#12202d;color:#a6b7c7;font:14px sans-serif;display:grid;place-items:center;height:95vh"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
+        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;const host=script.parentElement.querySelector('.tradingview-widget-container__widget');const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
       }
       externalAttempts.push({ profile, origin: url.origin, path: url.pathname }); return route.abort('blockedbyclient');
     }
@@ -168,13 +170,13 @@ const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByT
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
-async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '手机报警总开关' })).toBeVisible(); }
+async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
 const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 50 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 50000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
-  browser = await chromium.launch({ headless: true, env: launchEnv });
+  browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL, headless: true, env: launchEnv });
   console.log(`MOCK integration — Chromium ${browser.version()} — actual dist/web`);
   const { page, context, state } = await setup(browser, 'desktop');
   await journey('01 native email OTP, unavailable Google, cookie persistence', async () => {
@@ -215,7 +217,7 @@ try {
     state.alerts = state.alerts.filter(a => a.id !== 'mock-pending'); await refreshNavigation(page); chart = await page.locator('iframe').elementHandle();
   });
   await journey('03 alert CRUD, modal keyboard focus and generation guards', async () => {
-    await page.getByRole('button', { name: '＋ 创建警报' }).click(); const dialog = page.getByRole('dialog');
+    await page.getByRole('button', { name: '创建警报', exact: true }).click(); const dialog = page.getByRole('dialog');
     await check('modal focus inside', async () => assert(await dialog.evaluate(d => d.contains(document.activeElement) && d.matches(':modal'))));
     await check('no guessed threshold', () => expect(dialog.getByLabel('价格 · USDT')).toHaveValue(''));
     await dialog.getByLabel('警报名称').fill('<img src=x onerror=alert(1)> MOCK'); await dialog.getByLabel('价格 · USDT').fill('62000'); await dialog.getByRole('button', { name: '创建警报', exact:true }).click();
@@ -331,11 +333,11 @@ try {
   await journey('09 390×844 mobile layout, modal focus, navigation and MOCK capture', async () => {
     await m.goto(origin+'/dashboard'); await expect(m.getByRole('switch')).toBeVisible(); await expect(m.locator('iframe')).toBeVisible();
     await noOverflow(m); await m.screenshot({path:join(outputs,'open-alert-ui-mobile-MOCK.png'),fullPage:true});
-    const frame=await m.locator('iframe').elementHandle(); await m.getByRole('button',{name:'＋ 创建警报'}).click();
+    const frame=await m.locator('iframe').elementHandle(); await m.getByRole('button',{name:'创建警报',exact:true}).click();
     await check('mobile native modal focus', async () => assert(await m.getByRole('dialog').evaluate(d=>d.contains(document.activeElement)&&d.matches(':modal'))));
     await noOverflow(m); await m.keyboard.press('Escape');
     await check('Escape closes modal', () => expect(m.getByRole('dialog')).toHaveCount(0));
-    await check('modal restores focus', async () => assert(await m.getByRole('button',{name:'＋ 创建警报'}).evaluate(b=>b===document.activeElement)));
+    await check('modal restores focus', async () => assert(await m.getByRole('button',{name:'创建警报',exact:true}).evaluate(b=>b===document.activeElement)));
     await nav(m,'手机通知'); await noOverflow(m); await nav(m,'我的账户'); await noOverflow(m);
     await check('ordinary account hides admin nav', () => expect(m.getByRole('navigation').getByRole('link',{name:'管理',exact:true})).toHaveCount(0));
     await nav(m,'行情与警报'); await check('mobile navigation preserves chart', async () => assert(await frame.evaluate(n=>n.isConnected)));
@@ -359,7 +361,7 @@ try {
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
     await p.goto(origin+'/dashboard'); await expect(p.getByRole('switch')).toBeVisible();
-    await p.getByRole('button',{name:'＋ 创建警报'}).click();
+    await p.getByRole('button',{name:'创建警报',exact:true}).click();
     await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK blocked by cooldown');
     await p.getByRole('dialog').getByLabel('价格 · USDT').fill('62000');
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':new Date(time.getTime()+17000).toUTCString()}};
@@ -381,7 +383,7 @@ try {
     release(); await check('visibility never aborts valid in-flight snapshot',()=>expect(p.locator('.connection-error')).toHaveCount(0));
     await check('snapshot refresh does not replay blocked editor POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
     // A mutation clicked during an admitted read must observe its delayed 429.
-    await p.getByRole('button',{name:'＋ 创建警报'}).click();
+    await p.getByRole('button',{name:'创建警报',exact:true}).click();
     await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK delayed limit');
     await p.getByRole('dialog').getByLabel('价格 · USDT').fill('62000');
     let releaseLimit;
