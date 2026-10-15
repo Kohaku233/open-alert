@@ -40,9 +40,10 @@ async function workerApp(env:CloudflareBindings) {
     const auth=await createAuth(services.config,services.db,createAuthDrizzle(services.db as D1SqlDatabase,authSchema),{registrationPolicy:'require'});
     const notifications=createApiNotifications(services.config);
     const coordinator=()=>env.COORDINATOR.get(env.COORDINATOR.idFromName(COORDINATOR_ID));
+    let observationFailureAt:number|null=null;
     async function coordinatorJson<T>(path:string):Promise<T>{
       const response=await coordinator().fetch('https://coordinator.internal'+path);
-      if(!response.ok)throw new Error('coordinator_unavailable');return await response.json() as T;
+      if(!response.ok){if(path==='/observability'&&(observationFailureAt===null||Date.now()-observationFailureAt>=60000||Date.now()<observationFailureAt)){observationFailureAt=Date.now();console.error('open_alert_observation_failed',response.status);}throw new Error('coordinator_unavailable');}return await response.json() as T;
     }
     const app=createApp({...services,auth,notifications,quotes:{
       get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument)),
@@ -85,7 +86,7 @@ export default {
       finally {clearTimeout(timer);}
       const stub=env.COORDINATOR.get(env.COORDINATOR.idFromName(COORDINATOR_ID));
       const observation=await stub.fetch('https://coordinator.internal/monitor-pulse',{method:'POST',body:JSON.stringify(probe)});
-      if(!observation.ok)throw new Error('monitor_pulse_failed');
+      if(!observation.ok)throw new Error('monitor_pulse_failed_'+observation.status);
     })());
   },
   async fetch(request:Request,env:CloudflareBindings,_ctx:ExecutionContext):Promise<Response> {

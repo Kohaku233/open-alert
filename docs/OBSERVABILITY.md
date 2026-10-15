@@ -48,6 +48,8 @@ Wrangler 启用 Workers Logs，但关闭自动 invocation 请求日志；自定�
 - `open_alert_observation`：周期性观测；计数按 runId 解释，不能跨实例直接相加作为完整账单。
 - `open_alert_incident`：`opened / resolved` 转换。按 component 和 code 排查，不需要查看业务用户数据。
 
+诊断接口读取失败时仅记录安全 HTTP 状态码，同一 Worker 实例最多每分钟一次；后台巡检提交失败也保留状态码，不输出响应正文或请求信息。发布切换期间若诊断暂不可用，就绪接口仍返回未知/503，而不是提前报正常。
+
 配置依据：[Cloudflare Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)、[D1 metadata](https://developers.cloudflare.com/d1/worker-api/return-object/)。日志保留与额度由实际平台套餐决定。
 
 仓库提供一次性外部探测命令：

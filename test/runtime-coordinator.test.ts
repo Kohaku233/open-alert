@@ -29,6 +29,18 @@ test('scheduled recovery retries the internal reconcile without depending on HTT
   await Promise.all(jobs);assert.equal(calls,3);
 });
 
+test('scheduled monitor failure preserves a safe HTTP status after successful recovery',async()=>{
+  for(const status of [400,404,503]){
+    const jobs:Promise<unknown>[]=[],calls:string[]=[];
+    const env={NODE_ENV:'test',APP_URL:'https://alert.example.com',AUTH_SECRET:'a'.repeat(32),ENCRYPTION_KEY:'ab'.repeat(32),EMAIL_PROVIDER:'console',DB:{},COORDINATOR:{
+      idFromName(){return 'coordinator-v1';},get(){return {async fetch(url:string){calls.push(new URL(url).pathname);return new Response(null,{status:url.endsWith('/monitor-pulse')?status:202});}};},
+    }} as unknown as CloudflareBindings;
+    await worker.scheduled({} as never,env,{waitUntil(job:Promise<unknown>){jobs.push(job);}} as never);
+    await assert.rejects(Promise.all(jobs),new RegExp('^Error: monitor_pulse_failed_'+status+'$'));
+    assert.deepEqual(calls,['/reconcile','/monitor-pulse']);
+  }
+});
+
 test('coordinator coalesces status probes, invalidates on reconcile and never caches idle work',async()=>{
   let work=true,fail=false,checks=0,alarms=0,alarm:number|null=null;
   let release:()=>void=()=>{};
