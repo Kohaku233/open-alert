@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
@@ -42,8 +42,12 @@ async function fixture(overrides: Record<string, string> = {}) {
       outgoing.end(await response.text());
     } catch { outgoing.writeHead(500); outgoing.end('Local test server failed'); }
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  // Windows may assign port 6000 or 6665-6669, which Fetch deliberately blocks.
+  // Bind a free high port instead; never disable Fetch's blocked-port protection.
+  for(let attempt=0;attempt<10;attempt++){
+    try{server.listen(randomInt(20000,50000),'127.0.0.1');await once(server,'listening');break;}
+    catch(error){if((error as NodeJS.ErrnoException).code!=='EADDRINUSE'||attempt===9)throw error;}
+  }
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const origin = `http://127.0.0.1:${address.port}`;

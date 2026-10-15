@@ -50,7 +50,7 @@ export interface MarketSource {
 }
 export interface SourceDiagnostics {
   stopped: boolean; queued: number; queueCapacity: number; demandCapacity: number;
-  venues: { venue: Venue; type?: MarketType; catalogAt: number | null; catalogCode: string | null; priceCode: string | null; retryAt: number; clientOpen: boolean }[];
+  venues: { venue: Venue; type?: MarketType; catalogAt: number | null; catalogCode: string | null; priceCode: string | null; retryAt: number; clientOpen: boolean; pollRequests?: number; pollFailures?: number }[];
   instruments: { instrument: string; code: string | null; queued: number; replayEntries: number }[];
   replayCapacity: number;
 }
@@ -75,7 +75,7 @@ interface VenueState {
   catalog: Map<string, NormalizedMarket>; catalogAt: number | null; catalogCode: string | null;
   priceCode: string | null; retryAt: number; failures: number; nextCatalogAt: number;
   watchers: Map<string, Promise<void>>; catalogWork: Promise<void> | null; opening: Promise<void> | null;
-  pollCursor: number; controller: AbortController;
+  pollCursor: number; controller: AbortController; pollRequests: number; pollFailures: number;
 }
 const bound = (n: number, min: number, max: number) => {
   if (!Number.isSafeInteger(n) || n < min || n > max) throw new RangeError('invalid_market_source_limit');
@@ -123,7 +123,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   if (new Set(split).size !== split.length || split.some(v => !venues.includes(v))) throw new Error('invalid_product_scope');
   const scopes = venues.flatMap<{ venue: Venue; product: MarketType | undefined }>(venue => split.includes(venue) ? [{venue, product:'spot' as MarketType}, {venue, product:'swap' as MarketType}] : [{venue, product:undefined}]);
   const states: VenueState[] = scopes.map(({venue,product}) => ({ venue, ...(product ? {product} : {}), exchange: null, epoch: 0, catalog: new Map(), catalogAt: null,
-    catalogCode: 'catalog_not_loaded', priceCode: null, retryAt: 0, failures: 0, nextCatalogAt: 0, watchers: new Map(), catalogWork: null, opening: null, pollCursor: 0, controller: new AbortController() }));
+    catalogCode: 'catalog_not_loaded', priceCode: null, retryAt: 0, failures: 0, nextCatalogAt: 0, watchers: new Map(), catalogWork: null, opening: null, pollCursor: 0, controller: new AbortController(), pollRequests: 0, pollFailures: 0 }));
   let stopped = false, lastPoll: number | null = null, queued = 0;
   let demand = new Map<string, Demand>(), refreshWork: Promise<void> | null = null;
   let demandWork: Promise<void> = Promise.resolve(), stopWork: Promise<void> | null = null;
@@ -316,13 +316,14 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       const [id, d] = entries[s.pollCursor]!; s.pollCursor++;
       const market = s.catalog.get(id);
       if (!market || demand.get(id) !== d || budget.visited.has(d) || d.code === 'trade_queue_overflow' || now() < d.nextPollAt) continue;
-      budget.visited.add(d); budget.requests++;
+      budget.visited.add(d); budget.requests++; s.pollRequests++;
       try {
         const raw = await deadline(() => exchange.fetchTrades(market.symbol, undefined, maxBatch), Math.max(1, Math.min(timeout, Math.ceil(end - performance.now()))), s.controller.signal);
         if (stopped || epoch !== s.epoch) return;
         if (demand.get(id) === d && s.catalog.get(id) === market && catalogFresh(s)) { accept(s, market, d, raw); d.nextPollAt = now() + pollInterval; }
       } catch (error) {
         if (stopped || epoch !== s.epoch) return;
+        s.pollFailures++;
         if (demand.get(id) === d && s.catalog.get(id) === market && catalogFresh(s)) {
           if (error instanceof SymbolTradesUnavailableError && error.symbol === market.symbol) {
             // Discard unconsumed observations too, but keep the cursor/IDs so a
@@ -429,7 +430,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
     diagnostics() {
       return { stopped, queued, queueCapacity: maxQueue, demandCapacity: maxDemand, replayCapacity: maxReplay,
         // A constructed CCXT client does not establish socket connectivity.
-        venues: states.map(s => ({ venue: s.venue, ...(s.product ? {type:s.product} : {}), catalogAt: s.catalogAt, catalogCode: s.catalogCode, priceCode: s.priceCode, retryAt: s.retryAt, clientOpen: !!s.exchange })),
+        venues: states.map(s => ({ venue: s.venue, ...(s.product ? {type:s.product} : {}), catalogAt: s.catalogAt, catalogCode: s.catalogCode, priceCode: s.priceCode, retryAt: s.retryAt, clientOpen: !!s.exchange, pollRequests: s.pollRequests, pollFailures: s.pollFailures })),
         instruments: [...demand].map(([instrument, d]) => ({ instrument, code: d.code, queued: d.queue.length, replayEntries: d.seen.size })) };
     },
   };

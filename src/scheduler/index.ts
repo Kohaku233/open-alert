@@ -8,6 +8,7 @@ import type { Fetch } from '../notifications/http.js';
 import { createMarketCache, freshTick } from './market.js';
 import { marketAvailable, marketSourceStale } from '../markets/catalog.js';
 import type { CatalogSelection } from '../api/ports.js';
+import { observeLatency, schedulerMetrics } from '../runtime/metrics.js';
 
 export interface SchedulerNotifications {
   deliver(event: OutboxRecord): Promise<DeliveryResult>;
@@ -37,6 +38,7 @@ const bounded = (value: number, min: number, max: number, code: string) => {
 export function createScheduler(options: SchedulerOptions) {
   const { config, repositories: r } = options, now = options.now ?? Date.now;
   const ownerId = options.ownerId ?? crypto.randomUUID();
+  const startedAt = now(), runId = crypto.randomUUID(), metrics = schedulerMetrics();
   const leaseMs = bounded(options.leaseMs ?? config.runtime.leaseMs, 15_000, 60_000, 'invalid_lease_duration');
   const deliveryTimeoutMs = bounded(options.deliveryTimeoutMs ?? config.runtime.requestTimeoutMs + 1000, 1, 10_000, 'invalid_delivery_timeout');
   const drainBudgetMs = bounded(options.drainBudgetMs ?? 25_000, 1, 30_000, 'invalid_drain_budget');
@@ -217,6 +219,7 @@ export function createScheduler(options: SchedulerOptions) {
               if (stopped || !lease || lease.expiresAt <= now() || source && !source.eligible(rule.instrument)) return;
               reservations++;
               const reserved = await r.alerts.reserveTrigger({ triggerId: crypto.randomUUID(), alertId: rule.id, userId: rule.userId, generation: rule.generation, settingsGeneration: rule.settingsGeneration, channelGeneration: rule.channelGeneration, tick: crossing, now: now(), lease });
+              if (reserved) metrics.reservations++;
               if (!reserved) {
                 // SQL may have fenced a stale rule/profile snapshot. Revalidate next
                 // cycle before inspecting or acknowledging its captured crossing.
@@ -247,7 +250,13 @@ export function createScheduler(options: SchedulerOptions) {
   }
   function tick(): Promise<void> {
     if (tickWork) return tickWork;
-    tickWork = runTick().finally(() => { tickWork = null; }); return tickWork;
+    const at = performance.now();
+    tickWork = runTick().finally(() => {
+      metrics.ticks++; observeLatency(metrics.tickMs, performance.now() - at);
+      if (schedulerCode === 'cycle_budget_exceeded') metrics.budgetHits++;
+      else if (schedulerCode && schedulerCode !== 'idle_no_active_alerts') metrics.tickFailures++;
+      tickWork = null;
+    }); return tickWork;
   }
   async function collectDue(): Promise<void> {
     // Bounded keyset scan, including multiple users before round-robin. Carry leftovers across drains.
@@ -306,7 +315,10 @@ export function createScheduler(options: SchedulerOptions) {
         // The HTTP request follows a committed claim and current lease. No automatic resend on ambiguity.
         if (stopped || lease?.fence !== ownership.fence || ownership.expiresAt <= now() + deliveryTimeoutMs) break;
         dispatched++;
+        metrics.attempts++;
+        const deliveryStarted = performance.now();
         const result = await boundedDelivery(claimed);
+        observeLatency(metrics.deliveryMs, performance.now() - deliveryStarted);
         const phase = result.outcome === 'failed' && result.code === 'provider_rejected' ? 'queued' : result.outcome;
         const safeCodes = new Set(['provider_rejected','provider_transport_uncertain','provider_response_uncertain','provider_deadline_uncertain','provider_uncertain','channel_unavailable','channel_changed','notification_failed','notification_input_invalid','delivery_not_claimed']);
         const code = result.code === null ? null : safeCodes.has(result.code) ? result.code : 'notification_failed';
@@ -318,6 +330,11 @@ export function createScheduler(options: SchedulerOptions) {
         const saved = await r.scheduler.finishDelivery(claimed.triggerId, claimId, finishLease, phase, code, result.receipt, now());
         if (!saved) { schedulerCode = 'finish_not_committed'; return; }
         outstandingClaim = false;
+        if (phase === 'sent') metrics.sent++;
+        else if (phase === 'uncertain') metrics.uncertain++;
+        else if (phase === 'queued') metrics.retries++;
+        else metrics.failed++;
+        observeLatency(metrics.triggerToResultMs, now() - claimed.createdAt);
         databaseSuccess = now(); databaseCode = null;
         if (providerBlocked) { schedulerCode = 'provider_deadline_uncertain'; return; }
         if (cloudflare && result.outcome === 'uncertain') { schedulerCode = 'provider_uncertain'; return; }
@@ -325,6 +342,7 @@ export function createScheduler(options: SchedulerOptions) {
     } catch { databaseCode = 'database_unavailable'; schedulerCode = 'delivery_cycle_failed'; }
     finally {
       if (outstandingClaim) {
+        metrics.uncommitted++;
         // A committed sending claim must not remain on a perpetually renewed fence.
         // Reacquisition runs recovery and marks it uncertain, without another dispatch.
         const abandoned = lease; lease = null;
@@ -373,6 +391,7 @@ export function createScheduler(options: SchedulerOptions) {
     return { health, prices: market.getPrices(), notifications: notificationHealth, lastPollAt: market.lastPollAt(), ...(source?.mode ? { marketMode: source.mode } : {}), coordinatorId: 'coordinator-v1' as const, pollIntervalMs: 5000 as const, running: !stopped && !fatal, leaseFence: lease?.fence ?? null };
   }
   return { start, stop, tick, cycle, once: cycle, drain, invalidate, invalidateRules: invalidate,
+    observability() { return { runId, startedAt, hasWork: confirmedWork, metrics: structuredClone(metrics), sources: source?.diagnostics().venues ?? [] }; },
     async wake() { invalidate(); await tick(); },
     /** Cheap DB probe for DO idle alarms; no lease, prices, or profile hydration. */
     hasWork,

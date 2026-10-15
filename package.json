@@ -24,6 +24,7 @@
     "admin:invite": "node --env-file-if-exists=.env --import tsx scripts/admin-invite.ts",
     "admin:invite:d1": "tsx scripts/d1-invite.ts",
     "db:migrate:d1": "tsx scripts/d1-migrate.ts",
+    "monitor:check": "node scripts/monitor-check.mjs",
     "test:browser": "node scripts/browser-check.mjs",
     "test:browser:mock": "node scripts/browser-mock-check.mjs",
     "cf:dev": "wrangler dev",

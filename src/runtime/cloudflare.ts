@@ -19,13 +19,20 @@ import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js
 import { catalogDirectory, marketQuerySchema, searchMarkets } from '../api/markets.js';
 import { D1SqlDatabase } from '../db/d1.js';
 import { wakeWithRetry } from './wake.js';
+import { createObservability } from './observability.js';
+import type { ObservabilitySnapshot, OperationalProbe } from '../contracts/observability.js';
+import type { ComponentHealth } from '../contracts/domain.js';
+import { z } from 'zod';
+const probeComponent=z.strictObject({state:z.enum(['healthy','degraded','unhealthy','starting']),code:z.string().max(64).nullable(),lastSuccessAt:z.number().int().nonnegative().nullable()});
+const probeInput=z.strictObject({at:z.number().int().nonnegative(),api:probeComponent,email:probeComponent});
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
 async function databaseServices(env: CloudflareBindings) {
   const config=configFor(env),db=await createDb(config,{deployment:'cloudflare',bindings:env});
   await requireDatabaseSchema(db);
   return {config,db,repositories:createRepositories(db,config)};
 }
-const workerCache=new WeakMap<object,Promise<ReturnType<typeof createApp>>>();
+type WorkerServices={app:ReturnType<typeof createApp>;emailHealth:()=>ComponentHealth;check:()=>Promise<void>};
+const workerCache=new WeakMap<object,Promise<WorkerServices>>();
 async function workerApp(env:CloudflareBindings) {
   let promise=workerCache.get(env);
   if(!promise){promise=(async()=>{
@@ -37,7 +44,7 @@ async function workerApp(env:CloudflareBindings) {
       const response=await coordinator().fetch('https://coordinator.internal'+path);
       if(!response.ok)throw new Error('coordinator_unavailable');return await response.json() as T;
     }
-    return createApp({...services,auth,notifications,quotes:{
+    const app=createApp({...services,auth,notifications,quotes:{
       get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument)),
       lookup:instrument=>coordinatorJson<QuoteLookup>('/quote-lookup?instrument='+encodeURIComponent(instrument)),
     },catalog:{
@@ -52,7 +59,8 @@ async function workerApp(env:CloudflareBindings) {
         return response as unknown as Response;
       },
       resolve:instrument=>coordinatorJson('/market?instrument='+encodeURIComponent(instrument)),
-    },runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async(signal)=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST',signal:signal as never});if(!response.ok)throw new Error('coordinator_unavailable');}});
+    },runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot'),observe:()=>coordinatorJson<ObservabilitySnapshot>('/observability')},wake:async(signal)=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST',signal:signal as never});if(!response.ok)throw new Error('coordinator_unavailable');}});
+    return {app,emailHealth:auth.emailHealth,check:async()=>{await services.db.query('SELECT 1 AS ready');}};
   })();workerCache.set(env,promise);promise.catch(()=>{workerCache.delete(env);});}
   return promise;
 }
@@ -64,10 +72,20 @@ export default {
       configFor(env);
       const confirmed=await wakeWithRetry(async signal=>{
         const coordinator=env.COORDINATOR.get(env.COORDINATOR.idFromName(COORDINATOR_ID));
-        const response=await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST',signal:signal as never});
+        const response=await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST',headers:{'X-Open-Alert-Cron':'1'},signal:signal as never});
         if(!response.ok)throw new Error('coordinator_unavailable');
       });
       if(!confirmed)throw new Error('coordinator_recovery_failed');
+      // Readiness failure is observed separately; it must never prevent recovery.
+      let timer:ReturnType<typeof setTimeout>|undefined,probe:OperationalProbe;
+      try {
+        const service=await Promise.race([(async()=>{const value=await workerApp(env);await value.check();return value;})(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('probe_timeout')),8000);})]);
+        probe={at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:service.emailHealth()};
+      } catch {probe={at:Date.now(),api:{state:'unhealthy',code:'service_startup_unavailable',lastSuccessAt:null},email:{state:'starting',code:'email_starting',lastSuccessAt:null}};}
+      finally {clearTimeout(timer);}
+      const stub=env.COORDINATOR.get(env.COORDINATOR.idFromName(COORDINATOR_ID));
+      const observation=await stub.fetch('https://coordinator.internal/monitor-pulse',{method:'POST',body:JSON.stringify(probe)});
+      if(!observation.ok)throw new Error('monitor_pulse_failed');
     })());
   },
   async fetch(request:Request,env:CloudflareBindings,_ctx:ExecutionContext):Promise<Response> {
@@ -76,7 +94,7 @@ export default {
       configFor(env);
       if(!path.startsWith('/api/'))return env.ASSETS ? env.ASSETS.fetch(request as never) as unknown as Promise<Response> : new Response('Web assets are not configured',{status:503});
       const app=await workerApp(env);
-      return await app.fetch(trustedRequest(request,request.headers.get('cf-connecting-ip')));
+      return await app.app.fetch(trustedRequest(request,request.headers.get('cf-connecting-ip')));
     } catch {return path.startsWith('/api/')?unavailableApi(path):new Response(setupHtml,{status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});}
   },
 };
@@ -87,6 +105,7 @@ export class Coordinator {
   private revision=0;
   private active=false;
   private quotes: ReturnType<typeof createMarketQuoteService> | null=null;
+  private monitor: ReturnType<typeof createObservability> | null=null;
   private alarmWrites:Promise<unknown>=Promise.resolve();
   private workCheck:{revision:number;promise:Promise<boolean>}|null=null;
   private checkedWork:{revision:number;at:number;active:boolean}|null=null;
@@ -98,10 +117,12 @@ export class Coordinator {
     this.initialized=state.blockConcurrencyWhile(async()=>{
       const services=await databaseServices(env);
       this.quotes=createMarketQuoteService({fetchImplementation:globalThis.fetch,...(services.config.binanceRelay?{relay:services.config.binanceRelay}:{})});
-      return createScheduler({...services,notifications:createNotificationService(services),
+      const engine=createScheduler({...services,notifications:createNotificationService(services),
         marketSource:(services.config.binanceRelay ? createVercelBinanceSource : createPublicCcxtMarketSource)({mode:'polling',fetchImplementation:globalThis.fetch,
           ...(services.config.binanceRelay ? { relay: services.config.binanceRelay } : {}),
           maxDemand:services.config.limits.globalInstruments,requestTimeoutMs:8000,pollBudgetMs:10000})});
+      this.monitor=createObservability({engine,db:services.db,cronRequired:true,storage:{get:()=>this.state.storage.get('monitor:v1'),put:value=>this.state.storage.put('monitor:v1',value)}});
+      return engine;
     });
   }
   private async reconcile(allowCached=false):Promise<boolean> {
@@ -144,13 +165,25 @@ export class Coordinator {
   async fetch(request:Request):Promise<Response> {
     const engine=await this.initialized,path=new URL(request.url).pathname;
     if(path==='/reconcile'&&request.method==='POST'){
+      await this.monitor?.pulse(undefined,request.headers.get('X-Open-Alert-Cron')==='1');
       this.revision++;engine.invalidate();
-      await this.reconcile();return new Response(null,{status:202});
+      try {await this.reconcile();}catch{await this.monitor?.capture().catch(()=>{});throw new Error('coordinator_reconcile_failed');}return new Response(null,{status:202});
     }
     if(path==='/wake'&&request.method==='POST'){
+      await this.monitor?.pulse();
       this.revision++;engine.invalidate();this.active=true;
       await this.writeAlarm(()=>this.state.storage.setAlarm(Date.now()+5000));
       this.state.waitUntil(this.cycle());return new Response(null,{status:202});
+    }
+    if(path==='/monitor-pulse'&&request.method==='POST'){
+      if(!this.monitor)return new Response(null,{status:503});
+      const probe=probeInput.safeParse(await request.json().catch(()=>null));
+      if(!probe.success)return new Response(null,{status:400});
+      await this.monitor.pulse(probe.data);await this.monitor.capture();return new Response(null,{status:202});
+    }
+    if(path==='/observability'&&request.method==='GET'){
+      if(!this.monitor)return new Response(null,{status:503});
+      await this.reconcile(true).catch(()=>this.monitor?.pulse());return Response.json(await this.monitor.capture());
     }
     if(path==='/catalog'&&request.method==='GET'){
       await engine.refreshCatalog();return Response.json(engine.getMarkets());

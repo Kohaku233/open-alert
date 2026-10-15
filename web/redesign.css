@@ -549,3 +549,26 @@ dialog::backdrop, [data-slot="dialog-overlay"] { background: var(--overlay); bac
 @media (hover: none) {
   .signal-hero-field::after { display: none; }
 }
+.ops-panel { padding: clamp(18px, 3vw, 28px); margin-bottom: 24px; min-width: 0; }
+.ops-heading, .ops-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ops-heading h2 { font-size: 22px; margin: 0 0 8px; }
+.ops-heading p { margin: 0; }
+.ops-state { padding: 22px 0 12px; }
+.ops-state strong { font-size: 19px; }
+.ops-state span, .ops-sources span, .ops-events span { color: var(--muted-foreground); font-size: 14px; }
+.ops-state[data-state="critical"] strong { color: var(--danger); }
+.ops-state[data-state="warning"] strong, .ops-state[data-state="unknown"] strong { color: var(--warning-text); }
+.ops-issues { padding: 0; list-style: none; margin: 0 0 20px; }
+.ops-issues li { display: flex; align-items: baseline; gap: 14px; padding: 10px 0; font-size: 15px; }
+.ops-issues strong { flex: 0 0 auto; }
+.ops-issues span, .ops-panel code { min-width: 0; overflow-wrap: anywhere; }
+.ops-panel code { font-size: 12px; color: var(--muted-foreground); }
+.ops-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 18px; border-top: 1px solid var(--border); }
+.ops-metrics > div { min-width: 0; padding: 16px 18px 16px 0; border-bottom: 1px solid var(--border); }
+.ops-metrics dt { color: var(--muted-foreground); font-size: 14px; line-height: 1.6; }
+.ops-metrics dd { margin: 8px 0 0; font-size: 16px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ops-panel > .small { font-size: 14px; line-height: 1.7; }
+.ops-sources p, .ops-events li { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.ops-events { list-style: none; padding: 0; max-height: 440px; overflow-y: auto; }
+@media (max-width: 760px) { .ops-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ops-issues li { flex-direction: column; gap: 5px; } }
+@media (max-width: 380px) { .ops-metrics { grid-template-columns: minmax(0, 1fr); } }

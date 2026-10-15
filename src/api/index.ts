@@ -129,6 +129,15 @@ export function createApi(d:ApiDependencies) {
     try {await d.db.query('SELECT 1 AS ready');stage='runtime_snapshot';const snapshot=await d.runtime.snapshot();stage='aggregate';const state=(await aggregateHealth(snapshot)).overall;return c.json({ok:true as const,data:{state},requestId:c.get('requestId')},state==='healthy'||state==='degraded'?200:503);}
     catch {console.error('open_alert_health_failed',stage);return c.json({ok:true as const,data:{state:'unhealthy'},requestId:c.get('requestId')},503);}
   });
+  app.get('/api/readiness',async c=>{
+    if(!d.runtime.observe)return c.json({ok:true,data:{state:'unknown'},requestId:c.get('requestId')},503);
+    try {
+      await d.db.query('SELECT 1 AS ready');
+      const report=await d.runtime.observe(),email=d.auth.emailHealth();
+      const ready=(report.state==='ok'||report.state==='idle')&&email.state==='healthy'&&report.observedAt<=Date.now()+5000&&Date.now()-report.observedAt<30_000;
+      return c.json({ok:true,data:{state:ready?'ready':'not_ready'},requestId:c.get('requestId')},ready?200:503);
+    }catch{return c.json({ok:true,data:{state:'unknown'},requestId:c.get('requestId')},503);}
+  });
   app.use('/api/*',async(c,next)=>{
     const principal=await d.auth.getPrincipal(c.req.raw);if(!principal)throw new HttpError(401,'unauthenticated');c.set('principal',principal);
     if(!['GET','HEAD','OPTIONS'].includes(c.req.method)){
@@ -258,6 +267,7 @@ export function createApi(d:ApiDependencies) {
     return ok(c,{revoked:true});
   });
   app.get('/api/admin/status',async c=>ok(c,{...await d.repositories.admin.counts(),health:await aggregateHealth(await d.runtime.snapshot())}));
+  app.get('/api/admin/observability',async c=>{if(!d.runtime.observe)throw new HttpError(503,'service_unavailable');return ok(c,await d.runtime.observe());});
   app.all('/api/*',()=>{throw new HttpError(404,'not_found');});
   return app;
 }

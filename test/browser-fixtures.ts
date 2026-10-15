@@ -2,6 +2,11 @@
 // scripts/browser-check.mjs exercises compiled Node, real OTP/cookies and SQLite instead.
 // No actual users, market ticks, credentials or delivery in this fixture.
 import type { Alert, ChannelProfile, Market, SystemStatus, UserIdentity } from '../src/contracts/domain.js';
+import type { ObservabilitySnapshot } from '../src/contracts/observability.js';
+import { schedulerMetrics } from '../src/runtime/metrics.js';
+export function makeObservabilityFixture(now=Date.now()):ObservabilitySnapshot {
+ return {observedAt:now,state:'idle',expectedIdle:true,issues:[{component:'scheduler',code:'idle_no_active_alerts',severity:'info'},{component:'notifications',code:'provider_not_checked',severity:'info'}],runId:'mock-ops',startedAt:now-60000,lastPollAt:null,lastCronAt:now,cronRequired:true,metrics:schedulerMetrics(),database:{operations:10,errors:0,conflicts:0,rowsRead:30,rowsWritten:2,durationMs:20},databaseScope:'coordinator',queue:{queued:0,due:0,sending:0,oldestDueAt:null,oldestSendingAt:null},sources:[],events:[],history:[],persistence:'durable',notifications:'disabled'};
+}
 export { createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, putChannelSchema, testNotificationSchema } from '../src/contracts/domain.js';
 
 export function makeBrowserFixture() {
@@ -24,5 +29,5 @@ export function makeBrowserFixture() {
     { ...base, id: 'mock-uncertain', name: 'MOCK 投递不确定', threshold: 59000, generation: 1, triggered: true, triggerId: 'mock-trigger-uncertain', status: 'latched', last: { triggerId: 'mock-trigger-uncertain', outcome: 'uncertain', at: now, attempts: 1, code: 'provider_uncertain', receiptAvailable: false } },
     { ...base, id: 'mock-pending', name: 'MOCK 排队通知', generation: 2, triggered: true, triggerId: 'mock-trigger-pending', status: 'queued', pending: { triggerId: 'mock-trigger-pending', generation: 2, phase: 'queued', attempts: 0, nextAt: now, createdAt: now, price: 62000, timestamp: now } },
   ];
-  return { status, alerts, markets };
+  return { status, alerts, markets, observability:makeObservabilityFixture(now) };
 }

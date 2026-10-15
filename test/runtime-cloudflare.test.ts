@@ -266,6 +266,24 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.equal((await request(`/api/admin/invites/${invite.id}/resend`,'POST',{confirm:true,expectedExpiresAt:invite.expiresAt},aliceCookie)).status,409);
 
   });
+  await t.test('operator observations persist incident/recovery, preserve idle work and expose minimal readiness',async()=>{
+   const before={tickers:tickerRequests,sends:deliveries.length,emails:emails.length};
+   assert.equal((await request('/api/admin/observability')).status,401);
+   assert.equal((await request('/api/admin/observability','GET',undefined,bobCookie)).status,403);
+   const pulse=async(failed=false)=>{
+    await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST',headers:{'X-Open-Alert-Cron':'1'}});
+    const response=await coordinator.fetch('https://coordinator.internal/monitor-pulse',{method:'POST',body:JSON.stringify({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:{state:failed?'unhealthy':'healthy',code:failed?'email_unavailable':null,lastSuccessAt:Date.now()}})});assert.equal(response.status,202);
+   };
+   await pulse();
+   const report=await api<import('../src/contracts/observability.js').ObservabilitySnapshot>('/api/admin/observability','GET',undefined,aliceCookie);
+   assert.equal(report.state,'idle');assert.equal(report.persistence,'durable');assert.ok(report.database!.operations>0);assert.equal(report.notifications,'disabled');assert.equal(await alarm(),null);
+   const ready=await request('/api/readiness');assert.equal(ready.status,200);assert.deepEqual((await ready.json() as {data:unknown}).data,{state:'ready'});
+   await pulse(true);assert.equal((await request('/api/readiness')).status,503);
+   const incident=await api<import('../src/contracts/observability.js').ObservabilitySnapshot>('/api/admin/observability','GET',undefined,aliceCookie);assert.ok(incident.events.some(e=>e.code==='email_unavailable'&&e.resolvedAt===null));
+   await pulse();const recovered=await api<import('../src/contracts/observability.js').ObservabilitySnapshot>('/api/admin/observability','GET',undefined,aliceCookie);assert.ok(recovered.events.some(e=>e.code==='email_unavailable'&&e.resolvedAt!==null));
+   assert.deepEqual({tickers:tickerRequests,sends:deliveries.length,emails:emails.length},before,'Observation never sends, fetches prices or changes monitoring');
+   assert.notEqual((await request('/observability')).status,200);assert.equal(await alarm(),null);
+  });
  } finally {
   await mf.dispose();
   await rm(persistence,{recursive:true,force:true});

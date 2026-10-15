@@ -10,6 +10,7 @@ import type { WorkspaceModel } from '../model.js';
 import { api, errorText, request } from '../api.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { healthLabels } from '../utils.js';
+import { OperationalMonitor } from '../components/OperationalMonitor.js';
 type AdminStatus = {
     activeUsers: number;
     activeAlerts: number;
@@ -69,6 +70,7 @@ export function Admin({ model, notify }: {
     return <section ref={pageRef} className="settings-page"><PageHeader className="page-heading"><div><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></PageHeader>
     <FormError message={error}/>
     <div className="admin-overview"><span>{t("活跃账户 ")}<strong>{adminStatus?.activeUsers ?? '—'}</strong></span><span>{t("活跃警报 ")}<strong>{adminStatus?.activeAlerts ?? '—'}</strong></span><span>{t("运行状态 ")}<strong>{adminStatus ? healthLabels[adminStatus.health.overall] : t("读取中")}</strong></span></div>
+    <OperationalMonitor/>
     <div className="admin-grid"><Invitations model={model} notify={notify}/>
       <Panel className="settings-panel"><h2>{t("部署配置")}</h2><p className="small muted">{t("数据库、邮件、Google 和共享 Pushover 凭据由部署者在服务端配置，不通过此页面编辑。")}</p><Disclosure title={t("查看部署配置说明")}><div className="setup-note"><p>{t("Node 使用 SQLite 或 PostgreSQL；Cloudflare 使用 D1 和单个后台协调器。账户、警报与通知状态都保存在数据库。")}</p><p>{t("Google 需要配对的 OAuth 客户端 ID 与密钥。邮件使用已验证发件地址与 SMTP（仅 Node）或 Resend。")}</p><p>{t("共享 Pushover 应用令牌在服务端配置；用户各自保存 User Key。更换数据加密密钥需先迁移已有密钥。")}</p><p>{t("密钥与云平台令牌不应放入前端或构建变量。")}</p></div></Disclosure>
       {adminStatus && <div className="admin-health">{(['database', 'scheduler', 'prices', 'notifications', 'email'] as const).map(key => <span key={key}>{({ get database() {

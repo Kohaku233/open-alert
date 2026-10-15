@@ -179,6 +179,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
       if (path === '/api/test-notification' && method === 'POST') { F.testNotificationSchema.parse(body); state.status.daily.attempts++; return ok({ outcome: 'sent', at: Date.now() }); }
       if (path === '/api/admin/users' && method === 'GET') { assert.equal(url.searchParams.get('limit'), '50'); return ok({ items: [{ ...state.status.user, id: 'mock-member', email: 'member@example.test', role: 'user' }], cursor: url.searchParams.has('cursor') ? null : 'mock-page-2' }); }
       if (path === '/api/admin/status' && method === 'GET') return ok({ activeUsers: 2, activeAlerts: state.alerts.length, health: state.status.health });
+      if (path === '/api/admin/observability' && method === 'GET') return ok(state.observability);
       if (path === '/api/admin/invites' && method === 'GET') {
         return ok({items:[...(state.invites?.values()??[])].map(item=>({id:item.id,email:item.email,expiresAt:item.expiresAt,status:item.expiresAt===0?'revoked':item.expiresAt<=Date.now()?'expired':'pending'})),cursor:null});
       }
@@ -569,6 +570,23 @@ try {
     s.sessionInvalid=true;
     await check('expired session handled on poll', () => expect(p.getByRole('heading',{name:'登录或注册'})).toBeVisible({timeout:7000}));
     await fixture.context.close();
+  });
+  await journey('10b operator diagnostics distinguish idle, incidents, stale reads and recovery on desktop/mobile',async()=>{
+    for(const profile of ['desktop','mobile']){
+      const f=await setup(browser,profile,true),p=f.page,s=f.state;s.status.user.role='admin';s.status.capabilities.canAdmin=true;
+      await p.goto(origin+'/admin');const panel=p.locator('.ops-panel');
+      await check('idle monitor is explained without claiming a delivery test',async()=>{await expect(panel.locator('.ops-state strong')).toHaveText('空闲待命');await expect(panel).toContainText('通知提供方未验证');await expect(panel).toContainText('自动异常推送未启用');});
+      s.observability={...s.observability,state:'critical',observedAt:Date.now(),issues:[{component:'queue',code:'delivery_stuck',severity:'critical'}],events:[{component:'queue',code:'delivery_stuck',severity:'critical',openedAt:Date.now()-70000,lastSeenAt:Date.now(),resolvedAt:null}]};
+      await panel.getByRole('button',{name:'刷新诊断',exact:true}).click();await expect(panel.locator('.ops-state strong')).toHaveText('发现异常');
+      await panel.getByRole('button',{name:'查看行情源与异常恢复记录'}).click();await expect(panel).toContainText('未恢复');
+      s.failNext={method:'GET',path:'/api/admin/observability',code:'service_unavailable',status:503};await panel.getByRole('button',{name:'刷新诊断',exact:true}).click();
+      await check('failed diagnostics preserve the old record but label it stale',async()=>{await expect(panel.locator('.ops-state strong')).toHaveText('诊断已过期');await expect(panel.getByRole('alert')).toContainText('上次成功读取');});
+      s.observability={...F.makeObservabilityFixture(),events:[{...s.observability.events[0],resolvedAt:Date.now()}]};await panel.getByRole('button',{name:'刷新诊断',exact:true}).click();
+      await check('healthy observation displays a recovered event',async()=>{await expect(panel.locator('.ops-state strong')).toHaveText('空闲待命');await expect(panel).toContainText('已恢复');});
+      await noOverflow(p);await p.screenshot({path:join(outputs,`observability-${profile}-zh-MOCK.png`),fullPage:true});
+      await p.getByRole('button',{name:'EN',exact:true}).click();await expect(panel.getByRole('heading',{name:'Service diagnostics'})).toBeVisible();await noOverflow(p);
+      await p.screenshot({path:join(outputs,`observability-${profile}-en-MOCK.png`),fullPage:true});await f.context.close();
+    }
   });
   await journey('11 HTTP-date cooldown, blocked editor, delayed read coalescing and unmount abort', async () => {
     const fixture = await setup(browser,'desktop',true,{reducedMotion:'reduce'}), p = fixture.page, s = fixture.state;
@@ -1098,9 +1116,9 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===29&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===30&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/29 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/30 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

@@ -3,6 +3,7 @@ import type { OpenAlertAuth } from '../auth/index.js';
 import type { ChannelRecord, Repositories, SqlDatabase } from '../contracts/db.js';
 import type { ComponentHealth, EncryptedSecret, Market, PriceTick, SystemStatus } from '../contracts/domain.js';
 import type { MarketQuery } from './markets.js';
+import type { ObservabilitySnapshot } from '../contracts/observability.js';
 export interface CatalogSource { type?: 'spot' | 'swap'; venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
 export type CatalogMarket = Market & { available?: boolean };
 export interface CatalogSelection { market: CatalogMarket | null; stale: boolean; available: boolean }
@@ -33,7 +34,7 @@ export interface ApiDependencies {
     /** Resolve freshness, availability and the display quote in one coordinator call. */
     lookup?(instrument: string): Promise<QuoteLookup>;
   };
-  runtime: { snapshot(): Promise<RuntimeSnapshot> };
+  runtime: { snapshot(): Promise<RuntimeSnapshot>; observe?(): Promise<ObservabilitySnapshot> };
   notifications: NotificationPort;
   wake(signal?: AbortSignal): Promise<void>;
 }

@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { loadConfig } from '../src/config.js';
 import { createApp } from '../src/api/index.js';
 import type { ApiDependencies, CatalogSnapshot, QuoteLookup } from '../src/api/ports.js';
+import type { ObservabilitySnapshot } from '../src/contracts/observability.js';
 import { initializeServices } from '../src/runtime/common.js';
 import { createNodeSqliteAuthDrizzle } from '../src/auth/drizzle.node-sqlite.js';
 import { SQLiteDatabase } from '../src/db/sqlite.js';
@@ -44,6 +45,20 @@ test('committed writes report pending wake honestly and retry only the wake effe
   const updated=await f.body(await f.call(`/api/alerts/${created.data.alert.id}`,'PATCH',{expectedGeneration:0,name:'one update'},alice.cookie));
   assert.equal(updated.effects.schedulerWake,'confirmed');assert.equal(f.wakes(),6);
   assert.equal(updated.data.alert.generation,1);assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,1);
+ }finally{await f.close();}
+});
+
+test('operational details require admin; public readiness exposes only a minimal state and fails closed',async()=>{
+ let reads=0,report={state:'idle',observedAt:Date.now(),runId:'private-operator-details'} as ObservabilitySnapshot;
+ const f=await fixture({}, {runtime:{snapshot:async()=>{assert.fail('No status probe needed');},observe:async()=>{reads++;return report;}}});
+ try{
+  assert.equal((await f.call('/api/admin/observability')).status,401);assert.equal(reads,0);
+  const member=await f.login('observer@example.com');assert.equal((await f.call('/api/admin/observability','GET',undefined,member.cookie)).status,403);assert.equal(reads,0);
+  const publicReport=await f.body(await f.call('/api/readiness'));assert.deepEqual(publicReport.data,{state:'ready'});assert.ok(!JSON.stringify(publicReport).includes('private-operator'));
+  await f.body(await f.call('/api/admin/bootstrap','POST',{},member.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  assert.equal((await f.body(await f.call('/api/admin/observability','GET',undefined,member.cookie))).data.runId,report.runId);
+  for(const state of ['critical','unknown','warning'] as const){report={...report,state,observedAt:Date.now()};assert.deepEqual((await f.body(await f.call('/api/readiness'),503)).data,{state:'not_ready'});}
+  report={...report,state:'idle',observedAt:Date.now()-31_000};assert.equal((await f.call('/api/readiness')).status,503);
  }finally{await f.close();}
 });
 

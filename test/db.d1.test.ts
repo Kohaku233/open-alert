@@ -6,6 +6,7 @@ import { createRepositories } from '../src/db/repositories.js';
 import { loadConfig } from '../src/config.js';
 import { migrateApp } from '../src/db/migrations.js';
 import type { D1Database } from '@cloudflare/workers-types';
+import { readQueueTelemetry } from '../src/runtime/observability.js';
 const require=createRequire(import.meta.url);
 let miniflare: {Miniflare:new (options:unknown)=>{getD1Database(name:string):Promise<unknown>;dispose():Promise<void>}}|null=null;
 try { miniflare=require(require.resolve('miniflare',{paths:[require.resolve('wrangler')]})); } catch {}
@@ -39,8 +40,11 @@ test('actual local Wrangler D1 ordered batch and CHECK CAS rollback', {skip:!min
    let inspected=false;const query=db.query.bind(db);
    db.query=async<T extends object>(sql:string,params?:readonly import('../src/contracts/db.js').SqlValue[]):Promise<T[]>=>{
      if(sql.includes(' AS has_work')){const result=await db.rawConnection.prepare(sql).bind(...(params??[])).all<T>();assert.ok(result.meta.rows_read<20,`Idle probe read ${result.meta.rows_read} history rows`);inspected=true;return result.results;}
+     if(sql.includes('GROUP BY phase')){const result=await db.rawConnection.prepare(sql).bind(...(params??[])).all<T>();assert.ok(result.meta.rows_read<20,`Monitor scanned ${result.meta.rows_read} completed history rows`);return result.results;}
      return query<T>(sql,params);
    };
    assert.equal(await r.scheduler.hasWork(true),false);assert.equal(inspected,true);
+   assert.deepEqual(await readQueueTelemetry(db,now),{queued:0,due:0,sending:0,oldestDueAt:null,oldestSendingAt:null});
+   const metrics=db.telemetry();assert.ok(metrics.operations>0);assert.ok(metrics.rowsRead>0);assert.ok(metrics.rowsWritten>0);assert.ok(metrics.conflicts>=1);assert.ok(metrics.errors>=1);assert.ok(metrics.durationMs>=0);metrics.errors=99999;assert.notEqual(db.telemetry().errors,99999);
  } finally { await mf.dispose(); }
 });

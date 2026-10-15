@@ -14,7 +14,7 @@ import type { SqlDatabase } from '../src/contracts/db.js';
 import type { SchedulerOptions } from '../src/scheduler/index.js';
 const initial=1700000000000,key='ab'.repeat(32),token='T'.repeat(30);
 async function fixture(extra:Record<string,unknown>={}, suppliedDb?:SqlDatabase) {
- const db=suppliedDb??await createSQLite(':memory:',true);let time=initial;
+ const db:SqlDatabase=suppliedDb??await createSQLite(':memory:',true);let time=initial;
  await db.execute('CREATE TABLE "user"(id TEXT PRIMARY KEY,email TEXT NOT NULL,name TEXT NOT NULL,role TEXT NOT NULL DEFAULT \'user\')');
  await db.execute('CREATE TABLE "session"(id TEXT PRIMARY KEY,user_id TEXT)');await migrateApp(db,time);
  const config=loadConfig({NODE_ENV:'test',APP_URL:'http://localhost:3000',AUTH_SECRET:'a'.repeat(32),ENCRYPTION_KEY:key,EMAIL_PROVIDER:'console',SQLITE_PATH:':memory:',PUSHOVER_APP_TOKEN:token,...extra});

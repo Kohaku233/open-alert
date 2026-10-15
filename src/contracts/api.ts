@@ -1,4 +1,5 @@
 import type { Alert, ChannelProfile, CreateAlert, Market, PatchAlert, PutChannel, SystemStatus, UserIdentity, UserSettings } from './domain.js';
+import type { ObservabilitySnapshot } from './observability.js';
 
 export interface ApiSuccess<T> { ok: true; data: T; requestId: string; effects?: { schedulerWake: 'confirmed' | 'pending' } }
 export interface ApiError {
@@ -44,6 +45,7 @@ export interface ApiRouteMap {
   'POST /api/test-notification': { request: { confirm: true }; response: TestNotificationResult };
   'PATCH /api/settings': { request: PatchSettings; response: { settings: UserSettings; generation: number } };
   'GET /api/health': { request: never; response: PublicHealth };
+  'GET /api/readiness': { request: never; response: { state: 'ready' | 'not_ready' | 'unknown' } };
   'POST /api/admin/bootstrap': { request: never; response: { bootstrapped: true } };
   'GET /api/admin/users': { request: never; response: Paginated<UserIdentity> };
   'PATCH /api/admin/users/:id': { request: { disabled: boolean }; response: UserIdentity };
@@ -52,6 +54,7 @@ export interface ApiRouteMap {
   'POST /api/admin/invites/:id/resend': { request: { expectedExpiresAt: number; confirm: true }; response: InvitationResult };
   'DELETE /api/admin/invites/:id': { request: { expectedExpiresAt: number }; response: { revoked: true } };
   'GET /api/admin/status': { request: never; response: { activeUsers: number; activeAlerts: number; health: SystemStatus['health'] } };
+  'GET /api/admin/observability': { request: never; response: ObservabilitySnapshot };
 }
 export type RouteRequest<K extends keyof ApiRouteMap> = ApiRouteMap[K]['request'];
 export type RouteResponse<K extends keyof ApiRouteMap> = ApiResponse<ApiRouteMap[K]['response']>;

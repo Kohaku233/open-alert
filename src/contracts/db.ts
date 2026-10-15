@@ -1,5 +1,6 @@
 import type { D1Database, DurableObjectNamespace, Fetcher } from '@cloudflare/workers-types';
 import type { AppConfig } from '../config.js';
+import type { SqlTelemetry } from './observability.js';
 import type { AlertInput, EncryptedSecret, EpochMs, Id, NotificationOptions, PriceTick, UserSettings } from './domain.js';
 
 export type SqlValue = string | number | null | Uint8Array;
@@ -15,6 +16,8 @@ export interface SqlDatabase {
   /** Roll back all statements if any expectedChanges mismatches. D1 uses CHECK assertions inside its batch. */
   atomicCAS(statements: readonly (SqlStatement & { expectedChanges?: number })[]): Promise<boolean>;
   close(): Promise<void>;
+  /** Adapter-observed operations only; not an account-wide billing total. */
+  telemetry?(): SqlTelemetry;
 }
 export interface CloudflareBindings {
   DB: D1Database;

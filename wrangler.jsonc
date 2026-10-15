@@ -3,6 +3,7 @@
   "name": "open-alert",
   "main": "src/runtime/cloudflare.ts",
   "minify": true,
+  "observability": {"enabled": true, "logs": {"enabled": true, "invocation_logs": false, "head_sampling_rate": 1}},
   "compatibility_date": "2026-10-11",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {"crons": ["* * * * *"]},

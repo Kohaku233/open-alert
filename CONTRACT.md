@@ -124,6 +124,7 @@ Business middleware reads persisted settings on every request and initializes on
 | --- | --- |
 | `/api/auth/*` | Better Auth Google/OTP/session endpoints; auth agent owns route and origin policy |
 | `GET /api/health` | Public minimal health only; no user, infrastructure or secret details; unavailable gets 503 |
+| `GET /api/readiness` | Public minimal readiness only; fresh inspection and DB probe required, idle may be ready without pretending delivery was verified; unknown/failure gets 503 |
 | `GET /api/status` | Session required; own settings, quota, safe channel state and runtime health; no other users |
 | `GET /api/markets` | Session required; supported live swaps + TradingView symbol and stale flag |
 | `GET /api/quote` | Session + strict instrument validation; display-only. Cloudflare resolves availability/freshness and price in one trusted coordinator call; unsupported400, unavailable503. Never adds alert demand or starts sending |
@@ -135,6 +136,7 @@ Business middleware reads persisted settings on every request and initializes on
 | `PATCH /api/settings` | Own monitoring flag/daily limit/notification; expectedGeneration; merge and strict validation then atomic CAS |
 | `POST /api/admin/bootstrap` | Session + one-use bootstrap bearer, as above |
 | `/api/admin/users`, `/api/admin/users/:id`, `/api/admin/invites`, `/api/admin/status` | Admin role; bounded pagination; changing disabled status revokes sessions/blocks claims; no credential export |
+| `GET /api/admin/observability` | Admin only; safe aggregate telemetry and incident/recovery records. Never fetch prices, send a provider test or replay a mutation |
 
 All state changes require trusted Origin (or explicit authenticated non-browser policy), JSON content type where body exists, request size bounds and session middleware. GET never mutates or sends notifications. Disabled users get 403 and hidden resource IDs get 404. HTTP codes: validation400, unauthenticated401, forbidden403, missing404, CAS/pending/limit409, rate-limit429 + Retry-After, unavailable503; provider rejection502 and uncertain504. Delete returns 200 envelope, not an empty 204. No arbitrary URL webhook/provider parameters accepted.
 

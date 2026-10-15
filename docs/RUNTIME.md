@@ -96,6 +96,8 @@ npm run admin:invite:d1 -- you@example.com --remote
 
 ## 调度、免费额度与容量
 
+服务自身的指标、异常/恢复记录、就绪接口和外部探测边界见 [服务运行诊断](OBSERVABILITY.md)。正常空闲/未探测与真实故障分开说明，不改变原 health 聚合，不自动发送额外通知。
+
 DO 仅在可调度规则或 queued/sending outbox 存在时设置持久化目标五秒 alarm。无工作时移除 alarm，不轮询 ticker；对象内没有 resident timer 或 watchdog interval。写操作提交后，对幂等 wake 最多尝试 3 次、每次最多等待 1.5 秒；仍失败时以 `effects.schedulerWake='pending'` 明确报告后台待确认，不自动重放已提交的写操作。status 成功核对工作后可修复缺少的 alarm。正向工作探测最多复用 1 秒，并合并同一 revision 的并发探测；空闲结果不缓存，以免遮蔽新工作。
 
 独立 Worker Cron 每分钟调用内部 `/reconcile` 核对持久化工作并补设 alarm，不依赖网页打开；空闲时只做工作检查，不抓行情、不发送通知。这是尽力恢复机制，不是固定 60 秒的恢复 SLA。仓库 `wrangler.jsonc` 已声明 Cron；若使用自定义 API 上传代码，必须另行同步并验证 Cron 触发器，不能只上传新版本就认为补偿已启用。部署凭据和生产变更仍需正常操作验证。行情缺失/过期保留原时间戳和 unknown/unhealthy 状态。

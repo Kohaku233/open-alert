@@ -23,7 +23,7 @@ test('scheduled recovery retries the internal reconcile without depending on HTT
   const jobs:Promise<unknown>[]=[];
   const env={NODE_ENV:'test',APP_URL:'https://alert.example.com',AUTH_SECRET:'a'.repeat(32),ENCRYPTION_KEY:'ab'.repeat(32),EMAIL_PROVIDER:'console',DB:{},COORDINATOR:{
     idFromName(name:string){assert.equal(name,'coordinator-v1');return name;},
-    get(){return {async fetch(url:string,init:RequestInit){calls++;assert.equal(url,'https://coordinator.internal/reconcile');assert.equal(init.method,'POST');if(calls<3)throw new Error('transient');return new Response(null,{status:202});}};},
+    get(){return {async fetch(url:string,init:RequestInit){assert.equal(init.method,'POST');if(url.endsWith('/monitor-pulse')){const probe=JSON.parse(String(init.body));assert.equal(calls,3);assert.equal(probe.api.state,'unhealthy');return new Response(null,{status:202});}calls++;assert.equal(url,'https://coordinator.internal/reconcile');if(calls<3)throw new Error('transient');return new Response(null,{status:202});}};},
   }} as unknown as CloudflareBindings;
   await worker.scheduled({} as never,env,{waitUntil(job:Promise<unknown>){jobs.push(job);}} as never);
   await Promise.all(jobs);assert.equal(calls,3);
@@ -50,7 +50,7 @@ test('coordinator coalesces status probes, invalidates on reconcile and never ca
   work=true;
   await snapshot();assert.equal(checks,3,'Cached idle result cannot hide newly committed work');assert.ok(alarm);
   fail=true;
-  await assert.rejects(coordinator.fetch(new Request('https://coordinator.internal/reconcile',{method:'POST'})),/database unavailable/);
+  await assert.rejects(coordinator.fetch(new Request('https://coordinator.internal/reconcile',{method:'POST'})),/coordinator_reconcile_failed/);
   fail=false;
   await snapshot();assert.equal(checks,5,'Rejected work probes are never cached');
 });
