@@ -1,4 +1,7 @@
 export const english: Record<string, string> = {
+  "{0} 条": "{0} alerts",
+  "为这个交易对设置目标价格，创建后开启监控总开关。": "Set a target price for this pair, then enable the monitoring switch.",
+  "设置价格警报": "Set a price alert",
   "此市场暂无警报": "No alerts for this market",
   "{0} 最新报价": "{0} latest quote",
   "报价更新暂停": "Quote update paused",

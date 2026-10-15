@@ -26,7 +26,7 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
         script.type = 'text/javascript';
         script.async = true;
         script.textContent = JSON.stringify({
-            autosize: true, symbol, interval: '15', timezone: 'Asia/Shanghai', theme: 'dark',
+            autosize: true, symbol, interval: '240', timezone: 'Asia/Shanghai', theme: 'dark',
             style: '1', locale: language === 'en' ? 'en' : 'zh_CN', backgroundColor: '#111111', gridColor: 'rgba(51,51,51,0.45)',
             allow_symbol_change: false, hide_side_toolbar: false, hide_top_toolbar: false,
             calendar: false, support_host: 'https://www.tradingview.com',

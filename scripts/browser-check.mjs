@@ -117,7 +117,7 @@ async function createAlert(profile,name,instrument,threshold,enabled=true) {
   const {page,context}=profile;await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
   await selectMarket(dialog.locator('.market-search'),instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));
   await dialog.getByLabel('启用这条警报').setChecked(enabled);await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
-  await page.getByRole('button',{name:'全部警报',exact:true}).click();
+  await page.getByRole('tab',{name:'全部警报',exact:true}).click();
   await expect(row(page,name)).toBeVisible();return (await ok(context,'/api/alerts')).alerts.find(a=>a.name===name);
 }
 const watchdog=setTimeout(()=>{timedOut=true;for(const r of children)if(!r.exit)r.child.kill('SIGTERM');void browser?.close();},55000);
@@ -138,12 +138,12 @@ try {
       process.send({type:'guard-probe-passed',fetchDenied:true,socketDenied:true});
     `],'egress-guard-probe');
     await check('fetch and socket guards reject before any external egress with CCXT fixtures installed',async()=>{
-      assert.deepEqual(await waitExit(probe),{code:0,signal:null},probe.logs);
+      assert.deepEqual(await waitExit(probe,process.platform==='win32'?12000:4000),{code:0,signal:null},probe.logs);
       assert.equal(guardProbes.filter(m=>m.type==='blocked').length,2);
       assert(guardProbes.some(m=>m.type==='guard-probe-passed'&&m.fetchDenied&&m.socketDenied));
     });
     const cli=launch([...preloads,join(root,'scripts/admin-invite.ts'),'alice@example.test'],'operator-invite-cli');
-    const exit=await waitExit(cli);await check('operator CLI exits zero and creates invitation',async()=>{assert.deepEqual(exit,{code:0,signal:null},cli.logs);assert.match(cli.logs,/Invitation created for alice@example.test/);});
+    const exit=await waitExit(cli,process.platform==='win32'?12000:4000);await check('operator CLI exits zero and creates invitation',async()=>{assert.deepEqual(exit,{code:0,signal:null},cli.logs);assert.match(cli.logs,/Invitation created for alice@example.test/);});
     await startServer();alice=await profile();bob=await profile(true);
     await check('unauthenticated real API denied',async()=>assert.equal((await api(bob.context,'/api/status')).status,401));
     await check('uninvited OTP refused without email',async()=>{const r=await api(bob.context,'/api/auth/email-otp/send-verification-otp','POST',{email:'uninvited@example.test',type:'sign-in'});assert.equal(r.status,403);assert(!messages.some(m=>m.to==='uninvited@example.test'));});

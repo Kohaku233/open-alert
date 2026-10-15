@@ -194,6 +194,14 @@ try {
     await page.waitForTimeout(450);
     await noOverflow(page);
     await page.screenshot({ path: join(review, profile+'.png'), fullPage: true });
+    const retainedAlerts = state.alerts;
+    state.alerts=[]; await page.reload();
+    await expect(page.getByText('此市场暂无警报',{exact:true})).toBeVisible();
+    await expect(page.locator('.alert-scope-count')).toHaveText('0 条');
+    await expect(page.getByRole('tab',{name:'当前市场',exact:true})).toHaveAttribute('aria-selected','true');
+    assert.equal(JSON.parse(await page.locator('.tradingview-widget-container script').textContent()).interval,'240');
+    await page.locator('.alerts-panel').screenshot({path:join(review,profile+'-empty-zh.png')});
+    state.alerts=retainedAlerts; await page.reload();
     const selected = await page.locator('.market-search-selection').first().textContent();
     await page.getByRole('button',{name:'EN',exact:true}).click();
     await expect(page.locator('html')).toHaveAttribute('lang','en');
@@ -203,6 +211,16 @@ try {
     await page.waitForTimeout(350);
     await noOverflow(page);
     await page.screenshot({ path: join(review, profile+'-en.png'), fullPage: true });
+    state.alerts=[]; await page.reload();
+    await expect(page.getByText('No alerts for this market',{exact:true})).toBeVisible();
+    await expect(page.locator('.alert-scope-count')).toHaveText('0 alerts');
+    const scopeTab=page.getByRole('tab',{name:'Current market',exact:true});
+    await scopeTab.focus(); await page.keyboard.press('End');
+    await expect(page.getByRole('tab',{name:'All alerts',exact:true})).toHaveAttribute('aria-selected','true');
+    await page.keyboard.press('Home');await expect(scopeTab).toHaveAttribute('aria-selected','true');
+    await noOverflow(page);
+    await page.locator('.alerts-panel').screenshot({path:join(review,profile+'-empty-en.png')});
+    state.alerts=retainedAlerts; await page.reload();
     if (profile==='mobile') {
       const controls = await page.locator('.languages button,.header-actions>button,.icon-button,.instrument-button,.alert-buttons button,button.ui-monitor-switch').evaluateAll(nodes => nodes.map(node => ({name:node.getAttribute('aria-label') || node.textContent, width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height})));
       assert(controls.every(control => control.width >= 44 && control.height >= 44),JSON.stringify(controls));
@@ -217,6 +235,9 @@ try {
     await page.getByRole('button',{name:'Create alert',exact:true}).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByLabel('Alert name')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText(/already meets the condition/)).toHaveCount(0);
+    assert.equal(await page.getByLabel('Alert name').getAttribute('data-slot'),'input');
+    assert.equal(await page.getByRole('dialog').getByRole('combobox',{name:'Trigger condition',exact:true}).getAttribute('data-slot'),'select-trigger');
     await noOverflow(page);
     await page.screenshot({path:join(review,profile+'-editor-shadcn-en.png'),fullPage:true});
     await page.getByRole('dialog').locator('.market-search-trigger').click();

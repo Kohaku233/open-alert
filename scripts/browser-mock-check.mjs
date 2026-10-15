@@ -653,9 +653,9 @@ try {
       }else{await p.keyboard.press('Escape');}
     }
     await check('switching never mutates existing alert identities/generations',async()=>assert.deepEqual(s.alerts.slice(0,originalAlerts.length),originalAlerts));
-    await p.getByRole('button',{name:'全部警报',exact:true}).click();
+    await p.getByRole('tab',{name:'全部警报',exact:true}).click();
     await check('all alerts management remains available',()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.length+1));
-    await p.getByRole('button',{name:'当前市场',exact:true}).click();
+    await p.getByRole('tab',{name:'当前市场',exact:true}).click();
     await check('current MEXC market only shows MEXC rule',()=>expect(p.locator('.alert-row')).toHaveCount(1));
     await fixture.context.close();
   });

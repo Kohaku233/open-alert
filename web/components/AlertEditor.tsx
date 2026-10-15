@@ -35,7 +35,8 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
     const tick = data?.status.prices.find(price => sameMarket(price.instrument, selected));
     const current = alert ? data?.alerts.find(item => item.id === alert.id) : null;
     const pending = !!current?.pending;
-    const hit = breached(side, Number(threshold), tick);
+    const parsedThreshold = Number(threshold);
+    const hit = threshold.trim() !== '' && Number.isFinite(parsedThreshold) && parsedThreshold > 0 && parsedThreshold <= 1e12 && breached(side, parsedThreshold, tick);
     async function save(event: FormEvent) {
         event.preventDefault();
         if (!data || busy || pending || model.error)
