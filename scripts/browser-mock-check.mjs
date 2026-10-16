@@ -52,7 +52,7 @@ function nativeSession(state) {
   return { user, session: { id: 'mock-session', userId: user.id, token: 'mock-native-token', expiresAt: new Date(Date.now()+86400000).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ipAddress: '127.0.0.1', userAgent: 'MOCK' } };
 }
 async function setup(browser, profile, authenticated = false) {
-  const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, socialError: null };
+  const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, emailSenderMode: 'console', otpError: null, inviteDelivery: {status:'not_attempted',reason:'resend_sandbox'}, socialError: null };
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
   const context = await browser.newContext({ ...options, serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
@@ -69,7 +69,7 @@ async function setup(browser, profile, authenticated = false) {
       if (url.href === 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js') {
         chartScripts++;
         if (state.chartFail) return route.abort('failed');
-        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;const host=script.parentElement.querySelector('.tradingview-widget-container__widget');const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
+        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
       }
       externalAttempts.push({ profile, origin: url.origin, path: url.pathname }); return route.abort('blockedbyclient');
     }
@@ -95,7 +95,8 @@ async function setup(browser, profile, authenticated = false) {
           // Local redirect exercises the SDK's real redirect plugin, without Google network.
           return state.socialError ? send(state.socialError, 403) : send({ url: `${origin}/login?error=access_denied`, redirect: true });
         }
-        if (path === '/api/auth/email-otp/send-verification-otp' && method === 'POST') { assert.deepEqual(body, { email: 'mock@example.test', type: 'sign-in' }); return send({ success: true }); }
+        if (path === '/api/auth/email-otp/send-verification-otp' && method === 'POST') {
+          if(state.otpError)return send({code:state.otpError,message:'MOCK provider error'},403); assert.deepEqual(body, { email: 'mock@example.test', type: 'sign-in' }); return send({ success: true }); }
         if (path === '/api/auth/sign-in/email-otp' && method === 'POST') {
           assert.equal(body.email, 'mock@example.test');
           if (body.otp !== '123456') return send({ code: 'INVALID_OTP', message: 'Invalid OTP' }, 400);
@@ -104,7 +105,7 @@ async function setup(browser, profile, authenticated = false) {
         if (path === '/api/auth/sign-out' && method === 'POST') return send({ success: true }, 200, { 'Set-Cookie': `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` });
         throw new Error(`Unexpected native auth route ${method} ${path}`);
       }
-      if (path === '/api/auth-capabilities' && method === 'GET') return ok({ google: state.googleEnabled, emailOtp: true, registration: 'invite' });
+      if (path === '/api/auth-capabilities' && method === 'GET') return ok({ google: state.googleEnabled, emailOtp: true, registration: 'invite', emailSenderMode:state.emailSenderMode });
       if (!loggedIn) return fail('unauthenticated', 401);
       if (state.failNext && state.failNext.path === path && state.failNext.method === method) {
         const error = state.failNext; state.failNext = null;
@@ -169,7 +170,12 @@ async function setup(browser, profile, authenticated = false) {
       if (path === '/api/test-notification' && method === 'POST') { F.testNotificationSchema.parse(body); state.status.daily.attempts++; return ok({ outcome: 'sent', at: Date.now() }); }
       if (path === '/api/admin/users' && method === 'GET') { assert.equal(url.searchParams.get('limit'), '50'); return ok({ items: [{ ...state.status.user, id: 'mock-member', email: 'member@example.test', role: 'user' }], cursor: url.searchParams.has('cursor') ? null : 'mock-page-2' }); }
       if (path === '/api/admin/status' && method === 'GET') return ok({ activeUsers: 2, activeAlerts: state.alerts.length, health: state.status.health });
-      if (path === '/api/admin/invites' && method === 'POST') return ok({ id: 'mock-invite', email: body.email, expiresAt: Date.now()+86400000 }, 201);
+      if (path === '/api/admin/invites' && method === 'POST') {
+        state.invites ??= new Map();const existing=state.invites.get(body.email);
+        if(existing)return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
+        const result={id:'mock-invite-'+state.invites.size,email:body.email,expiresAt:Date.now()+86400000,reused:false,emailDelivery:state.inviteDelivery};
+        state.invites.set(body.email,result);return ok(result,201);
+      }
       throw new Error(`Unexpected application route ${method} ${path}`);
     } catch (error) { violations.push(error.message); return fail('internal_error', 500); }
   });
@@ -434,7 +440,7 @@ try {
     await m.getByRole('button',{name:'加载更多账户'}).click();
     await check('admin cursor page fetched', async () => { await expect(m.getByRole('button',{name:'加载更多账户'})).toHaveCount(0); assert.equal(requests(mobile.state,'GET','/api/admin/users').length,2); });
     await m.getByLabel('受邀邮箱').fill('invite@example.test'); await m.getByRole('button',{name:'创建邮箱邀请'}).click();
-    await check('invite does not claim sent email', () => expect(m.getByRole('status').filter({hasText:'已创建 invite@example.test'})).toContainText('此操作不表示邀请邮件已发送'));
+    await check('invite distinguishes admission from restricted email', () => expect(m.getByRole('status').filter({hasText:'已创建 invite@example.test'})).toContainText('当前邮件为测试模式'));
     mobile.state.sessionInvalid=true;
     await check('expired session handled on poll', () => expect(m.getByRole('heading',{name:'登录我的哨站'})).toBeVisible({timeout:7000}));
     await mobile.context.close();
@@ -659,15 +665,37 @@ try {
     await check('current MEXC market only shows MEXC rule',()=>expect(p.locator('.alert-row')).toHaveCount(1));
     await fixture.context.close();
   });
+  await journey('16 invite recovery, email failure states and sandbox login stays available after logout',async()=>{
+    const fixture=await setup(browser,'desktop',true),p=fixture.page,s=fixture.state;
+    s.status.user.role='admin';s.status.capabilities.canAdmin=true;s.status.capabilities.google=true;
+    s.googleEnabled=true;s.emailSenderMode='resend_sandbox';
+    await p.goto(origin+'/admin');await expect(p.getByLabel('受邀邮箱')).toBeVisible();
+    async function invite(email){await p.getByLabel('受邀邮箱').fill(email);await p.getByRole('button',{name:'创建邮箱邀请',exact:true}).click();await expect(p.locator('.invitation-result')).toContainText(email);}
+    await invite('other@example.test');
+    await check('restricted mail does not turn committed invitation into error',()=>expect(p.locator('.invitation-result')).toContainText('邀请已生效'));
+    const first=s.invites.get('other@example.test');await invite('other@example.test');
+    await check('retry recovers existing invite without conflict or expiry extension',async()=>{await expect(p.locator('.invitation-result')).toContainText('本次未重复发送邮件');assert.equal(s.invites.size,1);assert.equal(s.invites.get('other@example.test').expiresAt,first.expiresAt);});
+    s.inviteDelivery={status:'failed',reason:'email_rejected'};await invite('failed@example.test');
+    await check('email rejection clearly says invitation remains saved',()=>expect(p.locator('.invitation-result')).toContainText('邀请已保存，但邮件发送失败'));
+    s.inviteDelivery={status:'uncertain',reason:'email_uncertain'};await invite('uncertain@example.test');
+    await check('uncertain delivery warns against repeated sending',()=>expect(p.locator('.invitation-result')).toContainText('邮件投递结果暂不确定'));
+    await p.getByRole('button',{name:'退出登录'}).click();await expect(p.getByLabel('邮箱地址')).toBeEnabled();
+    await check('sandbox disclosure replaces misleading disabled-login warning',async()=>{await expect(p.getByText(/邮件服务目前为测试模式/)).toBeVisible();await expect(p.getByText(/邮箱登录尚未启用/)).toHaveCount(0);});
+    s.otpError='EMAIL_RECIPIENT_RESTRICTED';await p.getByLabel('邮箱地址').fill('other@example.test');await p.getByRole('button',{name:'发送登录验证码'}).click();
+    await check('specific recipient error never disables email or Google controls',async()=>{await expect(p.getByRole('alert')).toContainText('不能向此邮箱发送验证码');await expect(p.getByLabel('邮箱地址')).toBeEnabled();await expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled();});
+    s.otpError=null;await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'发送登录验证码'}).click();
+    await check('switching back to configured recipient still sends a code',()=>expect(p.getByLabel('邮件中的验证码')).toBeVisible());
+    await fixture.context.close();
+  });
   await check('no runtime JS errors', async () => assert.deepEqual(runtimeErrors,[]));
   await check('no unknown API or schema violations', async () => assert.deepEqual(violations,[]));
   await check('no external requests except intercepted embed', async () => assert.deepEqual(externalAttempts,[]));
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===18&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===19&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/18 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/19 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

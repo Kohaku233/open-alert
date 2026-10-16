@@ -57,6 +57,8 @@ INVITE_ONLY=true
 
 公开 `/api/auth-capabilities` 的 `emailSenderMode` 仅说明配置模式：`resend_domain_check`、`resend_sending_only` 或 `resend_sandbox`（其他值为 `smtp`、`console`、`unconfigured`），不返回发件地址、测试收件人或 key。`emailOtp=true` 表示应用允许尝试 OTP 发送；sandbox 只支持指定邮箱，sending-only/sandbox 启动成功不代表提供方或发件域名验证成功。
 
+创建邀请与发送邀请邮件分别返回结果。邀请先保存；邮件被拒绝或结果不确定时，邀请仍然有效。同一邮箱的未使用、未过期邀请会原样返回，不延长有效期，也不重复发送邮件。测试模式对其他邮箱不尝试发信；受邀者仍可使用已启用的 Google 登录。要向其他邮箱发送邀请或验证码，必须配置自有已验证发件域名。一次邮件失败会反映在运行健康状态中，但不会关闭已配置的验证码登录入口；用户可按发送频率限制重试。
+
 ## Cloudflare 配置
 
 `wrangler.jsonc` 已显式设置邀请制小规模配置：5 位用户、每人 20 条规则、全局最多 100 条启用规则、每人及全局最多 8 个品种、每人 20 次/日及全局 100 次/日发送尝试。仅 Worker 模板覆盖这些值，Node 配置与源码默认值保持不变。保留 `DB`、`COORDINATOR` 和 `ASSETS` 绑定；上线时填写自己的 D1 ID、公开 origin 与邮箱配置。当前模板保留全零 D1 ID，未填写 `APP_URL`、邮箱或 Google。

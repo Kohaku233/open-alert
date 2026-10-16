@@ -97,3 +97,5 @@
   .ui-select-content [role="option"]{min-height:44px}
   .market-command-list{max-height:240px}
 }
+
+.invitation-result{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:6px;overflow-wrap:anywhere}.invitation-result p{margin:0;color:var(--muted);font-size:13px;line-height:1.8}.invitation-result p+p{margin-top:10px}.invitation-result p:first-child{color:var(--text)}

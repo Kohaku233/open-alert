@@ -34,7 +34,7 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
  const validations:URLSearchParams[]=[];
  const deliveries:URLSearchParams[]=[];
  const unexpected:string[]=[];
- let catalogRequests=0,tickerRequests=0,domainRequests=0;
+ let catalogRequests=0,tickerRequests=0,domainRequests=0,rejectInvitationMail=false;
  const userKey='U'.repeat(30),appToken='T'.repeat(30);
  const secondKey='V'.repeat(30),secondToken='S'.repeat(30);
  const text=(value:string)=>({type:'text' as const,value});
@@ -50,7 +50,7 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    if(url.hostname==='api.resend.com'){
     assert.equal(request.headers.get('authorization'),'Bearer re_fake_runtime_key');
     if(url.pathname==='/domains'&&request.method==='GET'){domainRequests++;return MfResponse.json({data:[{name:'alert.example.com',status:'verified'}]});}
-    if(url.pathname==='/emails'&&request.method==='POST'){const body=await request.json() as {to:string[];subject:string;text:string};emails.push(body);return MfResponse.json({id:`email-${emails.length}`});}
+    if(url.pathname==='/emails'&&request.method==='POST'){const body=await request.json() as {to:string[];subject:string;text:string};emails.push(body);if(rejectInvitationMail&&body.subject==='You are invited to Open Alert')return MfResponse.json({message:'MOCK rejection'},{status:403});return MfResponse.json({id:`email-${emails.length}`});}
    }
    if(request.method==='GET'){
     const fixture=publicExchangeFixture(url,Date.now(),tickerRequests+1);
@@ -222,6 +222,19 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.deepEqual((await snapshot()).prices,engineBefore.prices);assert.equal(await alarm(),null);
    assert.equal((await api<SystemStatus>('/api/status','GET',undefined,aliceCookie)).settings.enabled,false);
    for(const path of ['/quote?instrument=BTC-USDT-SWAP','/market?instrument=BTC-USDT-SWAP'])assert.notEqual((await request(path)).status,200);
+  });
+  await t.test('D1 invitation survives rejected email, repeated POST is idempotent and configured OTP can recover',async()=>{
+   rejectInvitationMail=true;
+   const invite=await api<{id:string;email:string;expiresAt:number;reused:boolean;emailDelivery:{status:string;reason:string}}>('/api/admin/invites','POST',{email:' Retry-Invite@Example.test '},aliceCookie,201);
+   assert.equal(invite.email,'retry-invite@example.test');assert.equal(invite.reused,false);assert.equal(invite.emailDelivery.status,'failed');assert.equal(invite.emailDelivery.reason,'email_rejected');
+   const sent=emails.length;
+   const repeated=await api<typeof invite>('/api/admin/invites','POST',{email:invite.email},aliceCookie);
+   assert.equal(repeated.id,invite.id);assert.equal(repeated.expiresAt,invite.expiresAt);assert.equal(repeated.reused,true);assert.equal(emails.length,sent);
+   assert.equal((await db.query('SELECT id FROM invitations WHERE email=?',[invite.email])).length,1);
+   assert.equal((await api<{emailOtp:boolean}>('/api/auth-capabilities')).emailOtp,true);
+   rejectInvitationMail=false;
+   const otp=await request('/api/auth/email-otp/send-verification-otp','POST',{email:invite.email,type:'sign-in'});assert.equal(otp.status,200,await otp.text());
+   assert.equal(emails.at(-1)!.subject,'Your Open Alert sign-in code');
   });
  } finally {
   await mf.dispose();

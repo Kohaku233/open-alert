@@ -12,19 +12,21 @@ import { createApiNotifications } from '../src/runtime/notifications.js';
 import type { ComponentHealth } from '../src/contracts/domain.js';
 import type { EmailMessage } from '../src/auth/email.js';
 import { decryptSecret } from '../src/notifications/index.js';
+import { EmailDeliveryError } from '../src/auth/email.js';
 const good:ComponentHealth={state:'healthy',lastSuccessAt:1700000000000,code:null};
 async function fixture(overrides:Record<string,string>={}) {
  const config=loadConfig({NODE_ENV:'test',APP_URL:'http://localhost:3000',AUTH_SECRET:'api-fixture-secret-at-least-thirty-two-characters',ENCRYPTION_KEY:'12'.repeat(32),EMAIL_PROVIDER:'console',BOOTSTRAP_TOKEN:'bootstrap-fixture-at-least-thirty-two-characters',PUSHOVER_APP_TOKEN:'S'.repeat(30),...overrides});
  const raw=new DatabaseSync(':memory:'),db=new SQLiteDatabase(raw as unknown as SQLiteConnection,'node:sqlite'),messages:EmailMessage[]=[],providerCalls:{url:string;body:URLSearchParams}[]=[];
  const services=await initializeServices(config,db,createNodeSqliteAuthDrizzle(raw),config.environment==='test'?{testEmailTransport:{async verify(){},async send(m){messages.push(m);}}}:{emailTransportFactory:async()=>({async verify(){},async send(m){messages.push(m);}})});
- let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0;
+ let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0,invitationSends=0;
+ let invitationError:'email_rejected'|'email_uncertain'|'email_unavailable'|null=null;
  let catalogOverride:CatalogSnapshot|undefined;
  const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
- const app=createApp({...services,notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const app=createApp({...services,auth:{...services.auth,sendInvitation:async email=>{invitationSends++;if(invitationError)throw new EmailDeliveryError(invitationError);await services.auth.sendInvitation(email);}},notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
  const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
  async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
  const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
- return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},setCatalog:(v:CatalogSnapshot)=>{catalogOverride=v;},wakes:()=>wakes,close:async()=>{services.auth.close();await db.close();}};
+ return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},setCatalog:(v:CatalogSnapshot)=>{catalogOverride=v;},wakes:()=>wakes,invitationSends:()=>invitationSends,setInvitationError:(v:typeof invitationError)=>{invitationError=v;},close:async()=>{services.auth.close();await db.close();}};
 }
 const input={name:'BTC ceiling',instrument:'BTC-USDT-SWAP',side:'upper',threshold:100,enabled:true};
 test('health idle degrades honestly; actual DB/email/provider failures and snapshot throws survive aggregation',async()=>{
@@ -178,5 +180,30 @@ test('view quote requires session, validates canonical market and never saves or
   assert.equal(response.data.instrument,'BTC-USDT-SWAP');assert.equal(response.data.price,123);assert.equal(response.data.timestamp,null);
   assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,0);assert.equal((await f.repositories.settings.get(alice.id))!.enabled,false);assert.equal(f.wakes(),0);
   f.setStale(true);assert.equal((await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie)).status,503);
+ }finally{await f.close();}
+});
+
+test('invitation commit survives rejected/uncertain email, retries return original invite without duplicate sends',async()=>{
+ const f=await fixture();try{
+  const admin=await f.login('invite-admin@example.com');await f.body(await f.call('/api/admin/bootstrap','POST',{},admin.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  let sends=0;
+  for(const failure of ['email_rejected','email_uncertain','email_unavailable'] as const){
+   f.setInvitationError(failure);const email=`${failure}@example.com`;
+   const first=(await f.body(await f.call('/api/admin/invites','POST',{email},admin.cookie),201)).data;
+   assert.equal(first.reused,false);assert.equal(first.emailDelivery.status,failure==='email_uncertain'?'uncertain':'failed');assert.equal(first.emailDelivery.reason,failure);
+   assert.equal(f.invitationSends(),++sends);assert.equal((await f.repositories.admin.getInvitation(email,Date.now()))!.id,first.id);
+   const again=(await f.body(await f.call('/api/admin/invites','POST',{email},admin.cookie))).data;
+   assert.equal(again.reused,true);assert.equal(again.id,first.id);assert.equal(again.expiresAt,first.expiresAt);assert.deepEqual(again.emailDelivery,{status:'not_attempted',reason:'existing_invitation'});assert.equal(f.invitationSends(),sends);
+  }
+ }finally{await f.close();}
+});
+test('sandbox invitation allows Google admission without attempting restricted mail, exposes no private recipient',async()=>{
+ const f=await fixture({EMAIL_PROVIDER:'resend',EMAIL_FROM:'onboarding@resend.dev',RESEND_API_KEY:'fixture-private-key',EMAIL_TEST_RECIPIENT:'owner@example.com'});try{
+  const admin=await f.login('owner@example.com');await f.body(await f.call('/api/admin/bootstrap','POST',{},admin.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  const result=(await f.body(await f.call('/api/admin/invites','POST',{email:'  NEXT@Example.com  '},admin.cookie),201)).data;
+  assert.equal(result.email,'next@example.com');assert.deepEqual(result.emailDelivery,{status:'not_attempted',reason:'resend_sandbox'});assert.equal(f.invitationSends(),0);
+  assert.ok(await f.repositories.admin.getInvitation('next@example.com',Date.now()));assert.equal(f.auth.capabilities().emailOtp,true);assert.equal(f.auth.emailHealth().state,'healthy');
+  const repeated=(await f.body(await f.call('/api/admin/invites','POST',{email:'next@example.com'},admin.cookie))).data;assert.equal(repeated.id,result.id);assert.equal(repeated.reused,true);assert.equal(f.invitationSends(),0);
+  assert.equal((await f.call('/api/admin/invites','POST',{email:'not-authorized@example.com'})).status,401);
  }finally{await f.close();}
 });

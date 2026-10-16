@@ -153,13 +153,13 @@ test('concurrent resend and replay remain single-use; native IP quota spans many
   } finally { await f.close(); }
 });
 
-test('email delivery failure is explicit 503 and unhealthy capability; startup verify failure aborts factory', async () => {
+test('email delivery failure is explicit 503 and retryable capability; startup verify failure aborts factory', async () => {
   const f = await fixture({ INVITE_ONLY: 'false' });
   try {
     const failed = await createAuth(f.config, f.db, createNodeSqliteAuthDrizzle(f.raw), { testEmailTransport: { async verify() {}, async send() { throw new Error('sensitive provider detail never exposed'); } } });
     const response = await failed.handler(f.request('/email-otp/send-verification-otp', { email: 'failure@example.com', type: 'sign-in' }));
     assert.equal(response.status, 503); assert.equal((await response.text()).includes('sensitive'), false);
-    assert.equal(failed.capabilities().emailOtp, false); assert.equal(failed.emailHealth().state, 'unhealthy');
+    assert.equal(failed.capabilities().emailOtp, true); assert.equal(failed.emailHealth().state, 'unhealthy');
     failed.close();
     await assert.rejects(createAuth(f.config, f.db, createNodeSqliteAuthDrizzle(f.raw), { testEmailTransport: { async verify() { throw new Error('bad readiness'); }, async send() {} } }), { code: 'email_unavailable' });
   } finally { await f.close(); }
@@ -280,4 +280,26 @@ test('raw SQL cannot bypass user limit, failed INSERT rolls back invite consumpt
     assert.equal((await f.signIn('first@example.com')).status, 200);
     assert.equal((await f.db.query('SELECT id FROM "user"')).length, 2);
   } finally { await f.close(); }
+});
+
+test('sandbox recipient rejection after logout never disables other login attempts or changes account status',async()=>{
+ const f=await fixture({EMAIL_PROVIDER:'resend',EMAIL_FROM:'onboarding@resend.dev',RESEND_API_KEY:'test-private-key',EMAIL_TEST_RECIPIENT:'owner@example.com'});try{
+  await f.invite('owner@example.com');await f.invite('other@example.com');
+  assert.equal((await f.send('owner@example.com')).status,200);const signed=await f.signIn('owner@example.com');assert.equal(signed.status,200);
+  assert.equal((await f.call('/sign-out',{},{cookie:cookie(signed)})).status,200);
+  const denied=await f.send('other@example.com');assert.equal(denied.status,403);assert.equal((await denied.json() as any).code,'EMAIL_RECIPIENT_RESTRICTED');
+  assert.equal(f.service.emailHealth().state,'healthy');assert.equal(f.service.capabilities().emailOtp,true);assert.equal(f.messages.length,1);
+  await f.db.execute('DELETE FROM rate_limit');assert.equal((await f.send('owner@example.com')).status,200);assert.equal(f.messages.length,2);
+  assert.equal((await f.signIn('owner@example.com')).status,200);assert.equal((await f.db.query('SELECT user_id FROM user_settings WHERE disabled=1')).length,0);
+ }finally{await f.close();}
+});
+test('provider failure remains observable while configured login can recover on a later successful request',async()=>{
+ const f=await fixture({INVITE_ONLY:'false'});let fail=true;
+ const service=await createAuth(f.config,f.db,createNodeSqliteAuthDrizzle(f.raw),{testEmailTransport:{async verify(){},async send(){if(fail)throw new Error('offline');}}});
+ try{
+  assert.equal((await service.handler(f.request('/email-otp/send-verification-otp',{email:'first@example.com',type:'sign-in'}))).status,503);
+  assert.equal(service.emailHealth().state,'unhealthy');assert.equal(service.capabilities().emailOtp,true);
+  fail=false;assert.equal((await service.handler(f.request('/email-otp/send-verification-otp',{email:'second@example.com',type:'sign-in'}))).status,200);
+  assert.equal(service.emailHealth().state,'healthy');assert.equal(service.capabilities().emailOtp,true);
+ }finally{service.close();await f.close();}
 });

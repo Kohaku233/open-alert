@@ -6,7 +6,8 @@ import { consumeAuthLimit,privateLimitKey } from '../auth/limits.js';
 import { DisabledAccountError } from '../auth/index.js';
 import { RepositoryConflict } from '../contracts/db.js';
 import type { AlertRecord, ChannelRecord } from '../contracts/db.js';
-import type { ApiErrorCode, SessionPrincipal } from '../contracts/api.js';
+import type { ApiErrorCode, InvitationResult, SessionPrincipal } from '../contracts/api.js';
+import { EmailDeliveryError } from '../auth/email.js';
 import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
@@ -173,7 +174,23 @@ export function createApi(d:ApiDependencies) {
   app.use('/api/admin/*',async(c,next)=>{if(c.get('principal').role!=='admin')throw new HttpError(403,'forbidden');await next();});
   app.get('/api/admin/users',async c=>{const query=pageSchema.safeParse(c.req.query());if(!query.success)throw new HttpError(400,'invalid_request');return ok(c,await d.repositories.admin.listUsers(query.data.limit,query.data.cursor));});
   app.patch('/api/admin/users/:id',async c=>{const body=await json(c,z.strictObject({disabled:z.boolean()}));const target=c.req.param('id');const exists=await d.db.query('SELECT id FROM "user" WHERE id=?',[target]);if(!exists[0])throw new HttpError(404,'not_found');const user=await d.repositories.admin.setDisabled(target,body.disabled,Date.now());await wake();return ok(c,user);});
-  app.post('/api/admin/invites',async c=>{const body=await json(c,z.strictObject({email:z.email().max(254)}));const now=Date.now(),invite=await d.repositories.admin.createInvitation(body.email,now+7*86400000,now);try{await d.auth.sendInvitation(invite.email);}catch{throw new HttpError(503,'service_unavailable');}return ok(c,{id:invite.id,email:invite.email,expiresAt:invite.expiresAt},201);});
+  app.post('/api/admin/invites',async c=>{
+    const body=await json(c,z.strictObject({email:z.string().trim().toLowerCase().pipe(z.email().max(254))}));
+    const now=Date.now(),invite=await d.repositories.admin.createInvitation(body.email,now+7*86400000,now);
+    let emailDelivery:InvitationResult['emailDelivery'];
+    if(invite.reused)emailDelivery={status:'not_attempted',reason:'existing_invitation'};
+    else if(d.config.email.senderMode==='resend_sandbox'&&invite.email!==d.config.email.testRecipient)emailDelivery={status:'not_attempted',reason:'resend_sandbox'};
+    else {
+      try {await d.auth.sendInvitation(invite.email);emailDelivery={status:'accepted',reason:null};}
+      catch(error){
+        const code=error instanceof EmailDeliveryError?error.code:'email_uncertain';
+        emailDelivery={status:code==='email_uncertain'?'uncertain':'failed',reason:code==='email_rejected'?'email_rejected':code==='email_uncertain'?'email_uncertain':'email_unavailable'};
+      }
+    }
+    // Admission is already committed. Delivery failure must never turn this
+    // successful write into a misleading 503 or prompt duplicate mail sends.
+    return ok(c,{id:invite.id,email:invite.email,expiresAt:invite.expiresAt,reused:invite.reused,emailDelivery} satisfies InvitationResult,invite.reused?200:201);
+  });
   app.get('/api/admin/status',async c=>ok(c,{...await d.repositories.admin.counts(),health:await aggregateHealth(await d.runtime.snapshot())}));
   app.all('/api/*',()=>{throw new HttpError(404,'not_found');});
   return app;

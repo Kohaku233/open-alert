@@ -4,6 +4,7 @@ export interface AuthCapabilities {
     google: boolean;
     emailOtp: boolean;
     registration: 'invite' | 'open' | 'closed';
+    emailSenderMode?: import('../src/contracts/api.js').AuthCapabilities['emailSenderMode'];
 }
 export class AppError extends Error {
     constructor(public code: string, message: string, public status = 0, public requestId = '', public retryAfter: string | null = null, public retryAt = 0, public endpoint = '') {
@@ -230,6 +231,10 @@ export function authErrorText(error: {
     status?: number | undefined;
 } | null): string {
     const mapped: Record<string, string> = {
+        get EMAIL_RECIPIENT_RESTRICTED() { return t("当前邮件服务为测试模式，不能向此邮箱发送验证码。请使用受邀邮箱通过 Google 登录，或联系管理员配置发件域名。"); },
+        get EMAIL_REJECTED() { return t("邮件服务拒绝了本次发送，请联系管理员检查发件地址与邮件服务配置。"); },
+        get EMAIL_UNAVAILABLE() { return t("邮件服务暂时不可用，请稍后重试或使用 Google 登录。"); },
+        get EMAIL_UNCERTAIN() { return t("验证码投递结果暂不确定，请先检查收件箱和垃圾邮件，稍后再重试。"); },
         get INVALID_OTP() {
             return t("验证码不正确或已过期，请重新输入或发送。");
         },

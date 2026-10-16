@@ -54,6 +54,9 @@ export async function createAuth(config: AppConfig, db: SqlDatabase, authDrizzle
   try { await transport.verify(); health.state = 'healthy'; health.code = null; }
   catch { transport.close?.(); throw new EmailDeliveryError('email_unavailable'); }
   const send = async (to: string, subject: string, text: string) => {
+    // A recipient restriction must not poison shared email health or disable
+    // login for the configured recipient in this Worker isolate.
+    if (config.email.senderMode === 'resend_sandbox' && normalizeEmail(to) !== config.email.testRecipient) forbidden('EMAIL_RECIPIENT_RESTRICTED');
     try {
       await transport.send({ to: normalizeEmail(to), subject, text });
       health.state = 'healthy'; health.code = null; health.lastSuccessAt = Date.now();
@@ -190,10 +193,16 @@ export async function createAuth(config: AppConfig, db: SqlDatabase, authDrizzle
         if (role !== 'user' && role !== 'admin') return null;
         return { userId: result.user.id, sessionId: result.session.id, role };
       },
-      capabilities: () => ({ google: Boolean(config.google), emailOtp: health.state === 'healthy', registration: config.inviteOnly ? 'invite' : 'open', inviteOnly: config.inviteOnly, emailProvider: config.email.provider, emailSenderMode: config.email.senderMode }),
+      // This is configured availability, not the result of the last email.
+      // Keep explicit retries possible after a transient provider failure.
+      capabilities: () => ({ google: Boolean(config.google), emailOtp: true, registration: config.inviteOnly ? 'invite' : 'open', inviteOnly: config.inviteOnly, emailProvider: config.email.provider, emailSenderMode: config.email.senderMode }),
       emailHealth: () => ({ ...health }),
       async sendInvitation(email) {
-        await send(email, 'You are invited to Open Alert', `You have been invited to Open Alert. Visit ${config.appUrl} and sign in with this email address using Google or an email code. Your administrator can tell you when the invitation expires.`);
+        try { await send(email, 'You are invited to Open Alert', `You have been invited to Open Alert. Visit ${config.appUrl} and sign in with this email address using Google or an email code. Your administrator can tell you when the invitation expires.`); }
+        catch {
+          const code = health.code;
+          throw new EmailDeliveryError(code === 'email_rejected' || code === 'email_uncertain' ? code : 'email_unavailable');
+        }
       },
       close() { transport.close?.(); },
     };

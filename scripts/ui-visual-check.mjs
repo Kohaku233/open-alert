@@ -52,7 +52,7 @@ function nativeSession(state) {
   return { user, session: { id: 'mock-session', userId: user.id, token: 'mock-native-token', expiresAt: new Date(Date.now()+86400000).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ipAddress: '127.0.0.1', userAgent: 'MOCK' } };
 }
 async function setup(browser, profile, authenticated = false) {
-  const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, socialError: null };
+  const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, emailSenderMode: 'console', otpError: null, inviteDelivery: {status:'not_attempted',reason:'resend_sandbox'}, socialError: null };
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
   const context = await browser.newContext({ ...options, serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
@@ -69,7 +69,7 @@ async function setup(browser, profile, authenticated = false) {
       if (url.href === 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js') {
         chartScripts++;
         if (state.chartFail) return route.abort('failed');
-        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;const host=script.parentElement.querySelector('.tradingview-widget-container__widget');const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
+        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
       }
       externalAttempts.push({ profile, origin: url.origin, path: url.pathname }); return route.abort('blockedbyclient');
     }
@@ -95,7 +95,8 @@ async function setup(browser, profile, authenticated = false) {
           // Local redirect exercises the SDK's real redirect plugin, without Google network.
           return state.socialError ? send(state.socialError, 403) : send({ url: `${origin}/login?error=access_denied`, redirect: true });
         }
-        if (path === '/api/auth/email-otp/send-verification-otp' && method === 'POST') { assert.deepEqual(body, { email: 'mock@example.test', type: 'sign-in' }); return send({ success: true }); }
+        if (path === '/api/auth/email-otp/send-verification-otp' && method === 'POST') {
+          if(state.otpError)return send({code:state.otpError,message:'MOCK provider error'},403); assert.deepEqual(body, { email: 'mock@example.test', type: 'sign-in' }); return send({ success: true }); }
         if (path === '/api/auth/sign-in/email-otp' && method === 'POST') {
           assert.equal(body.email, 'mock@example.test');
           if (body.otp !== '123456') return send({ code: 'INVALID_OTP', message: 'Invalid OTP' }, 400);
@@ -104,7 +105,7 @@ async function setup(browser, profile, authenticated = false) {
         if (path === '/api/auth/sign-out' && method === 'POST') return send({ success: true }, 200, { 'Set-Cookie': `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` });
         throw new Error(`Unexpected native auth route ${method} ${path}`);
       }
-      if (path === '/api/auth-capabilities' && method === 'GET') return ok({ google: state.googleEnabled, emailOtp: true, registration: 'invite' });
+      if (path === '/api/auth-capabilities' && method === 'GET') return ok({ google: state.googleEnabled, emailOtp: true, registration: 'invite', emailSenderMode:state.emailSenderMode });
       if (!loggedIn) return fail('unauthenticated', 401);
       if (state.failNext && state.failNext.path === path && state.failNext.method === method) {
         const error = state.failNext; state.failNext = null;
@@ -168,7 +169,12 @@ async function setup(browser, profile, authenticated = false) {
       if (path === '/api/test-notification' && method === 'POST') { F.testNotificationSchema.parse(body); state.status.daily.attempts++; return ok({ outcome: 'sent', at: Date.now() }); }
       if (path === '/api/admin/users' && method === 'GET') { assert.equal(url.searchParams.get('limit'), '50'); return ok({ items: [{ ...state.status.user, id: 'mock-member', email: 'member@example.test', role: 'user' }], cursor: url.searchParams.has('cursor') ? null : 'mock-page-2' }); }
       if (path === '/api/admin/status' && method === 'GET') return ok({ activeUsers: 2, activeAlerts: state.alerts.length, health: state.status.health });
-      if (path === '/api/admin/invites' && method === 'POST') return ok({ id: 'mock-invite', email: body.email, expiresAt: Date.now()+86400000 }, 201);
+      if (path === '/api/admin/invites' && method === 'POST') {
+        state.invites ??= new Map();const existing=state.invites.get(body.email);
+        if(existing)return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
+        const result={id:'mock-invite-'+state.invites.size,email:body.email,expiresAt:Date.now()+86400000,reused:false,emailDelivery:state.inviteDelivery};
+        state.invites.set(body.email,result);return ok(result,201);
+      }
       throw new Error(`Unexpected application route ${method} ${path}`);
     } catch (error) { violations.push(error.message); return fail('internal_error', 500); }
   });
@@ -266,6 +272,10 @@ try {
     await login.page.goto(origin+'/login');
     await login.page.getByRole('button',{name:'EN',exact:true}).click();
     await expect(login.page.getByRole('heading',{name:'Sign in to Open Alert'})).toBeVisible();
+    login.state.emailSenderMode='resend_sandbox'; login.state.googleEnabled=true;
+    await login.page.reload();
+    await expect(login.page.getByText(/Email is in test mode/)).toBeVisible();
+    await expect(login.page.getByRole('button',{name:'Send sign-in code'})).toBeEnabled();
     await login.page.evaluate(() => document.fonts.ready); await noOverflow(login.page);
     await login.page.screenshot({path:join(review,profile+'-login-en.png'),fullPage:true});
     await login.context.close();
@@ -276,6 +286,14 @@ try {
     await expect(admin.page.getByRole('heading',{name:'Admin',exact:true})).toBeVisible();
     await admin.page.evaluate(() => document.fonts.ready); await noOverflow(admin.page);
     await admin.page.screenshot({path:join(review,profile+'-admin-en.png'),fullPage:true});
+    await admin.page.getByLabel('Invited email').fill('invited@example.test');
+    await admin.page.getByRole('button',{name:'Create email invitation'}).click();
+    await expect(admin.page.locator('.invitation-result')).toContainText('cannot send an invitation');
+    await noOverflow(admin.page);
+    await admin.page.screenshot({path:join(review,profile+'-invitation-result-en.png'),fullPage:true});
+    await admin.page.getByLabel('Invited email').fill('invited@example.test');
+    await admin.page.getByRole('button',{name:'Create email invitation'}).click();
+    await expect(admin.page.locator('.invitation-result')).toContainText('No duplicate email was sent');
     await admin.context.close();
     console.log('PASS', profile, 'Chinese/English, preserved rules/market, persistence and responsive settings');
   }

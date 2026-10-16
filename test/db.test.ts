@@ -176,3 +176,17 @@ test('expired invitation renewals CAS against concurrent renewal/consume and rec
  }
  const s=await setup();try{const inv=await s.r.admin.createInvitation('expired@example.com',now+1,now);const renewed=await s.r.admin.createInvitation('expired@example.com',now+1000,now+2);assert.equal(renewed.id,inv.id);assert.equal(renewed.expiresAt,now+1000);}finally{await s.db.close();}
 });
+
+test('repeated active invitations are idempotent, preserve expiry and recheck consume/capacity guards',async()=>{
+ const s=await setup();try{
+  const first=await s.r.admin.createInvitation(' repeat@example.com ',now+10000,now);assert.equal(first.reused,false);
+  const repeated=await Promise.all([s.r.admin.createInvitation('REPEAT@example.com',now+999999,now+1),s.r.admin.createInvitation('repeat@example.com',now+999999,now+1)]);
+  for(const result of repeated){assert.equal(result.id,first.id);assert.equal(result.expiresAt,first.expiresAt);assert.equal(result.reused,true);}
+  assert.equal((await s.db.query('SELECT id FROM invitations WHERE email=?',['repeat@example.com'])).length,1);
+  const cas=s.db.atomicCAS.bind(s.db);s.db.atomicCAS=async statements=>{
+   if(statements.some(v=>v.sql.startsWith('UPDATE invitations SET expires_at=expires_at')))await s.db.execute('UPDATE invitations SET consumed_by=?,consumed_at=? WHERE id=?',['u1',now+2,first.id]);
+   return cas(statements);
+  };
+  await assert.rejects(s.r.admin.createInvitation('repeat@example.com',now+10000,now+2),e=>e instanceof RepositoryConflict&&e.code==='generation_conflict');
+ }finally{await s.db.close();}
+});

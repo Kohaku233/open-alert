@@ -13,6 +13,10 @@ export type ApiErrorCode =
   | 'rate_limited' | 'channel_unconfigured' | 'service_unavailable'
   | 'notification_failed' | 'notification_uncertain' | 'internal_error';
 export interface Paginated<T> { items: T[]; cursor: string | null }
+export interface InvitationResult {
+  id: string; email: string; expiresAt: number; reused: boolean;
+  emailDelivery: { status: 'accepted' | 'not_attempted' | 'failed' | 'uncertain'; reason: 'resend_sandbox' | 'existing_invitation' | 'email_rejected' | 'email_unavailable' | 'email_uncertain' | null };
+}
 export interface SessionPrincipal { userId: string; role: 'user' | 'admin'; sessionId: string }
 export interface TestNotificationResult { outcome: 'sent'; at: number }
 export interface PatchSettings extends Partial<UserSettings> { expectedGeneration: number }
@@ -42,7 +46,7 @@ export interface ApiRouteMap {
   'POST /api/admin/bootstrap': { request: never; response: { bootstrapped: true } };
   'GET /api/admin/users': { request: never; response: Paginated<UserIdentity> };
   'PATCH /api/admin/users/:id': { request: { disabled: boolean }; response: UserIdentity };
-  'POST /api/admin/invites': { request: { email: string }; response: { id: string; email: string; expiresAt: number } };
+  'POST /api/admin/invites': { request: { email: string }; response: InvitationResult };
   'GET /api/admin/status': { request: never; response: { activeUsers: number; activeAlerts: number; health: SystemStatus['health'] } };
 }
 export type RouteRequest<K extends keyof ApiRouteMap> = ApiRouteMap[K]['request'];
