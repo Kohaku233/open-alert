@@ -22,7 +22,7 @@ async function fixture(overrides:Record<string,string>={}) {
  let invitationError:'email_rejected'|'email_uncertain'|'email_unavailable'|null=null;
  let catalogOverride:CatalogSnapshot|undefined;
  const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
- const app=createApp({...services,auth:{...services.auth,sendInvitation:async email=>{invitationSends++;if(invitationError)throw new EmailDeliveryError(invitationError);await services.auth.sendInvitation(email);}},notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const app=createApp({...services,auth:{...services.auth,sendInvitation:async(email,options)=>{invitationSends++;if(invitationError)throw new EmailDeliveryError(invitationError);await services.auth.sendInvitation(email,options);}},notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
  const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
  async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
  const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
@@ -127,7 +127,7 @@ test('pending delivery guards changes; deliberate disable cancels queued work; b
   assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,alice.cookie,{Authorization:'Bearer wrong'})).status,403);
   await f.body(await f.call('/api/admin/bootstrap','POST',undefined,alice.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));assert.equal((await f.call('/api/admin/bootstrap','POST',undefined,bob.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`})).status,409);
   const users=(await f.body(await f.call('/api/admin/users','GET',undefined,alice.cookie))).data;assert.equal(users.items.length,2);
-  const invited=(await f.body(await f.call('/api/admin/invites','POST',{email:'NEXT@example.com'},alice.cookie),201)).data;assert.equal(invited.email,'next@example.com');assert.equal(f.messages.at(-1)!.subject,'You are invited to Open Alert');
+  const invited=(await f.body(await f.call('/api/admin/invites','POST',{email:'NEXT@example.com'},alice.cookie),201)).data;assert.equal(invited.email,'next@example.com');assert.equal(f.messages.at(-1)!.subject,'价格哨站 · 邀请你加入 Open Alert');
   await f.body(await f.call('/api/channels','PUT',{provider:'pushover',userKey:'A'.repeat(30)},alice.cookie));await f.body(await f.call('/api/settings','PATCH',{expectedGeneration:0,enabled:true},alice.cookie));
   const a=(await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201)).data.alert;const now=Date.now(),lease=(await f.repositories.scheduler.acquireLease('test-owner',now,15000))!,triggerId=crypto.randomUUID();
   assert.equal(await f.repositories.alerts.reserveTrigger({triggerId,alertId:a.id,userId:alice.id,generation:0,settingsGeneration:1,channelGeneration:0,tick:{instrument:a.instrument,price:100,timestamp:now,receivedAt:now},now,lease}),true);
@@ -205,5 +205,43 @@ test('sandbox invitation allows Google admission without attempting restricted m
   assert.ok(await f.repositories.admin.getInvitation('next@example.com',Date.now()));assert.equal(f.auth.capabilities().emailOtp,true);assert.equal(f.auth.emailHealth().state,'healthy');
   const repeated=(await f.body(await f.call('/api/admin/invites','POST',{email:'next@example.com'},admin.cookie))).data;assert.equal(repeated.id,result.id);assert.equal(repeated.reused,true);assert.equal(f.invitationSends(),0);
   assert.equal((await f.call('/api/admin/invites','POST',{email:'not-authorized@example.com'})).status,401);
+ }finally{await f.close();}
+});
+
+test('invitation lifecycle is admin-only, paginated, rate-limited and revocation blocks OTP until renewed',async()=>{
+ const f=await fixture();try{
+  const admin=await f.login('lifecycle-admin@example.com'),member=await f.login('lifecycle-member@example.com');
+  await f.body(await f.call('/api/admin/bootstrap','POST',{},admin.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  const created=(await f.body(await f.call('/api/admin/invites','POST',{email:'lifecycle-next@example.com'},admin.cookie),201)).data;
+  const routes:[string,string,unknown][]=[['GET','/api/admin/invites',undefined],['POST',`/api/admin/invites/${created.id}/resend`,{confirm:true,expectedExpiresAt:created.expiresAt}],['DELETE',`/api/admin/invites/${created.id}`,{expectedExpiresAt:created.expiresAt}]];
+  for(const [method,path,body] of routes){assert.equal((await f.call(path,method,body)).status,401);assert.equal((await f.call(path,method,body,member.cookie)).status,403);}
+  const page=(await f.body(await f.call('/api/admin/invites?limit=1','GET',undefined,admin.cookie))).data;
+  assert.equal(page.items.length,1);assert.ok(page.cursor);
+  assert.equal((await f.call(`/api/admin/invites/${created.id}/resend`,'POST',{confirm:true,expectedExpiresAt:created.expiresAt},admin.cookie,{Origin:'https://evil.example'})).status,403);
+  const limited=await f.call(`/api/admin/invites/${created.id}/resend`,'POST',{confirm:true,expectedExpiresAt:created.expiresAt},admin.cookie);
+  assert.equal(limited.status,429);assert.ok(Number(limited.headers.get('Retry-After'))>0);assert.equal(f.invitationSends(),1);
+  await f.body(await f.call(`/api/admin/invites/${created.id}`,'DELETE',{expectedExpiresAt:created.expiresAt},admin.cookie));
+  const all=(await f.body(await f.call('/api/admin/invites','GET',undefined,admin.cookie))).data.items;
+  assert.equal(all.find((item:any)=>item.id===created.id).status,'revoked');
+  assert.equal((await f.call('/api/auth/email-otp/send-verification-otp','POST',{email:created.email,type:'sign-in'})).status,403);
+  assert.equal((await f.call(`/api/admin/invites/${created.id}/resend`,'POST',{confirm:true,expectedExpiresAt:created.expiresAt},admin.cookie)).status,409);
+  const renewed=(await f.body(await f.call('/api/admin/invites','POST',{email:created.email},admin.cookie),201)).data;
+  assert.equal(renewed.id,created.id);assert.equal(renewed.emailDelivery.reason,'delivery_cooldown');assert.equal(f.invitationSends(),1);
+  assert.equal((await f.call(`/api/admin/invites/${created.id}`,'DELETE',{expectedExpiresAt:created.expiresAt},admin.cookie)).status,409);
+  const existing=await f.body(await f.call('/api/admin/invites','POST',{email:'lifecycle-admin@example.com'},admin.cookie),409);assert.equal(existing.error.code,'account_exists');
+ }finally{await f.close();}
+});
+
+test('resend uses a shared durable budget, no expiry extension and no automatic retry after uncertain mail',async()=>{
+ const f=await fixture();try{
+  const admin=await f.login('resend-admin@example.com');await f.body(await f.call('/api/admin/bootstrap','POST',{},admin.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  const invite=await f.repositories.admin.createInvitation('resend-next@example.com',Date.now()+60000,Date.now());
+  f.setInvitationError('email_uncertain');
+  const path=`/api/admin/invites/${invite.id}/resend`,body={confirm:true,expectedExpiresAt:invite.expiresAt};
+  const responses=await Promise.all([f.call(path,'POST',body,admin.cookie),f.call(path,'POST',body,admin.cookie)]);
+  assert.deepEqual(responses.map(r=>r.status).sort(),[200,429]);assert.equal(f.invitationSends(),1);
+  const result=(await responses.find(r=>r.status===200)!.json() as any).data;
+  assert.equal(result.emailDelivery.status,'uncertain');assert.equal(result.expiresAt,invite.expiresAt);
+  assert.equal((await f.repositories.admin.getInvitation(invite.email,Date.now()))!.expiresAt,invite.expiresAt);
  }finally{await f.close();}
 });

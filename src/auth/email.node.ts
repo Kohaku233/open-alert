@@ -34,7 +34,7 @@ export function createSmtpTransport(config: AppConfig): EmailTransport {
     async send(message) {
       const to = normalizeEmail(message.to);
       try {
-        const result = await transport.sendMail({ from: config.email.from!, to, subject: message.subject, text: message.text });
+        const result = await transport.sendMail({ from: config.email.from!, to, subject: message.subject, text: message.text, html: message.html });
         const accepted = result.accepted.some((entry) => entry.toLowerCase() === to);
         if (!accepted || result.rejected.length > 0 || !/^250(?:\s|$)/.test(result.response)) throw new EmailDeliveryError('email_rejected');
       } catch (error) {

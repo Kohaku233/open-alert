@@ -1,29 +1,18 @@
 import { Button } from '../components/ui/button.js';
-import { Input } from '../components/ui/input.js';
-import { Label } from '../components/ui/label.js';
+import { Invitations } from '../components/Invitations.js';
 import { t } from '../i18n.js';
 import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
 import type { UserIdentity, SystemStatus } from '../../src/contracts/domain.js';
-import type { InvitationResult, Paginated } from '../../src/contracts/api.js';
+import type { Paginated } from '../../src/contracts/api.js';
 import type { WorkspaceModel } from '../model.js';
 import { api, errorText, request } from '../api.js';
 import { Dialog, FormError } from '../components/Dialog.js';
-import { formatTime, healthLabels } from '../utils.js';
+import { healthLabels } from '../utils.js';
 type AdminStatus = {
     activeUsers: number;
     activeAlerts: number;
     health: SystemStatus['health'];
 };
-function invitationDeliveryText(invite: InvitationResult) {
-    const delivery = invite.emailDelivery;
-    if (!delivery) return t("。请让对方使用该邮箱登录。此操作不表示邀请邮件已发送。");
-    if (delivery.status === 'accepted') return t("邮件服务已接受邀请邮件，请对方查收。");
-    if (delivery.reason === 'existing_invitation') return t("本次未重复发送邮件。可将网站地址发给对方，使用受邀邮箱登录。");
-    if (delivery.reason === 'resend_sandbox') return t("当前邮件为测试模式，无法向此邮箱发送邀请邮件。请配置并验证自有发件域名。");
-    if (delivery.status === 'uncertain') return t("邀请已保存，邮件投递结果暂不确定。请让对方先检查收件箱，避免重复发送。");
-    return t("邀请已保存，但邮件发送失败。请先联系对方，避免重复创建邀请。");
-}
 export function Admin({ model, notify }: {
     model: WorkspaceModel;
     notify: (text: string) => void;
@@ -33,9 +22,6 @@ export function Admin({ model, notify }: {
     const [adminStatus, setAdminStatus] = useState<AdminStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [email, setEmail] = useState('');
-    const [inviteError, setInviteError] = useState('');
-    const [invite, setInvite] = useState<InvitationResult | null>(null);
     const [target, setTarget] = useState<UserIdentity | null>(null);
     const [targetError, setTargetError] = useState('');
     const canAdmin = model.data?.status.user.role === 'admin' && model.data.status.capabilities.canAdmin;
@@ -60,22 +46,6 @@ export function Admin({ model, notify }: {
         }
     }
     useEffect(() => { void load(); }, [canAdmin]);
-    async function createInvite(event: FormEvent) {
-        event.preventDefault();
-        if (model.busy || !canAdmin)
-            return;
-        setInviteError('');
-        setInvite(null);
-        try {
-            const result = await model.mutate(() => api('POST /api/admin/invites', { email: email.trim().toLowerCase() }));
-            setInvite(result);
-            setEmail('');
-            notify(result.reused ? t("该邮箱已有有效邀请，已恢复邀请信息。") : t("邮箱邀请已创建。"));
-        }
-        catch (cause) {
-            setInviteError(errorText(cause));
-        }
-    }
     async function toggleUser() {
         if (!target || model.busy)
             return;
@@ -95,10 +65,7 @@ export function Admin({ model, notify }: {
     return <section className="settings-page"><div className="page-heading"><div><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></div>
     <FormError message={error}/>
     <div className="admin-overview"><span>{t("活跃账户 ")}<strong>{adminStatus?.activeUsers ?? '—'}</strong></span><span>{t("活跃警报 ")}<strong>{adminStatus?.activeAlerts ?? '—'}</strong></span><span>{t("运行状态 ")}<strong>{adminStatus ? healthLabels[adminStatus.health.overall] : t("读取中")}</strong></span></div>
-    <div className="admin-grid"><section className="settings-panel"><h2>{t("邀请邮箱")}</h2><p className="small muted">{t("邀请码仅限对应邮箱，Google 与验证码登录都需满足服务端的邀请规则。")}</p><form onSubmit={event => void createInvite(event)}><Label>{t("受邀邮箱")}<Input type="email" required autoComplete="off" autoCapitalize="none" value={email} onChange={event => setEmail(event.target.value)} disabled={model.busy} placeholder={t("受邀者的邮箱地址")}/></Label><Button variant="default" className="primary" disabled={model.busy || !!model.error}>{model.busy ? t("正在创建…") : t("创建邮箱邀请")}</Button><FormError message={inviteError}/></form>{invite && <div className="invitation-result" role="status"><p>{invite.reused ? t("已有有效邀请：") : t("已创建 ")}{invite.email}{t(" 的邀请，有效至 ")}{formatTime(invite.expiresAt)}</p>
-      <p>{t("邀请已生效。")}{invitationDeliveryText(invite)}</p>
-      {invite.emailDelivery?.status !== 'accepted' && model.data?.status.capabilities.google && <p>{t("可将网站地址发给对方，使用受邀邮箱通过 Google 登录。")}</p>}
-    </div>}</section>
+    <div className="admin-grid"><Invitations model={model} notify={notify}/>
       <section className="settings-panel"><h2>{t("部署配置")}</h2><p className="small muted">{t("数据库、邮件、Google 和共享 Pushover 凭据由部署者在服务端配置，不通过此页面编辑。")}</p><details><summary>{t("查看部署配置说明")}</summary><div className="setup-note"><p>{t("Node 使用 SQLite 或 PostgreSQL；Cloudflare 使用 D1 和单个后台协调器。账户、警报与通知状态都保存在数据库。")}</p><p>{t("Google 需要配对的 OAuth 客户端 ID 与密钥。邮件使用已验证发件地址与 SMTP（仅 Node）或 Resend。")}</p><p>{t("共享 Pushover 应用令牌在服务端配置；用户各自保存 User Key。更换数据加密密钥需先迁移已有密钥。")}</p><p>{t("密钥与云平台令牌不应放入前端或构建变量。")}</p></div></details>
       {adminStatus && <div className="admin-health">{(['database', 'scheduler', 'prices', 'notifications', 'email'] as const).map(key => <span key={key}>{({ get database() {
             return t("数据库");

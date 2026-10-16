@@ -169,9 +169,18 @@ async function setup(browser, profile, authenticated = false) {
       if (path === '/api/test-notification' && method === 'POST') { F.testNotificationSchema.parse(body); state.status.daily.attempts++; return ok({ outcome: 'sent', at: Date.now() }); }
       if (path === '/api/admin/users' && method === 'GET') { assert.equal(url.searchParams.get('limit'), '50'); return ok({ items: [{ ...state.status.user, id: 'mock-member', email: 'member@example.test', role: 'user' }], cursor: url.searchParams.has('cursor') ? null : 'mock-page-2' }); }
       if (path === '/api/admin/status' && method === 'GET') return ok({ activeUsers: 2, activeAlerts: state.alerts.length, health: state.status.health });
+      if (path === '/api/admin/invites' && method === 'GET') {
+        return ok({items:[...(state.invites?.values()??[])].map(item=>({id:item.id,email:item.email,expiresAt:item.expiresAt,status:item.expiresAt===0?'revoked':item.expiresAt<=Date.now()?'expired':'pending'})),cursor:null});
+      }
+      if (path.startsWith('/api/admin/invites/') && (method === 'DELETE' || method === 'POST')) {
+        const item=[...(state.invites?.values()??[])].find(item=>item.id===path.split('/')[4]);assert(item);
+        assert.equal(body.expectedExpiresAt,item.expiresAt);
+        if(method==='DELETE'){item.expiresAt=0;return ok({revoked:true});}
+        assert.equal(body.confirm,true);return ok({...item,reused:true,emailDelivery:state.inviteDelivery});
+      }
       if (path === '/api/admin/invites' && method === 'POST') {
         state.invites ??= new Map();const existing=state.invites.get(body.email);
-        if(existing)return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
+        if(existing&&existing.expiresAt>Date.now())return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
         const result={id:'mock-invite-'+state.invites.size,email:body.email,expiresAt:Date.now()+86400000,reused:false,emailDelivery:state.inviteDelivery};
         state.invites.set(body.email,result);return ok(result,201);
       }
@@ -272,15 +281,19 @@ try {
     await login.page.goto(origin+'/login');
     await login.page.getByRole('button',{name:'EN',exact:true}).click();
     await expect(login.page.getByRole('heading',{name:'Sign in to Open Alert'})).toBeVisible();
-    login.state.emailSenderMode='resend_sandbox'; login.state.googleEnabled=true;
+    login.state.emailSenderMode='resend_sending_only'; login.state.googleEnabled=true;
     await login.page.reload();
-    await expect(login.page.getByText(/Email is in test mode/)).toBeVisible();
+    await expect(login.page.getByText(/Email is in test mode/)).toHaveCount(0);
     await expect(login.page.getByRole('button',{name:'Send sign-in code'})).toBeEnabled();
     await login.page.evaluate(() => document.fonts.ready); await noOverflow(login.page);
     await login.page.screenshot({path:join(review,profile+'-login-en.png'),fullPage:true});
+    await login.page.getByLabel('Email address',{exact:true}).fill('mock@example.test');
+    await login.page.getByRole('button',{name:'Send sign-in code'}).click();
+    await expect(login.page.getByLabel('Code from your email')).toBeVisible();
+    await noOverflow(login.page); await login.page.screenshot({path:join(review,profile+'-otp-en.png'),fullPage:true});
     await login.context.close();
     const admin = await setup(browser,profile,true);
-    admin.state.status.user.role='admin'; admin.state.status.capabilities.canAdmin=true;
+    admin.state.status.user.role='admin'; admin.state.status.capabilities.canAdmin=true; admin.state.inviteDelivery={status:'accepted',reason:null};
     await admin.page.goto(origin+'/admin');
     await admin.page.getByRole('button',{name:'EN',exact:true}).click();
     await expect(admin.page.getByRole('heading',{name:'Admin',exact:true})).toBeVisible();
@@ -288,7 +301,7 @@ try {
     await admin.page.screenshot({path:join(review,profile+'-admin-en.png'),fullPage:true});
     await admin.page.getByLabel('Invited email').fill('invited@example.test');
     await admin.page.getByRole('button',{name:'Create email invitation'}).click();
-    await expect(admin.page.locator('.invitation-result')).toContainText('cannot send an invitation');
+    await expect(admin.page.locator('.invitation-result')).toContainText('accepted the invitation email');
     await noOverflow(admin.page);
     await admin.page.screenshot({path:join(review,profile+'-invitation-result-en.png'),fullPage:true});
     await admin.page.getByLabel('Invited email').fill('invited@example.test');

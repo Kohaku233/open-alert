@@ -16,6 +16,7 @@ export function authOptions(config: AppConfig, sendVerificationOTP: Parameters<t
     socialProviders: config.google ? { google: {
       clientId: config.google.clientId,
       clientSecret: config.google.clientSecret,
+      prompt: 'select_account',
       mapProfileToUser(profile) {
         if (profile.email_verified !== true) throw new APIError('FORBIDDEN', { code: 'VERIFIED_EMAIL_REQUIRED', message: 'Verified Google email required' });
         return { email: normalizeEmail(profile.email), emailVerified: true };

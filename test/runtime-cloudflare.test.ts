@@ -50,7 +50,7 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    if(url.hostname==='api.resend.com'){
     assert.equal(request.headers.get('authorization'),'Bearer re_fake_runtime_key');
     if(url.pathname==='/domains'&&request.method==='GET'){domainRequests++;return MfResponse.json({data:[{name:'alert.example.com',status:'verified'}]});}
-    if(url.pathname==='/emails'&&request.method==='POST'){const body=await request.json() as {to:string[];subject:string;text:string};emails.push(body);if(rejectInvitationMail&&body.subject==='You are invited to Open Alert')return MfResponse.json({message:'MOCK rejection'},{status:403});return MfResponse.json({id:`email-${emails.length}`});}
+    if(url.pathname==='/emails'&&request.method==='POST'){const body=await request.json() as {to:string[];subject:string;text:string};emails.push(body);if(rejectInvitationMail&&body.subject==='价格哨站 · 邀请你加入 Open Alert')return MfResponse.json({message:'MOCK rejection'},{status:403});return MfResponse.json({id:`email-${emails.length}`});}
    }
    if(request.method==='GET'){
     const fixture=publicExchangeFixture(url,Date.now(),tickerRequests+1);
@@ -234,7 +234,15 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.equal((await api<{emailOtp:boolean}>('/api/auth-capabilities')).emailOtp,true);
    rejectInvitationMail=false;
    const otp=await request('/api/auth/email-otp/send-verification-otp','POST',{email:invite.email,type:'sign-in'});assert.equal(otp.status,200,await otp.text());
-   assert.equal(emails.at(-1)!.subject,'Your Open Alert sign-in code');
+   assert.equal(emails.at(-1)!.subject,'价格哨站 · Open Alert 登录验证码 / Sign-in code');
+   await db.execute('UPDATE rate_limit SET last_request=? WHERE "key" LIKE ?',[Date.now()-61000,'app-auth:invite-mail:%']);
+   const resent=await api<typeof invite>(`/api/admin/invites/${invite.id}/resend`,'POST',{confirm:true,expectedExpiresAt:invite.expiresAt},aliceCookie);
+   assert.equal(resent.emailDelivery.status,'accepted');assert.equal(resent.expiresAt,invite.expiresAt);
+   await api(`/api/admin/invites/${invite.id}`,'DELETE',{expectedExpiresAt:invite.expiresAt},aliceCookie);
+   const history=await api<{items:{id:string;status:string}[]}>('/api/admin/invites','GET',undefined,aliceCookie);
+   assert.equal(history.items.find(item=>item.id===invite.id)!.status,'revoked');
+   assert.equal((await request(`/api/admin/invites/${invite.id}/resend`,'POST',{confirm:true,expectedExpiresAt:invite.expiresAt},aliceCookie)).status,409);
+
   });
  } finally {
   await mf.dispose();

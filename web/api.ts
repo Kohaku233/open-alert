@@ -83,7 +83,7 @@ export async function request<T>(path: string, method = 'GET', body?: unknown, o
     }
     // Observe the status/header before parsing the body, including proxy HTML 429s.
     const limited = response.status === 429 ? new AppError('rate_limited', t("请求过于频繁，请稍后重试。"), 429, '', response.headers.get('Retry-After'), retryDeadline(response.headers.get('Retry-After'))) : null;
-    if (limited && business) {
+    if (limited && business && !/^\/api\/admin\/invites\/[^/]+\/resend$/.test(new URL(path, window.location.href).pathname)) {
         if (!businessCooldown || limited.retryAt >= businessCooldown.retryAt)
             businessCooldown = limited;
         for (const listener of cooldownListeners)
@@ -123,6 +123,7 @@ export function api<K extends keyof ApiRouteMap>(route: K, body?: ApiRouteMap[K]
     return request<ApiRouteMap[K]['response']>(path, method, body);
 }
 const messages: Record<string, string> = {
+    get account_exists() { return t("此邮箱已有账户，无需邀请。请在账户列表中查看其状态。"); },
     get unauthenticated() {
         return t("登录已失效，请重新登录。");
     },
@@ -206,6 +207,7 @@ const oauthMessages: Record<string, string> = {
 const oauthAliases: Record<string, string> = {
     invite_required: 'invitation_required', user_disabled: 'account_disabled',
     state_expired: 'state_not_found', signup_disabled: 'registration_closed',
+    state_security_mismatch: 'state_mismatch',
 };
 function safeOAuthCode(code: string): string {
     const lower = code.toLowerCase();

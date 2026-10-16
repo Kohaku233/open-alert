@@ -108,6 +108,7 @@ async function fixture(overrides: Record<string, string> = {}) {
     assert.equal(start.status, 200, await start.clone().text());
     const url = new URL((await start.json() as { url: string }).url);
     assert.equal(url.origin, 'https://accounts.google.com');
+    assert.equal(url.searchParams.get('prompt'), 'select_account');
     assert.equal(url.searchParams.get('redirect_uri'), origin + '/api/auth/callback/google');
     assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
     assert.ok(url.searchParams.get('state'));
@@ -203,10 +204,11 @@ test('Google HTTP registration consumes only its matching valid invite and canno
 });
 
 test('Google new user without valid matching invitation cannot register, link or get a session', async t => {
-  for (const kind of ['missing', 'expired', 'different-email']) await t.test(kind, async () => {
+  for (const kind of ['missing', 'expired', 'revoked', 'different-email']) await t.test(kind, async () => {
     const f = await fixture();
     try {
       if (kind === 'expired') await f.invite('new@example.com', Date.now() - 1);
+      if (kind === 'revoked') await f.invite('new@example.com', 0);
       if (kind === 'different-email') await f.invite('other@example.com');
       await f.denied(await f.google({ sub: 'google-new', email: 'new@example.com', email_verified: true }), 'INVITATION_REQUIRED');
       for (const table of ['"user"', 'account', 'session']) assert.equal((await f.db.query(`SELECT id FROM ${table}`)).length, 0);

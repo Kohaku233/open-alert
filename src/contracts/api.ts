@@ -9,14 +9,15 @@ export interface ApiError {
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 export type ApiErrorCode =
   | 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found'
-  | 'generation_conflict' | 'pending_delivery' | 'limit_exceeded'
+  | 'generation_conflict' | 'pending_delivery' | 'limit_exceeded' | 'account_exists'
   | 'rate_limited' | 'channel_unconfigured' | 'service_unavailable'
   | 'notification_failed' | 'notification_uncertain' | 'internal_error';
 export interface Paginated<T> { items: T[]; cursor: string | null }
 export interface InvitationResult {
   id: string; email: string; expiresAt: number; reused: boolean;
-  emailDelivery: { status: 'accepted' | 'not_attempted' | 'failed' | 'uncertain'; reason: 'resend_sandbox' | 'existing_invitation' | 'email_rejected' | 'email_unavailable' | 'email_uncertain' | null };
+  emailDelivery: { status: 'accepted' | 'not_attempted' | 'failed' | 'uncertain'; reason: 'resend_sandbox' | 'existing_invitation' | 'delivery_cooldown' | 'email_rejected' | 'email_unavailable' | 'email_uncertain' | null };
 }
+export interface InvitationSummary { id: string; email: string; expiresAt: number; status: 'pending' | 'accepted' | 'expired' | 'revoked' }
 export interface SessionPrincipal { userId: string; role: 'user' | 'admin'; sessionId: string }
 export interface TestNotificationResult { outcome: 'sent'; at: number }
 export interface PatchSettings extends Partial<UserSettings> { expectedGeneration: number }
@@ -47,6 +48,9 @@ export interface ApiRouteMap {
   'GET /api/admin/users': { request: never; response: Paginated<UserIdentity> };
   'PATCH /api/admin/users/:id': { request: { disabled: boolean }; response: UserIdentity };
   'POST /api/admin/invites': { request: { email: string }; response: InvitationResult };
+  'GET /api/admin/invites': { request: never; response: Paginated<InvitationSummary> };
+  'POST /api/admin/invites/:id/resend': { request: { expectedExpiresAt: number; confirm: true }; response: InvitationResult };
+  'DELETE /api/admin/invites/:id': { request: { expectedExpiresAt: number }; response: { revoked: true } };
   'GET /api/admin/status': { request: never; response: { activeUsers: number; activeAlerts: number; health: SystemStatus['health'] } };
 }
 export type RouteRequest<K extends keyof ApiRouteMap> = ApiRouteMap[K]['request'];

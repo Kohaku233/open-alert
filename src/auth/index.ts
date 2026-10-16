@@ -7,7 +7,8 @@ import type { SqlDatabase } from '../contracts/db.js';
 import { authOptions } from './options.js';
 import * as sqliteSchema from './schema.sqlite.js';
 import { createEmailTransport, EmailDeliveryError, normalizeEmail } from './email.js';
-import type { EmailHealth, EmailTransport } from './email.js';
+import type { EmailHealth, EmailTransport, EmailMessage } from './email.js';
+import { invitationMessage, otpMessage } from './messages.js';
 import { consumeAuthLimit, privateLimitKey } from './limits.js';
 
 type ValidateUserInfo = NonNullable<NonNullable<import('better-auth').BetterAuthOptions['user']>['validateUserInfo']>;
@@ -21,7 +22,7 @@ export interface OpenAlertAuth extends AuthService {
   auth: BetterAuthInstance;
   capabilities(): AuthCapabilities;
   emailHealth(): EmailHealth;
-  sendInvitation(email: string): Promise<void>;
+  sendInvitation(email: string, options?: { expiresAt: number; idempotencyKey: string }): Promise<void>;
   close(): void;
 }
 export class DisabledAccountError extends Error { constructor() { super('Account disabled'); this.name = 'DisabledAccountError'; } }
@@ -53,12 +54,12 @@ export async function createAuth(config: AppConfig, db: SqlDatabase, authDrizzle
   const health: EmailHealth = { state: 'unhealthy', code: 'email_starting', lastSuccessAt: null };
   try { await transport.verify(); health.state = 'healthy'; health.code = null; }
   catch { transport.close?.(); throw new EmailDeliveryError('email_unavailable'); }
-  const send = async (to: string, subject: string, text: string) => {
+  const send = async (to: string, message: Omit<EmailMessage, 'to'>) => {
     // A recipient restriction must not poison shared email health or disable
     // login for the configured recipient in this Worker isolate.
     if (config.email.senderMode === 'resend_sandbox' && normalizeEmail(to) !== config.email.testRecipient) forbidden('EMAIL_RECIPIENT_RESTRICTED');
     try {
-      await transport.send({ to: normalizeEmail(to), subject, text });
+      await transport.send({ to: normalizeEmail(to), ...message });
       health.state = 'healthy'; health.code = null; health.lastSuccessAt = Date.now();
     } catch (error) {
       health.state = 'unhealthy'; health.code = error instanceof EmailDeliveryError ? error.code : 'email_unavailable';
@@ -89,7 +90,7 @@ export async function createAuth(config: AppConfig, db: SqlDatabase, authDrizzle
     };
     const baseOptions = authOptions(config, async ({ email, otp, type }) => {
       if (type !== 'sign-in') forbidden('OTP_TYPE_DISABLED');
-      await send(email, 'Your Open Alert sign-in code', `Your Open Alert sign-in code is ${otp}. It expires in 5 minutes. If you did not request it, ignore this message.`);
+      await send(email, otpMessage(config.appUrl, email, otp));
     });
     const validateUserInfo: ValidateUserInfo = async ({ user, source }) => {
       if (source.method !== 'oauth') return;
@@ -197,8 +198,8 @@ export async function createAuth(config: AppConfig, db: SqlDatabase, authDrizzle
       // Keep explicit retries possible after a transient provider failure.
       capabilities: () => ({ google: Boolean(config.google), emailOtp: true, registration: config.inviteOnly ? 'invite' : 'open', inviteOnly: config.inviteOnly, emailProvider: config.email.provider, emailSenderMode: config.email.senderMode }),
       emailHealth: () => ({ ...health }),
-      async sendInvitation(email) {
-        try { await send(email, 'You are invited to Open Alert', `You have been invited to Open Alert. Visit ${config.appUrl} and sign in with this email address using Google or an email code. Your administrator can tell you when the invitation expires.`); }
+      async sendInvitation(email, options) {
+        try { await send(email, { ...invitationMessage(config.appUrl, email, options?.expiresAt, Boolean(config.google)), ...(options ? {idempotencyKey:options.idempotencyKey} : {}) }); }
         catch {
           const code = health.code;
           throw new EmailDeliveryError(code === 'email_rejected' || code === 'email_uncertain' ? code : 'email_unavailable');

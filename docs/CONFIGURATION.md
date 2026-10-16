@@ -133,3 +133,12 @@ Google OAuth 客户端配置 Web application，授权回调 URI 使用 `APP_URL/
 禁用账户拒绝 Google 登录、关联与会话访问，并在 account 创建和 session 创建前再次检查。若账号恰在关联记录写入后被禁用，已写入的关联记录可能保留，但不会创建会话或恢复访问，也不会重置角色。Better Auth 1.7.7 的 Google mapper 对未验证 profile 直接返回安全的 HTTP 403 `VERIFIED_EMAIL_REQUIRED`；它发生在 OAuth 回调重定向捕获之外，不应依赖所有失败都跳转 `errorCallbackURL`。
 
 每位用户在自己的通知设置填写 Pushover user key；application token 优先使用用户私有覆盖值，未设置才使用服务端共享 token。凭据和 emergency receipt 在数据库中按用户和字段绑定加密，不返回浏览器。保存会请求提供方验证凭据而不发送消息；用户点击测试才发送普通优先级消息并消耗额度。Pushover 客户端授权、提供方额度、邮件服务额度和 Cloudflare/主机费用分别核算。
+
+
+### 邀请管理与登录体验
+
+管理员可通过 `GET /api/admin/invites` 分页查看待加入、已加入、已过期、已撤销的记录。`POST /api/admin/invites/:id/resend` 需显式提交 `confirm:true` 与 `expectedExpiresAt`，不续期；同邮箱的创建邮件与重发共用持久化的一分钟限制。邀请邮件发送失败不回滚邀请，也不会自动重试。Resend 创建邮件带稳定的 Idempotency-Key。API 的 `accepted` 仅表示邮件服务已接受，不代表收件箱投递成功。
+
+`DELETE /api/admin/invites/:id` 需 `expectedExpiresAt`，通过 CAS 将未使用的有效邀请到期时间设为 0，保留撤销记录并阻止后续注册；已发邮件无法撤回。再次邀请会重新启用记录，已注册邮箱返回 `account_exists`。管理员确认受邀者仍需要访问后，才应重新邀请。
+
+Google 使用 `prompt=select_account`，每次选择账号；同邮箱关联仍要求 Google 与本地邮箱均已验证，停用账户、未受邀用户与已撤销邀请不能借此注册。邮件提供中文/英文 HTML 与纯文本，邀请链接只预填邮箱，不携带认证令牌或授予登录权限。浏览器消费预填邮箱后清理 URL。验证码仍为 6 位、5 分钟有效，前端按真实时间与 Retry-After 倒计时，不在浏览器存储 OTP。

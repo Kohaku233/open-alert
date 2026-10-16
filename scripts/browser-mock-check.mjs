@@ -170,9 +170,18 @@ async function setup(browser, profile, authenticated = false) {
       if (path === '/api/test-notification' && method === 'POST') { F.testNotificationSchema.parse(body); state.status.daily.attempts++; return ok({ outcome: 'sent', at: Date.now() }); }
       if (path === '/api/admin/users' && method === 'GET') { assert.equal(url.searchParams.get('limit'), '50'); return ok({ items: [{ ...state.status.user, id: 'mock-member', email: 'member@example.test', role: 'user' }], cursor: url.searchParams.has('cursor') ? null : 'mock-page-2' }); }
       if (path === '/api/admin/status' && method === 'GET') return ok({ activeUsers: 2, activeAlerts: state.alerts.length, health: state.status.health });
+      if (path === '/api/admin/invites' && method === 'GET') {
+        return ok({items:[...(state.invites?.values()??[])].map(item=>({id:item.id,email:item.email,expiresAt:item.expiresAt,status:item.expiresAt===0?'revoked':item.expiresAt<=Date.now()?'expired':'pending'})),cursor:null});
+      }
+      if (path.startsWith('/api/admin/invites/') && (method === 'DELETE' || method === 'POST')) {
+        const item=[...(state.invites?.values()??[])].find(item=>item.id===path.split('/')[4]);assert(item);
+        assert.equal(body.expectedExpiresAt,item.expiresAt);
+        if(method==='DELETE'){item.expiresAt=0;return ok({revoked:true});}
+        assert.equal(body.confirm,true);return ok({...item,reused:true,emailDelivery:state.inviteDelivery});
+      }
       if (path === '/api/admin/invites' && method === 'POST') {
         state.invites ??= new Map();const existing=state.invites.get(body.email);
-        if(existing)return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
+        if(existing&&existing.expiresAt>Date.now())return ok({...existing,reused:true,emailDelivery:{status:'not_attempted',reason:'existing_invitation'}});
         const result={id:'mock-invite-'+state.invites.size,email:body.email,expiresAt:Date.now()+86400000,reused:false,emailDelivery:state.inviteDelivery};
         state.invites.set(body.email,result);return ok(result,201);
       }
@@ -624,7 +633,7 @@ try {
     await p.getByRole('button',{name:'使用 Google 登录'}).click();
     await expect.poll(()=>p.evaluate(()=>window.__authHeld)).toBe(2);
     await p.clock.runFor(14999);
-    await check('social busy before 15s',()=>expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeDisabled());
+    await check('social busy before 15s',()=>expect(p.getByRole('button',{name:'正在前往 Google…'})).toBeDisabled());
     await p.clock.runFor(1);
     await check('social timeout shows safe actionable error',()=>expect(p.getByRole('alert')).toContainText('请检查网络后重试，也可使用邮箱验证码登录'));
     await check('social timeout clears busy',()=>expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled());
@@ -679,6 +688,14 @@ try {
     await check('email rejection clearly says invitation remains saved',()=>expect(p.locator('.invitation-result')).toContainText('邀请已保存，但邮件发送失败'));
     s.inviteDelivery={status:'uncertain',reason:'email_uncertain'};await invite('uncertain@example.test');
     await check('uncertain delivery warns against repeated sending',()=>expect(p.locator('.invitation-result')).toContainText('邮件投递结果暂不确定'));
+    await p.reload();
+    await check('invitation list survives page reload',()=>expect(p.locator('.invitation-list li')).toHaveCount(3));
+    const revokedRow=p.locator('.invitation-list li').filter({hasText:'other@example.test'});
+    await revokedRow.getByRole('button',{name:'撤销邀请',exact:true}).click();
+    await p.getByRole('dialog').getByRole('button',{name:'确认撤销'}).click();
+    await check('revocation appears in persistent history',()=>expect(revokedRow).toContainText('已撤销'));
+    await revokedRow.getByRole('button',{name:'再次邀请'}).click();await p.getByRole('button',{name:'创建邮箱邀请',exact:true}).click();
+    await check('revoked email can be invited again deliberately',()=>expect(revokedRow).toContainText('待加入'));
     await p.getByRole('button',{name:'退出登录'}).click();await expect(p.getByLabel('邮箱地址')).toBeEnabled();
     await check('sandbox disclosure replaces misleading disabled-login warning',async()=>{await expect(p.getByText(/邮件服务目前为测试模式/)).toBeVisible();await expect(p.getByText(/邮箱登录尚未启用/)).toHaveCount(0);});
     s.otpError='EMAIL_RECIPIENT_RESTRICTED';await p.getByLabel('邮箱地址').fill('other@example.test');await p.getByRole('button',{name:'发送登录验证码'}).click();

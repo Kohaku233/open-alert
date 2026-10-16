@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 
-export interface EmailMessage { to: string; subject: string; text: string }
+export interface EmailMessage { to: string; subject: string; text: string; html?: string; idempotencyKey?: string }
 export interface EmailTransport {
   verify(): Promise<void>;
   send(message: EmailMessage): Promise<void>;
@@ -73,7 +73,7 @@ export async function createEmailTransport(config: AppConfig, fetcher: typeof fe
     const operation = async () => {
       const response = await fetcher(`https://api.resend.com${path}`, {
         ...init,
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: { ...init.headers, Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         redirect: 'manual',
         signal: controller.signal,
       });
@@ -110,7 +110,7 @@ export async function createEmailTransport(config: AppConfig, fetcher: typeof fe
     async send(message) {
       const to = normalizeEmail(message.to);
       if (sandbox && to !== testRecipient) throw new EmailDeliveryError('email_rejected');
-      const data = await request('/emails', { method: 'POST', body: JSON.stringify({ from, to: [to], subject: message.subject, text: message.text }) });
+      const data = await request('/emails', { method: 'POST', headers: message.idempotencyKey ? { 'Idempotency-Key': message.idempotencyKey } : {}, body: JSON.stringify({ from, to: [to], subject: message.subject, text: message.text, ...(message.html ? {html:message.html} : {}) }) });
       if (!z.object({ id: z.string().min(1).max(256) }).safeParse(data).success) throw new EmailDeliveryError('email_uncertain');
     },
   };

@@ -157,6 +157,9 @@ export interface AdministrationRepository {
   setDisabled(userId: Id, disabled: boolean, now: EpochMs): Promise<import('./domain.js').UserIdentity>;
   createInvitation(email: string, expiresAt: EpochMs, now: EpochMs): Promise<InvitationRecord & { reused: boolean }>;
   getInvitation(email: string, now: EpochMs): Promise<InvitationRecord | null>;
+  listInvitations(limit: number, cursor?: string): Promise<{ items: InvitationRecord[]; cursor: string | null }>;
+  getInvitationById(id: Id): Promise<InvitationRecord | null>;
+  revokeInvitation(id: Id, expectedExpiresAt: EpochMs, now: EpochMs): Promise<void>;
   consumeInvitation(id: Id, userId: Id, now: EpochMs): Promise<boolean>;
   counts(): Promise<{ activeUsers: number; activeAlerts: number }>;
 }

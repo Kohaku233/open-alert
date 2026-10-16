@@ -4,9 +4,23 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { loadConfig } from '../src/config.js';
 import { createEmailTransport, EmailDeliveryError } from '../src/auth/email.js';
+import { invitationMessage, otpMessage } from '../src/auth/messages.js';
 
 const config = (overrides: Record<string, string>) => loadConfig({ NODE_ENV: 'test', APP_URL: 'http://localhost:3000', AUTH_SECRET: 'email-test-secret-at-least-thirty-two-characters', ENCRYPTION_KEY: '22'.repeat(32), EMAIL_PROVIDER: 'resend', EMAIL_FROM: 'Open Alert <alerts@example.com>', RESEND_API_KEY: 'test-key-not-live', ...overrides });
 const message = { to: 'test@example.com', subject: 'Test code', text: 'Fixture only' };
+
+test('transactional emails carry bilingual HTML/plain text, bound email link and safe template escaping',async()=>{
+ const invite=invitationMessage('https://alert.example.com','member+test@example.com',1700000000000,true);
+ assert.match(invite.text,/Google/);assert.match(invite.text,/2023-11-14/);assert.match(invite.html,/lang="en"/);
+ const href=invite.html.match(/href="([^"]+)"/)![1]!;const url=new URL(href.replaceAll('&amp;','&'));
+ assert.equal(url.origin,'https://alert.example.com');assert.equal(url.pathname,'/login');assert.equal(url.searchParams.get('email'),'member+test@example.com');
+ const otp=otpMessage('https://alert.example.com','<img src=x onerror=alert(1)>','123456');assert.ok(!otp.html.includes('<img'));assert.match(otp.text,/code is 123456/);
+ assert.ok(!invitationMessage('https://alert.example.com','member@example.com',1700000000000,false).text.includes('using Google'));
+ let body:any,headers:Headers|undefined;
+ const transport=await createEmailTransport(config({RESEND_VERIFY_DOMAIN:'false'}),(async(_,init)=>{body=JSON.parse(init!.body as string);headers=new Headers(init!.headers);return Response.json({id:'test-message'});}) as typeof fetch);
+ await transport.send({to:'member@example.com',...invite,idempotencyKey:'invite/test/version'});
+ assert.equal(headers!.get('Idempotency-Key'),'invite/test/version');assert.equal(body.html,invite.html);assert.equal(body.idempotencyKey,undefined);
+});
 
 test('Resend verifies sender domain, sends fixed HTTPS request, enforces redirect/manual timeout and valid id', async () => {
   const calls: { url: string; init: RequestInit }[] = [];

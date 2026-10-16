@@ -183,6 +183,20 @@ export function createRepositories(db: SqlDatabase, config: Pick<AppConfig,'limi
       return {id,email,expiresAt,consumedBy:null,consumedAt:null,reused:false};
     },
     async getInvitation(email,now) { const r=await rows('SELECT * FROM invitations WHERE email=? AND consumed_by IS NULL AND expires_at>?',[email.trim().toLowerCase(),now]); return r[0]?{id:r[0].id,email:r[0].email,expiresAt:r[0].expires_at,consumedBy:null,consumedAt:null}:null; },
+    async listInvitations(limit,cursor) {
+      pageLimit(limit);
+      const records=await rows('SELECT * FROM invitations WHERE id>? ORDER BY id LIMIT ?',[cursor??'',limit+1]);
+      const items=records.slice(0,limit).map(r=>({id:r.id,email:r.email,expiresAt:r.expires_at,consumedBy:r.consumed_by??null,consumedAt:r.consumed_at??null}));
+      return {items,cursor:records.length>limit?items.at(-1)!.id:null};
+    },
+    async getInvitationById(id) {
+      const r=(await rows('SELECT * FROM invitations WHERE id=?',[id]))[0];
+      return r?{id:r.id,email:r.email,expiresAt:r.expires_at,consumedBy:r.consumed_by??null,consumedAt:r.consumed_at??null}:null;
+    },
+    async revokeInvitation(id,expectedExpiresAt,now) {
+      // Zero expiry records a revoked invitation without deleting its admission history.
+      if(!await db.atomicCAS([lock(),statement('UPDATE invitations SET expires_at=0 WHERE id=? AND expires_at=? AND expires_at>? AND consumed_by IS NULL',[id,expectedExpiresAt,now])])) throw new RepositoryConflict('generation_conflict');
+    },
     async consumeInvitation(id,userId,now) { return db.atomicCAS([lock(),statement('UPDATE invitations SET consumed_by=?,consumed_at=? WHERE id=? AND consumed_by IS NULL AND expires_at>? AND EXISTS(SELECT 1 FROM "user" WHERE id=? AND LOWER(email)=invitations.email) AND (SELECT COUNT(*) FROM "user")<=?',[userId,now,id,now,userId,limits.users])]); },
     async counts() { const r=await rows('SELECT (SELECT COUNT(*) FROM "user" u LEFT JOIN user_settings s ON s.user_id=u.id WHERE COALESCE(s.disabled,0)=0) AS users,(SELECT COUNT(*) FROM alerts WHERE enabled=1 AND deleted_at IS NULL) AS alerts'); return {activeUsers:r[0]!.users,activeAlerts:r[0]!.alerts}; }
   };

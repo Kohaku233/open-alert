@@ -99,3 +99,24 @@
 }
 
 .invitation-result{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:6px;overflow-wrap:anywhere}.invitation-result p{margin:0;color:var(--muted);font-size:13px;line-height:1.8}.invitation-result p+p{margin-top:10px}.invitation-result p:first-child{color:var(--text)}
+.auth-method-note{font-size:12px;line-height:1.7;color:var(--muted);margin:10px 0 0;overflow-wrap:anywhere}
+.login-panel .google-button{background:var(--surface);border:1px solid #555555;color:var(--text);gap:10px;min-height:44px}
+.login-panel .google-button:hover:not(:disabled){background:#292929}
+.login-panel form,.invitation-panel form{display:grid;gap:12px}
+.login-panel form [data-slot="label"],.invitation-panel form [data-slot="label"]{margin:0}
+.login-panel form [data-slot="input"],.invitation-panel form [data-slot="input"]{width:100%;min-width:0}
+.login-panel form>.primary,.invitation-panel form>.primary{margin-top:4px}
+.login-panel .otp-input{font-variant-numeric:tabular-nums;font-size:22px;letter-spacing:.25em}
+.otp-notice strong{overflow-wrap:anywhere}
+.invitation-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
+.invitation-list-heading h3{font-size:14px;font-weight:600;margin:0}
+.invitation-list{list-style:none;padding:0;margin:8px 0 0}
+.invitation-list>li{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:18px 0;border-bottom:1px solid var(--line)}
+.invitation-row-info{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;min-width:0;flex:1 1 230px}
+.invitation-row-info strong{font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.invitation-row-info small{grid-column:1/-1;font-size:12px;color:var(--muted);line-height:1.6}
+.invitation-state{font-size:12px;white-space:nowrap;color:var(--muted)}
+.invitation-actions{display:flex;flex-wrap:wrap;gap:8px}
+.invitation-result>[data-slot="button"]{margin-top:10px}
+.invitation-address{overflow-wrap:anywhere}
+@media(max-width:600px){.invitation-actions{flex-basis:100%}.invitation-actions>[data-slot="button"]{flex:1;min-height:44px}.invitation-list-heading>[data-slot="button"]{min-height:44px}}
