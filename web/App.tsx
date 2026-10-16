@@ -7,6 +7,7 @@ import { Icon } from './components/Icon.js';
 import { useLanguage, setLanguage } from './i18n.js';
 import { useCallback, useEffect, useState } from 'react';
 import { authClient } from './auth.js';
+import { clearEmailLoginFlow } from './email-login-flow.js';
 import { loginCallbackURL } from './api.js';
 import { useWorkspace } from './model.js';
 import { Login } from './pages/Login.js';
@@ -28,11 +29,16 @@ function Brand({ navigate }: {
 export function App() {
     useLanguage();
     const session = authClient.useSession();
+    const [sessionKnown, setSessionKnown] = useState(false);
+    useEffect(() => {
+        if (!session.isPending && !session.error) setSessionKnown(true);
+        if (session.data) clearEmailLoginFlow();
+    }, [session.isPending, session.error, session.data]);
     const [path, setPath] = useState(window.location.pathname);
     const navigate = useCallback((next: string) => { window.history.pushState({}, '', next); setPath(next); }, []);
     useEffect(() => { const pop = () => setPath(window.location.pathname); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop); }, []);
     useEffect(() => {
-        if (session.isPending || session.error)
+        if (session.isPending || (session.error && !sessionKnown))
             return;
         if (session.data && (!routes.includes(path) || path === '/login')) {
             window.history.replaceState({}, '', '/dashboard');
@@ -42,12 +48,12 @@ export function App() {
             window.history.replaceState({}, '', loginCallbackURL(window.location.search));
             setPath('/login');
         }
-    }, [session.data, session.isPending, session.error, path]);
+    }, [session.data, session.isPending, session.error, sessionKnown, path]);
     const onSignedIn = () => { void session.refetch(); navigate('/dashboard'); };
     return <TooltipProvider delayDuration={300}>
     <a className="skip-link" href="#main-content">{t("跳转到内容")}</a>
-    {session.isPending ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="page-loading"><p role="status">{t("正在确认登录状态…")}</p></main></>
-            : session.error ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="page-loading"><h1>{t("无法确认登录状态")}</h1><p>{t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></main></>
+    {session.isPending && !sessionKnown ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="page-loading"><p role="status">{t("正在确认登录状态…")}</p></main></>
+            : session.error && !sessionKnown ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="page-loading"><h1>{t("无法确认登录状态")}</h1><p>{t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></main></>
                 : session.data ? <Workspace key={session.data.user.id} path={path} navigate={navigate} notify={message => toast(message)} onUnauthorized={() => { void session.refetch(); }}/>
                     : <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /><span className="login-header-note">{t("个人价格警报与手机通知")}</span></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="page-loading"><p role="status">{t("正在打开登录页面…")}</p></main>}</>}
     <Toaster customAriaLabel={t("通知")} position="bottom-center" duration={6500} offset={24} mobileOffset={16} toastOptions={{ className: 'ui-toast' }} />
@@ -73,6 +79,7 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
                 setLogoutError(t("退出未完成，请检查网络后重试。"));
                 return;
             }
+            clearEmailLoginFlow();
             navigate('/login');
         }
         catch {

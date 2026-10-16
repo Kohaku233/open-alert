@@ -108,6 +108,18 @@
 .login-panel form>.primary,.invitation-panel form>.primary{margin-top:4px}
 .login-panel .otp-input{font-variant-numeric:tabular-nums;font-size:22px;letter-spacing:.25em}
 .otp-notice strong{overflow-wrap:anywhere}
+.login-panel .auth-description{font-size:14px;line-height:1.8;color:var(--muted);margin:0 0 24px}
+.login-panel .form-divider{margin:24px 0 12px;font-size:12px}
+.login-panel .form-divider+.google-button{margin-top:0}
+.auth-email-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.auth-email-summary>span{min-width:0;overflow-wrap:anywhere;font-size:14px;font-weight:500}
+.auth-email-summary>[data-slot="button"]{flex-shrink:0;font-size:12px}
+.auth-delivery-note,.auth-code-hint{margin:0;color:var(--muted);font-size:13px;line-height:1.8}
+.auth-delivery-note.warning{padding:12px;color:var(--amber)}
+.auth-code-hint.expired{color:var(--amber)}
+.auth-resend{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-top:4px}
+.auth-resend>[data-slot="button"]{font-size:12px}
+@media(max-width:600px){.login-layout .login-panel{grid-row:1}.login-layout .login-intro{grid-row:2}.login-panel [data-slot="input"]{font-size:16px}.login-panel .otp-input{font-size:22px}.login-panel .auth-description{font-size:14px}.auth-email-summary{gap:8px}}
 .invitation-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:28px;padding-top:20px;border-top:1px solid var(--line)}
 .invitation-list-heading h3{font-size:14px;font-weight:600;margin:0}
 .invitation-list{list-style:none;padding:0;margin:8px 0 0}

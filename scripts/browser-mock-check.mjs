@@ -88,7 +88,10 @@ async function setup(browser, profile, authenticated = false) {
       const loggedIn = !state.sessionInvalid && cookies.some(c => c.name === cookieName && c.value === cookieValue);
       if (path.startsWith('/api/auth/')) {
         authRequests++;
-        if (path === '/api/auth/get-session' && method === 'GET') return send(loggedIn ? nativeSession(state) : null);
+        if (path === '/api/auth/get-session' && method === 'GET') {
+          if (state.holdSession) await state.holdSession.wait;
+          return state.sessionReadFails ? send({message:'MOCK session temporarily unavailable'},503) : send(loggedIn ? nativeSession(state) : null);
+        }
         if (path === '/api/auth/sign-in/social' && method === 'POST') {
           assert(state.googleEnabled);
           assert.deepEqual(body, { provider: 'google', callbackURL: `${origin}/dashboard`, errorCallbackURL: `${origin}/login` });
@@ -206,14 +209,14 @@ try {
   const { page, context, state } = await setup(browser, 'desktop');
   await journey('01 native email OTP, unavailable Google, cookie persistence', async () => {
     await page.goto(origin+'/login');
-    await check('Google unavailable', () => expect(page.getByRole('button', { name: '使用 Google 登录' })).toBeDisabled());
-    await check('Google config guidance', () => expect(page.getByText('此部署尚未配置 Google 登录。')).toBeVisible());
-    await page.getByLabel('邮箱地址').fill('MOCK@EXAMPLE.TEST'); await page.getByRole('button', { name: '发送登录验证码' }).click();
+    await check('unconfigured Google is omitted', () => expect(page.getByRole('button', { name: '使用 Google 登录' })).toHaveCount(0));
+    await check('email remains the primary available method', () => expect(page.getByRole('button', { name: '发送验证码' })).toBeEnabled());
+    await page.getByLabel('邮箱地址').fill('MOCK@EXAMPLE.TEST'); await page.getByRole('button', { name: '发送验证码' }).click();
     await check('native OTP send', () => expect(page.getByLabel('邮件中的验证码')).toBeVisible());
     await check('resend cooldown', () => expect(page.getByRole('button', { name: /秒后重发/ })).toBeDisabled());
-    await page.getByLabel('邮件中的验证码').fill('000000'); await page.getByRole('button', { name: '验证并登录' }).click();
+    await page.getByLabel('邮件中的验证码').fill('000000'); await page.getByRole('button', { name: '验证并继续' }).click();
     await check('native OTP rejection', () => expect(page.getByRole('alert')).toContainText('验证码不正确或已过期'));
-    await page.getByLabel('邮件中的验证码').fill('123456'); await page.getByRole('button', { name: '验证并登录' }).click();
+    await page.getByLabel('邮件中的验证码').fill('123456'); await page.getByRole('button', { name: '验证并继续' }).click();
     await check('signed in dashboard', () => expect(page.getByRole('switch')).toHaveAttribute('aria-checked','false'));
     await check('HttpOnly fixture cookie', async () => assert((await context.cookies(origin)).some(c => c.name === cookieName && c.httpOnly)));
     await refreshNavigation(page);
@@ -422,10 +425,10 @@ try {
     let release; const held={wait:new Promise(r=>{release=r;})}; state.holdStatus=held;
     const start=requests(state,'GET','/api/status').length;
     await expect.poll(()=>requests(state,'GET','/api/status').length,{timeout:7000}).toBeGreaterThan(start);
-    await page.getByRole('button',{name:'退出登录'}).click(); await expect(page.getByRole('heading',{name:'登录我的哨站'})).toBeVisible(); release();
+    await page.getByRole('button',{name:'退出登录'}).click(); await expect(page.getByRole('heading',{name:'登录或注册'})).toBeVisible(); release();
     await check('logout cookie removed', async () => assert(!(await context.cookies(origin)).some(c=>c.name===cookieName)));
     await check('late workspace cannot show user', () => expect(page.locator('.session-email')).toHaveCount(0));
-    await page.reload(); await check('reload remains logged out', () => expect(page.getByRole('heading',{name:'登录我的哨站'})).toBeVisible());
+    await page.reload(); await check('reload remains logged out', () => expect(page.getByRole('heading',{name:'登录或注册'})).toBeVisible());
     await context.close();
   });
   const mobile=await setup(browser,'mobile',true), m=mobile.page;
@@ -451,7 +454,7 @@ try {
     await m.getByLabel('受邀邮箱').fill('invite@example.test'); await m.getByRole('button',{name:'创建邮箱邀请'}).click();
     await check('invite distinguishes admission from restricted email', () => expect(m.getByRole('status').filter({hasText:'已创建 invite@example.test'})).toContainText('当前邮件为测试模式'));
     mobile.state.sessionInvalid=true;
-    await check('expired session handled on poll', () => expect(m.getByRole('heading',{name:'登录我的哨站'})).toBeVisible({timeout:7000}));
+    await check('expired session handled on poll', () => expect(m.getByRole('heading',{name:'登录或注册'})).toBeVisible({timeout:7000}));
     await mobile.context.close();
   });
   await journey('11 HTTP-date cooldown, blocked editor, delayed read coalescing and unmount abort', async () => {
@@ -501,7 +504,7 @@ try {
     await p.clock.runFor(5000); await expect.poll(()=>requests(s,'GET','/api/status').length).toBe(unmountBefore+1);
     const aborted = []; p.on('requestfailed',r=>{if(new URL(r.url()).pathname==='/api/status')aborted.push(r.failure().errorText);});
     await p.getByRole('button',{name:'退出登录'}).click();
-    await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录我的哨站'}).count();}).toBe(1);
+    await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
     await check('workspace unmount aborts pending fetch',async()=>await expect.poll(()=>aborted.some(text=>/ABORTED/.test(text))).toBe(true));
     releaseUnmount(); await fixture.context.close();
   });
@@ -526,9 +529,9 @@ try {
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');
     const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
     await p.getByRole('button',{name:'退出登录'}).click();
-    await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录我的哨站'}).count();}).toBe(1);
-    await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送登录验证码'})).toBeEnabled());
-    await p.getByLabel('邮箱地址').fill('mock@example.test'); await p.getByRole('button',{name:'发送登录验证码'}).click();
+    await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
+    await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
+    await p.getByLabel('邮箱地址').fill('mock@example.test'); await p.getByRole('button',{name:'发送验证码'}).click();
     await expect(p.getByLabel('邮件中的验证码')).toBeVisible();
     await check('OTP sends during business cooldown',async()=>assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1));
     await expect(p.getByRole('button',{name:'60 秒后重发',exact:true})).toBeDisabled();
@@ -573,7 +576,7 @@ try {
         if(legacy)assert.match(replacements[0],/^\/login\?error=[a-z_]+$/);
         assert.equal(replacements.at(-1),'/login');
       });
-      await check('email alternative remains usable',()=>expect(p.getByRole('button',{name:'发送登录验证码'})).toBeEnabled());
+      await check('email alternative remains usable',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
     }
     for (const value of ['<img src=x onerror=alert(1)> MOCK_HTML_LITERAL','https://evil.example/?token=MOCK_RAW_TOKEN','constructor','__proto__','']) {
       await p.goto(`${origin}/?error=${encodeURIComponent(value)}&code=MOCK_SECRET_CODE&state=MOCK_SECRET_STATE`);
@@ -639,7 +642,7 @@ try {
     await check('social timeout clears busy',()=>expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled());
     await p.clock.runFor(30000);
     await check('timeout never automatically repeats Google',async()=>assert.equal(await p.evaluate(()=>window.__authHeld),2));
-    await check('timeout leaves email alternative enabled',()=>expect(p.getByRole('button',{name:'发送登录验证码'})).toBeEnabled());
+    await check('timeout leaves email alternative enabled',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
     await fixture.context.close();
   });
   await journey('15 selected market independent quotes, alert defaults/filter and MEXC perpetual widget',async()=>{
@@ -698,10 +701,55 @@ try {
     await check('revoked email can be invited again deliberately',()=>expect(revokedRow).toContainText('待加入'));
     await p.getByRole('button',{name:'退出登录'}).click();await expect(p.getByLabel('邮箱地址')).toBeEnabled();
     await check('sandbox disclosure replaces misleading disabled-login warning',async()=>{await expect(p.getByText(/邮件服务目前为测试模式/)).toBeVisible();await expect(p.getByText(/邮箱登录尚未启用/)).toHaveCount(0);});
-    s.otpError='EMAIL_RECIPIENT_RESTRICTED';await p.getByLabel('邮箱地址').fill('other@example.test');await p.getByRole('button',{name:'发送登录验证码'}).click();
+    s.otpError='EMAIL_RECIPIENT_RESTRICTED';await p.getByLabel('邮箱地址').fill('other@example.test');await p.getByRole('button',{name:'发送验证码'}).click();
     await check('specific recipient error never disables email or Google controls',async()=>{await expect(p.getByRole('alert')).toContainText('不能向此邮箱发送验证码');await expect(p.getByLabel('邮箱地址')).toBeEnabled();await expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled();});
-    s.otpError=null;await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'发送登录验证码'}).click();
+    s.otpError=null;await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'发送验证码'}).click();
     await check('switching back to configured recipient still sends a code',()=>expect(p.getByLabel('邮件中的验证码')).toBeVisible());
+    await fixture.context.close();
+  });
+  for (const profile of ['desktop','mobile']) await journey('email verification resumes across focus, reload, navigation and expiry ('+profile+')', async () => {
+    const fixture=await setup(browser,profile),p=fixture.page,s=fixture.state;
+    const time=new Date('2026-10-16T12:00:00.000Z');
+    await p.clock.install({time});await p.clock.pauseAt(time);
+    s.googleEnabled=true;s.emailSenderMode='resend_sending_only';
+    await p.goto(origin+'/login?email=mock%40example.test');
+    await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
+    await p.getByRole('button',{name:'发送验证码',exact:true}).click();
+    await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();
+    await expect(p.getByText('验证码邮件已发送，请检查收件箱或垃圾邮件。')).toBeVisible();
+    await p.getByLabel('邮件中的验证码').fill('123');
+    await p.clock.runFor(6000);
+    let release; s.holdSession={wait:new Promise(r=>{release=r;})};
+    const reads=requests(s,'GET','/api/auth/get-session').length;
+    const field=await p.getByLabel('邮件中的验证码').elementHandle();
+    await p.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'visible'});document.dispatchEvent(new Event('visibilitychange'));});
+    await expect.poll(()=>requests(s,'GET','/api/auth/get-session').length).toBeGreaterThan(reads);
+    await check(profile+' focus revalidation preserves mounted form and typed code',async()=>{assert(await field.evaluate(n=>n.isConnected));await expect(p.getByLabel('邮件中的验证码')).toHaveValue('123');});
+    release();s.holdSession=null;
+    await p.clock.runFor(6000);s.sessionReadFails=true;
+    const failedRefresh=p.waitForResponse(r=>new URL(r.url()).pathname==='/api/auth/get-session'&&r.status()===503);
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await failedRefresh;
+    await check(profile+' transient background session error preserves the form',async()=>{await expect(p.getByLabel('邮件中的验证码')).toHaveValue('123');assert(await field.evaluate(n=>n.isConnected));await expect(p.getByRole('heading',{name:'无法确认登录状态'})).toHaveCount(0);});
+    s.sessionReadFails=false;
+    await p.reload();
+    await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
+    await expect(p.getByRole('button',{name:'48 秒后重发',exact:true})).toBeDisabled();
+    await p.goto(origin+'/account');
+    await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
+    await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
+    await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
+    await check(profile+' same email keeps resend cooldown after changing steps',()=>expect(p.getByRole('button',{name:'48 秒后可重新发送',exact:true})).toBeDisabled());
+    await p.getByLabel('邮箱地址').fill('other@example.test');await expect(p.getByRole('button',{name:'发送验证码',exact:true})).toBeEnabled();
+    await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'已有验证码？继续验证'}).click();
+    await p.clock.runFor(300000);
+    await check(profile+' expiry keeps recovery visible and disables stale verification',async()=>{await expect(p.getByText('验证码已过期，请重新发送。',{exact:true})).toBeVisible();await expect(p.getByRole('button',{name:'验证并继续',exact:true})).toBeDisabled();await expect(p.getByRole('button',{name:'重新发送',exact:true})).toBeEnabled();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
+    s.otpError='EMAIL_UNCERTAIN';await p.getByRole('button',{name:'重新发送',exact:true}).click();
+    await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();
+    await p.reload();
+    await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
+    await p.getByLabel('邮件中的验证码').fill('123456');await p.getByRole('button',{name:'验证并继续',exact:true}).click();
+    await expect(p.getByRole('switch')).toBeVisible();
+    await check(profile+' successful verification clears resumable email metadata',async()=>assert.equal(await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1')),null));
     await fixture.context.close();
   });
   await check('no runtime JS errors', async () => assert.deepEqual(runtimeErrors,[]));
@@ -710,9 +758,9 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===19&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===21&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/19 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/21 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

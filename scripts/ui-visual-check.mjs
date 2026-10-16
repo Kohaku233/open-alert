@@ -280,15 +280,15 @@ try {
     const login = await setup(browser,profile,false);
     await login.page.goto(origin+'/login');
     await login.page.getByRole('button',{name:'EN',exact:true}).click();
-    await expect(login.page.getByRole('heading',{name:'Sign in to Open Alert'})).toBeVisible();
+    await expect(login.page.getByRole('heading',{name:'Sign in or create an account'})).toBeVisible();
     login.state.emailSenderMode='resend_sending_only'; login.state.googleEnabled=true;
     await login.page.reload();
     await expect(login.page.getByText(/Email is in test mode/)).toHaveCount(0);
-    await expect(login.page.getByRole('button',{name:'Send sign-in code'})).toBeEnabled();
+    await expect(login.page.getByRole('button',{name:'Send verification code'})).toBeEnabled();
     await login.page.evaluate(() => document.fonts.ready); await noOverflow(login.page);
     await login.page.screenshot({path:join(review,profile+'-login-en.png'),fullPage:true});
     await login.page.getByLabel('Email address',{exact:true}).fill('mock@example.test');
-    await login.page.getByRole('button',{name:'Send sign-in code'}).click();
+    await login.page.getByRole('button',{name:'Send verification code'}).click();
     await expect(login.page.getByLabel('Code from your email')).toBeVisible();
     await noOverflow(login.page); await login.page.screenshot({path:join(review,profile+'-otp-en.png'),fullPage:true});
     await login.context.close();

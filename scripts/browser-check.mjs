@@ -92,14 +92,19 @@ async function profile(mobile=false) {
 }
 async function login(profile,email,rejectWrong=false) {
   const {page,context}=profile;
-  await page.goto(origin+'/login');await page.getByLabel('邮箱地址').fill(email.toUpperCase());await page.getByRole('button',{name:'发送登录验证码'}).click();
+  await page.goto(origin+'/login');await page.getByLabel('邮箱地址').fill(email.toUpperCase());await page.getByRole('button',{name:'发送验证码'}).click();
   await expect(page.getByLabel('邮件中的验证码')).toBeVisible();
   const mail=await until(()=>messages.find(m=>m.to===email&&m.otp),'generated local email OTP');
+  await page.reload();
+  await check('real email challenge survives a full page reload',async()=>{await expect(page.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(page.getByLabel('邮件中的验证码')).toHaveValue('');});
+  const input=await page.getByLabel('邮件中的验证码').elementHandle();
+  const other=await context.newPage();await other.goto(origin+'/login');await page.bringToFront();await other.close();
+  await check('returning from another tab preserves the verification form',async()=>{assert(await input.evaluate(n=>n.isConnected));await expect(page.getByLabel('邮件中的验证码')).toBeVisible();});
   if(rejectWrong) {
-    await page.getByLabel('邮件中的验证码').fill(mail.otp==='000000'?'111111':'000000');await page.getByRole('button',{name:'验证并登录'}).click();
+    await page.getByLabel('邮件中的验证码').fill(mail.otp==='000000'?'111111':'000000');await page.getByRole('button',{name:'验证并继续'}).click();
     await check('real handler rejects wrong generated OTP',()=>expect(page.getByRole('alert')).toContainText('验证码不正确或已过期'));
   }
-  await page.getByLabel('邮件中的验证码').fill(mail.otp);await page.getByRole('button',{name:'验证并登录'}).click();await expect(page.getByRole('switch')).toBeVisible();
+  await page.getByLabel('邮件中的验证码').fill(mail.otp);await page.getByRole('button',{name:'验证并继续'}).click();await expect(page.getByRole('switch')).toBeVisible();
   await check('server-issued HttpOnly SameSite cookie',async()=>{const cookies=await context.cookies(origin);assert(cookies.some(c=>c.name==='better-auth.session_token'&&c.httpOnly&&c.sameSite==='Lax'&&c.value.length>40));});
   return mail.otp;
 }
@@ -235,7 +240,7 @@ try {
   });
   await journey('07 real UI delete and server-side logout revocation',async()=>{
     await nav(alice.page,'行情与警报');await row(alice.page,'LOCAL Alice persisted').getByRole('button',{name:'删除',exact:true}).click();await alice.page.getByRole('dialog').getByRole('button',{name:'删除警报',exact:true}).click();await check('UI deletion persisted in actual database',async()=>{await expect(row(alice.page,'LOCAL Alice persisted')).toHaveCount(0);assert.equal((await ok(alice.context,'/api/alerts')).alerts.length,0);assert.equal((await ok(bob.context,'/api/alerts')).alerts.length,1);});
-    await alice.page.getByRole('button',{name:'退出登录'}).click();await expect(alice.page.getByRole('heading',{name:'登录我的哨站'})).toBeVisible();
+    await alice.page.getByRole('button',{name:'退出登录'}).click();await expect(alice.page.getByRole('heading',{name:'登录或注册'})).toBeVisible();
     await check('logout removes real cookie',async()=>assert(!(await alice.context.cookies(origin)).some(c=>c.name==='better-auth.session_token')));
     const replay=await browser.newContext();try{await replay.addCookies([{name:'better-auth.session_token',value:sessionCookie,url:origin}]);await check('copied pre-logout cookie revoked in database',async()=>assert.equal((await api(replay,'/api/status')).status,401));}finally{await replay.close();}
     await check('other tenant remains authenticated after Alice logout',async()=>assert.equal((await ok(bob.context,'/api/status')).user.id,bobId));
