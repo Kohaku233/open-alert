@@ -6,6 +6,17 @@
     <meta name="theme-color" content="#111111" />
     <meta name="description" content="价格哨站：个人多交易所价格警报与 Pushover 手机通知。" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <script>
+      (() => {
+        let theme, language;
+        try { theme = localStorage.getItem('open-alert-theme'); language = localStorage.getItem('open-alert-language'); } catch {}
+        theme = theme === 'light' || theme === 'dark' ? theme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        const root = document.documentElement;
+        root.dataset.theme = theme; root.classList.toggle('dark', theme === 'dark'); root.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#111111' : '#ffffff';
+        root.lang = language === 'en' || language === 'zh-CN' ? language : (navigator.languages || [navigator.language]).map(value => /^zh(?:-|$)/i.test(value) ? 'zh-CN' : /^en(?:-|$)/i.test(value) ? 'en' : null).find(Boolean) || 'en';
+      })();
+    </script>
     <title>价格哨站 · Open Alert</title>
   </head>
   <body><div id="root"></div><script type="module" src="/web/main.tsx"></script></body>

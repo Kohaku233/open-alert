@@ -1,3 +1,4 @@
+import { Panel, Notice, LoadingStatus } from '../components/Surface.js';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../components/ui/button.js';
@@ -150,9 +151,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             : t('已有账号可直接登录；新用户须先获邀，验证邮箱后创建账户。无需设置密码。');
     return <main className="login-layout" id="main-content">
       <section className="login-intro"><div className="signal-mark" aria-hidden="true"><span/><span/><span/></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p>{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><div className="intro-detail"><strong>{t('达到或高于 / 达到或低于')}</strong><p>{t('以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。')}</p></div><p className="small muted">{t('后台运行时无需保持页面打开。')}</p></section>
-      <section className="login-panel" aria-labelledby="login-heading" aria-busy={busy}>
+      <Panel className="login-panel" aria-labelledby="login-heading" aria-busy={busy}>
         <h2 id="login-heading">{codeStep ? t('验证邮箱') : t('登录或注册')}</h2>
-        <p className="auth-description">{codeStep ? t('输入邮件中的 6 位验证码，完成身份验证。') : capabilities ? registrationCopy : t('正在读取可用登录方式…')}</p>
+        {!capabilities && !codeStep && !capError ? <LoadingStatus>{t('正在读取可用登录方式…')}</LoadingStatus> : <p className="auth-description">{codeStep ? t('输入邮件中的 6 位验证码，完成身份验证。') : registrationCopy}</p>}
         {capError && <><FormError message={capError}/><Button onClick={() => void loadCapabilities()}>{t('重试读取登录方式')}</Button></>}
         {!codeStep ? <>
           <form onSubmit={event => void sendOtp(event)}>
@@ -170,11 +171,11 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
           <div className="auth-resend"><span>{t('没有收到邮件？')}</span><Button variant="ghost" type="button" disabled={busy || !capabilities?.emailOtp || cooldown > 0} onClick={() => void sendOtp()}>{action === 'send' ? t('正在发送…') : cooldown > 0 ? t('{0} 秒后重发', cooldown) : t('重新发送')}</Button></div>
         </form>}
         <div id="login-error"><FormError message={error}/></div>
-        {capabilities?.emailOtp && capabilities.emailSenderMode === 'resend_sandbox' && <p className="warning">{t('邮件服务目前为测试模式，仅支持预设的测试收件人。其他获邀邮箱可使用 Google 登录；邮箱验证码需管理员配置并验证发件域名。')}</p>}
-        {capabilities && !capabilities.emailOtp && <p className="warning">{t('邮箱登录尚未启用。部署管理员需要配置可用的邮件服务，完成后才能发送验证码。')}</p>}
+        {capabilities?.emailOtp && capabilities.emailSenderMode === 'resend_sandbox' && <Notice as="p" className="warning">{t('邮件服务目前为测试模式，仅支持预设的测试收件人。其他获邀邮箱可使用 Google 登录；邮箱验证码需管理员配置并验证发件域名。')}</Notice>}
+        {capabilities && !capabilities.emailOtp && <Notice as="p" className="warning">{t('邮箱登录尚未启用。部署管理员需要配置可用的邮件服务，完成后才能发送验证码。')}</Notice>}
         <Button variant="ghost" className="text-button setup-link" aria-expanded={showHelp} aria-controls="login-help" onClick={() => setShowHelp(value => !value)}>{t('登录遇到问题？')}</Button>
         {showHelp && <div id="login-help" className="setup-note"><p>{t('收不到验证码时，先确认受邀邮箱并检查垃圾邮件。等待重发倒计时结束后再试。')}</p><p>{t('Google 选错账号时，重新点击 Google 登录并选择获邀邮箱。邀请过期或账户停用时，请联系管理员。')}</p></div>}
         <p className="small muted login-footnote">{codeStep ? t('可以切换到邮箱查看邮件；返回或刷新页面后会保留验证进度。') : t('会话由安全 Cookie 管理。此页面不会保存登录令牌。')}</p>
-      </section>
+      </Panel>
     </main>;
 }

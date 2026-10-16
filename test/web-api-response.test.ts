@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { setLanguage } from '../web/i18n.js';
+setLanguage('zh-CN');
 import assert from 'node:assert/strict';
 import { AppError, errorText, request } from '../web/api.js';
 

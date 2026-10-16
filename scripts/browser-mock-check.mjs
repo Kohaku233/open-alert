@@ -51,10 +51,10 @@ function nativeSession(state) {
   const user = { ...state.status.user, emailVerified: true, image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   return { user, session: { id: 'mock-session', userId: user.id, token: 'mock-native-token', expiresAt: new Date(Date.now()+86400000).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ipAddress: '127.0.0.1', userAgent: 'MOCK' } };
 }
-async function setup(browser, profile, authenticated = false) {
+async function setup(browser, profile, authenticated = false, preferences = {}) {
   const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, emailSenderMode: 'console', otpError: null, inviteDelivery: {status:'not_attempted',reason:'resend_sandbox'}, socialError: null };
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
-  const context = await browser.newContext({ ...options, serviceWorkers: 'block' });
+  const context = await browser.newContext({ ...options, locale: 'zh-CN', colorScheme: 'dark', ...preferences, serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   await context.addInitScript(mark => {
     const attach = () => { if (window.top !== window) return; if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
@@ -69,7 +69,7 @@ async function setup(browser, profile, authenticated = false) {
       if (url.href === 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js') {
         chartScripts++;
         if (state.chartFail) return route.abort('failed');
-        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
+        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;window.__mockChartConfigs??=[];window.__mockChartConfigs.push(JSON.parse(script.textContent));const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const config=JSON.parse(script.textContent);const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:'+(config.theme==='light'?'#fff':'#111')+';color:'+(config.theme==='light'?'#616161':'#a3a3a3')+';font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
       }
       externalAttempts.push({ profile, origin: url.origin, path: url.pathname }); return route.abort('blockedbyclient');
     }
@@ -130,7 +130,7 @@ async function setup(browser, profile, authenticated = false) {
         if (state.quoteHold) await state.quoteHold;
         let quoteNow;
         try { quoteNow=await page.evaluate(()=>Date.now()); }
-        catch(error) { if(/Target page, context or browser has been closed/.test(error.message))return;throw error; }
+        catch(error) { if(/Target page, context or browser has been closed|Execution context was destroyed/.test(error.message))return;throw error; }
         return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
       }
       if (path === '/api/markets' && method === 'GET') return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
@@ -200,7 +200,7 @@ const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
-const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 50 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 50000);
+const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 80 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 80000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
@@ -434,7 +434,7 @@ try {
   const mobile=await setup(browser,'mobile',true), m=mobile.page;
   await journey('09 390×844 mobile layout, modal focus, navigation and MOCK capture', async () => {
     await m.goto(origin+'/dashboard'); await expect(m.getByRole('switch')).toBeVisible(); await expect(m.locator('iframe')).toBeVisible();
-    await noOverflow(m); await m.screenshot({path:join(outputs,'open-alert-ui-mobile-MOCK.png'),fullPage:true});
+    await noOverflow(m); await m.screenshot({path:join(outputs,'open-alert-ui-mobile-MOCK.png'),fullPage:true,animations:'disabled'});
     const frame=await m.locator('iframe').elementHandle(); await m.getByRole('button',{name:'创建警报',exact:true}).click();
     await check('mobile native modal focus', async () => assert(await m.getByRole('dialog').evaluate(d=>d.contains(document.activeElement)&&d.getAttribute('aria-modal') === 'true')));
     await noOverflow(m); await m.keyboard.press('Escape');
@@ -752,15 +752,85 @@ try {
     await check(profile+' successful verification clears resumable email metadata',async()=>assert.equal(await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1')),null));
     await fixture.context.close();
   });
+  for (const profile of ['desktop','mobile']) await journey('appearance, client language, skeleton and reduced motion ('+profile+')', async () => {
+    const fixture=await setup(browser,profile,true,{locale:'en-GB',colorScheme:'light'}),p=fixture.page,s=fixture.state;
+    let releaseSession,releaseStatus;
+    s.holdSession={wait:new Promise(resolve=>{releaseSession=resolve;})};
+    s.holdStatus={wait:new Promise(resolve=>{releaseStatus=resolve;})};
+    await p.goto(origin+'/dashboard');
+    await check('client English and light appearance before session resolves',async()=>{
+      await expect(p.locator('html')).toHaveAttribute('lang','en');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
+      await expect(p.getByRole('status')).toContainText('Checking your session');
+      await expect(p.locator('[data-slot="page-skeleton"]')).toBeVisible();
+      assert((await p.locator('[data-slot="skeleton"]').count())>=8);
+      assert.equal(await p.evaluate(()=>localStorage.length),0);
+    });
+    await noOverflow(p);
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    await chooseSelect(p,'Appearance','dark');await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
+    await chooseSelect(p,'Appearance','system');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
+    await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
+    await check('system follows media without saving an override',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),null));
+    s.holdSession=null;releaseSession();
+    await expect(p.getByRole('status')).toContainText('Loading your alerts and prices');
+    await p.getByRole('navigation').getByRole('link',{name:'Account',exact:true}).click();
+    await expect(p.getByRole('heading',{name:'Account',exact:true})).toBeVisible();
+    await expect(p.locator('[data-slot="page-skeleton"]:visible .skeleton-settings')).toHaveCount(2);
+    releaseStatus();await expect(p.getByRole('heading',{name:'Account details',exact:true})).toBeVisible();
+    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
+    await expect(p.locator('iframe')).toHaveCount(1);
+    await check('official chart config follows dark mode and remains 4h',async()=>{
+      const config=await p.evaluate(()=>window.__mockChartConfigs.at(-1));assert.equal(config.theme,'dark');assert.equal(config.interval,'240');assert.equal(config.locale,'en');
+    });
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-dark-MOCK.png'),fullPage:true,animations:'disabled'});
+    await chooseSelect(p,'Appearance','light');
+    await expect.poll(()=>p.evaluate(()=>window.__mockChartConfigs.at(-1)?.theme)).toBe('light');
+    await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','light');
+    await check('explicit light choice persisted',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),'light'));
+    await noOverflow(p);
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    const scriptsBefore=await p.evaluate(()=>window.__mockChartConfigs.length);
+    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();
+    await expect(p.locator('.disclosure-content')).toBeVisible();
+    await p.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
+    await expect(p.getByRole('heading',{name:'Pushover connection',exact:true})).toBeVisible();
+    await noOverflow(p);
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-notifications-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
+    await check('navigation preserves widget instance',async()=>assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),scriptsBefore));
+    await p.emulateMedia({reducedMotion:'reduce'});
+    await p.getByRole('button',{name:'Create alert',exact:true}).click();
+    await check('reduced motion and dialog keep working',async()=>{
+      await expect(p.getByRole('dialog')).toBeVisible();
+      assert(parseFloat(await p.getByRole('dialog').evaluate(node=>getComputedStyle(node).animationDuration))<=0.001);
+      assert.equal(await p.getByLabel('Alert name').getAttribute('data-slot'),'input');
+    });
+    await p.keyboard.press('Escape');
+    await p.getByRole('button',{name:'中文',exact:true}).click();await p.reload();
+    await expect(p.locator('html')).toHaveAttribute('lang','zh-CN');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
+    await fixture.context.close();
+  });
+  await journey('unsupported client locale fallback, Chinese detection and preference isolation',async()=>{
+    for (const [locale,expected] of [['ja-JP','en'],['zh-TW','zh-CN']]) {
+      const fixture=await setup(browser,'desktop',false,{locale,colorScheme:'light'});
+      await fixture.page.goto(origin+'/login');
+      await check('client language '+locale,async()=>{await expect(fixture.page.locator('html')).toHaveAttribute('lang',expected);assert.equal(await fixture.page.evaluate(()=>localStorage.length),0);});
+      if(expected==='en') {
+        await expect(fixture.page.getByRole('heading',{name:'Sign in or create an account'})).toBeVisible();
+        await fixture.page.screenshot({path:join(outputs,'appearance-desktop-login-light-MOCK.png'),fullPage:true,animations:'disabled'});
+      }
+      await fixture.context.close();
+    }
+  });
   await check('no runtime JS errors', async () => assert.deepEqual(runtimeErrors,[]));
   await check('no unknown API or schema violations', async () => assert.deepEqual(violations,[]));
   await check('no external requests except intercepted embed', async () => assert.deepEqual(externalAttempts,[]));
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===21&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===24&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/21 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/24 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

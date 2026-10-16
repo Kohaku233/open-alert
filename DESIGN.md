@@ -1,6 +1,6 @@
 ---
 name: Open Alert
-description: A compact dark workbench for personal price monitoring.
+description: A compact monochrome workbench for personal price monitoring, with light and dark appearances.
 colors:
   bg: "#111111"
   surface: "#171717"
@@ -18,6 +18,20 @@ colors:
   dialog: "#1c1c1c"
   warning-bg: "#211d17"
   warning-border: "#705932"
+appearance:
+  default: system
+  options: [light, dark, system]
+  light-bg: "#ffffff"
+  light-surface: "#fafafa"
+  light-text: "#171717"
+  light-muted: "#616161"
+  light-line: "#dedede"
+  light-accent: "#3f6212"
+  tokens: web/appearance.css
+  persistence: explicit choices only
+language:
+  supported: [zh-CN, en]
+  default: first supported client language, otherwise English
 typography:
   display:
     fontSize: "42px"
@@ -131,7 +145,7 @@ The original threshold-pulse SVG supplies identity. Restrained lime communicates
 
 **Key Characteristics:**
 
-- Compact dark surfaces with clear separators.
+- Compact neutral surfaces with clear separators, available in light and dark appearances.
 - White primary actions with restrained semantic accents.
 - Self-hosted English type, readable Chinese copy and tabular prices.
 - Equal Chinese and English functionality and mobile actions.
@@ -188,7 +202,7 @@ At 600px, buttons have minimum width and height of 44px and fields have minimum 
 
 Flat panels use tonal separation and one-pixel borders rather than shadows. Temporary toasts use `0 6px 32px #0006`; dialogs use `0 20px 80px #0007` with a `#000a` backdrop. These overlays carry depth while the persistent workbench remains flat.
 
-Buttons transition background and border color over 0.16s. The workspace enters with an 8px vertical translation over 0.32s using `cubic-bezier(.16,1,.3,1)`. Reduced-motion preferences remove animation and transitions.
+Controls transition colors over 140ms. A page arrives as one surface over 220ms with a 5px translation and a shallow clip reveal using `cubic-bezier(.16,1,.3,1)`. Dialogs and popovers open in 160–200ms; Radix disclosures animate their measured height in 200ms. Shared Skeletons breathe over 1.8s and Spinner indicates pending requests. Reduced-motion preferences stop looping animation and make transitions immediate; hidden pages pause loaders. Background refresh preserves content and never replays a page entrance or remounts the chart.
 
 ## Shapes
 
@@ -223,3 +237,23 @@ The standard radius governs buttons, form fields, panels and the language-contro
 - Don't use color as the only explanation of monitoring or delivery state.
 - Don't load raster replacements for the shipped SVG identity.
 - Don't apply the app font or custom controls inside the external TradingView iframe.
+
+## Shared components and loading
+
+All pages compose shadcn/Radix primitives from `web/components/ui`. Product
+patterns in `web/components/Surface.tsx` provide Panel, PageHeader, Notice,
+EmptyState, Disclosure, PageSkeleton and ListSkeleton. Preserve semantic HTML
+for content, links and forms while composing reusable controls and surfaces.
+The component README records upstream source and local adaptations.
+
+Session bootstrap, dashboard data, settings, and invitation/account lists show
+structural skeletons plus a translated status. Initial failures replace the
+skeleton with a stable retry state. Background refresh retains existing content.
+Never fabricate quotes or candlesticks in loading placeholders.
+
+Light/dark/system preferences are available before authentication and persist
+across routes. TradingView receives the effective theme via documented embed
+configuration and retains its 4-hour default. Changing theme or language recreates
+the official embed; ordinary polling and navigation keep it mounted. Client
+language detection supports Chinese and English; an explicit choice takes
+precedence. Automatic defaults never write localStorage.

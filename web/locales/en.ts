@@ -465,5 +465,11 @@ export const english: Record<string, string> = {
   "确认撤销": "Confirm revocation",
   "邀请已撤销。": "Invitation revoked.",
   "邀请邮件已交给邮件服务。": "The email service accepted the invitation email.",
-  "邀请仍有效，请查看邮件发送结果。": "The invitation remains active. Check the email result."
+  "邀请仍有效，请查看邮件发送结果。": "The invitation remains active. Check the email result.",
+  "外观主题": "Appearance",
+  "跟随系统": "System",
+  "深色": "Dark",
+  "浅色": "Light",
+  "暂时无法读取页面": "This page could not be loaded",
+  "正在准备工作台…": "Preparing your workspace…"
 };

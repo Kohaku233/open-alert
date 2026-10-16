@@ -3,15 +3,31 @@ import { english } from './locales/en.js';
 
 export type Language = 'zh-CN' | 'en';
 const listeners = new Set<() => void>();
+export function resolveClientLanguage(languages: readonly string[]): Language {
+  for (const value of languages) {
+    if (/^zh(?:-|$)/i.test(value)) return 'zh-CN';
+    if (/^en(?:-|$)/i.test(value)) return 'en';
+  }
+  return 'en';
+}
 function initialLanguage(): Language {
-  try { return localStorage.getItem('open-alert-language') === 'en' ? 'en' : 'zh-CN'; }
-  catch { return 'zh-CN'; }
+  try { const saved = localStorage.getItem('open-alert-language'); if (saved === 'en' || saved === 'zh-CN') return saved; } catch { /* Use client preference when storage is disabled. */ }
+  return resolveClientLanguage(typeof navigator === 'undefined' ? ['en'] : navigator.languages?.length ? navigator.languages : [navigator.language]);
 }
 let language: Language = initialLanguage();
 function applyLanguage() {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = language;
   document.title = language === 'en' ? 'Open Alert · Price monitoring' : '价格哨站 · Open Alert';
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('languagechange', () => {
+    try { if (localStorage.getItem('open-alert-language')) return; } catch { /* No manual preference. */ }
+    language = initialLanguage(); applyLanguage(); listeners.forEach(listener => listener());
+  });
+  window.addEventListener('storage', event => {
+    if (event.key === 'open-alert-language' || event.key === null) { language = initialLanguage(); applyLanguage(); listeners.forEach(listener => listener()); }
+  });
 }
 applyLanguage();
 export const getLanguage = () => language;

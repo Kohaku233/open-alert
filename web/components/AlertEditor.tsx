@@ -1,3 +1,4 @@
+import { Notice } from './Surface.js';
 import { FieldSelect } from './FieldSelect.js';
 import { Checkbox } from './ui/checkbox.js';
 import { Button } from './ui/button.js';
@@ -69,11 +70,11 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
       <div className="form-row"><Label>{t("触发条件")}<FieldSelect label={t("触发条件")} value={side} onValueChange={value => setSide(value as 'upper' | 'lower')} disabled={busy || pending || !!model.error} options={[{value:'upper',label:t("达到或高于")},{value:'lower',label:t("达到或低于")}]} /></Label><Label>{t("价格 · ")}{quote}<Input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)}/></Label></div>
       <Label className="check-label"><Checkbox checked={enabled} onCheckedChange={checked => setEnabled(checked === true)} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/>{t("启用这条警报")}</Label>
     </fieldset>
-    {!available && unchangedMarket && <p className="warning">{t("原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。")}</p>}
-    {pending && <p className="warning">{t("该警报的通知正在排队或发送，请等待完成后再修改。")}</p>}
-    {hit && enabled && <p className="warning">{marketLabel(selected, market)}{t(" 当前新鲜成交价 ")}{tick ? formatPrice(tick.price) : ''} {quote}{t(" 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。")}</p>}
+    {!available && unchangedMarket && <Notice as="p" className="warning">{t("原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。")}</Notice>}
+    {pending && <Notice as="p" className="warning">{t("该警报的通知正在排队或发送，请等待完成后再修改。")}</Notice>}
+    {hit && enabled && <Notice as="p" className="warning">{marketLabel(selected, market)}{t(" 当前新鲜成交价 ")}{tick ? formatPrice(tick.price) : ''} {quote}{t(" 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。")}</Notice>}
     {!freshTick(tick) && <p className="small muted">{t("当前没有可用的新鲜后台价格。恢复行情后，首次满足条件的价格也会触发。")}</p>}
-    {alert?.triggered && <p className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</p>}
+    {alert?.triggered && <Notice as="p" className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</Notice>}
     {!data?.status.settings.enabled && <p className="small muted">{t("你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。")}</p>}
     <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")}</p>
     <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>

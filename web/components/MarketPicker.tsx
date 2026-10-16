@@ -4,6 +4,8 @@ import { Check, ChevronsUpDown } from 'lucide-react';
 import { Button } from './ui/button.js';
 import { Label } from './ui/label.js';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover.js';
+import { EmptyState } from './Surface.js';
+import { FormError } from './Dialog.js';
 import { Command, CommandInput, CommandItem, CommandList } from './ui/command.js';
 import { FieldSelect } from './FieldSelect.js';
 import type { DirectoryMarket, MarketType, Venue } from '../markets.js';
@@ -74,10 +76,10 @@ export function MarketPicker({ label, markets, value, onChange, disabled = false
                 <Check className={sameMarket(market.instrument,value) ? 'market-check' : 'market-check invisible'} aria-hidden="true" />
               </CommandItem>;
             })}
-            {!results.length && <p className="market-search-empty">{markets.length ? t("没有匹配的市场。试试币种名称，或清除交易所和类型筛选。") : t("市场目录暂时为空。请重新读取状态。")}</p>}
+            {!results.length && <EmptyState className="market-search-empty">{markets.length ? t("没有匹配的市场。试试币种名称，或清除交易所和类型筛选。") : t("市场目录暂时为空。请重新读取状态。")}</EmptyState>}
           </CommandList>
           <div className="market-search-help"><p className="small muted">{t("选择后保存的是此交易所的此市场。搜索和筛选不会改变已选市场；不可用结果不能选择。")}</p>
-          {error && <p className="form-error" role="alert">{t("目录刷新未完成：")}{error}</p>}
+          <FormError message={error ? t("目录刷新未完成：") + error : ''}/>
           {(error || !markets.length) && onRetry && <Button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</Button>}
           {stale && <p className="small amber-text">{t("市场目录已过期。保存时由服务端再次确认可用性。")}</p>}</div>
         </Command>

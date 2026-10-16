@@ -1,3 +1,4 @@
+import { Notice } from './Surface.js';
 import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Dialog as DialogRoot, DialogContent, DialogTitle } from './ui/dialog.js';
@@ -20,4 +21,4 @@ export function Dialog({ title, children, onClose, busy = false }: {
 }
 export function FormError({ message }: {
     message: string;
-}) { return message ? <p className="form-error" role="alert">{message}</p> : null; }
+}) { return message ? <Notice className="form-error" role="alert">{message}</Notice> : null; }

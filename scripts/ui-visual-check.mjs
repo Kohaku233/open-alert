@@ -54,7 +54,7 @@ function nativeSession(state) {
 async function setup(browser, profile, authenticated = false) {
   const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, emailSenderMode: 'console', otpError: null, inviteDelivery: {status:'not_attempted',reason:'resend_sandbox'}, socialError: null };
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
-  const context = await browser.newContext({ ...options, serviceWorkers: 'block' });
+  const context = await browser.newContext({ ...options, locale: 'zh-CN', colorScheme: 'dark', serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   await context.addInitScript(mark => {
     const attach = () => { if (window.top !== window) return; if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
@@ -69,7 +69,7 @@ async function setup(browser, profile, authenticated = false) {
       if (url.href === 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js') {
         chartScripts++;
         if (state.chartFail) return route.abort('failed');
-        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:#111;color:#a3a3a3;font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
+        return route.fulfill({ contentType: 'application/javascript', body: `(()=>{const script=document.currentScript;if(!script?.isConnected)return;const host=script.parentElement?.querySelector('.tradingview-widget-container__widget');if(!host)return;const config=JSON.parse(script.textContent);const iframe=document.createElement('iframe');iframe.title='MOCK TradingView chart';iframe.style='width:100%;height:100%';iframe.srcdoc='<body style="margin:0;background:'+(config.theme==='light'?'#fff':'#111')+';color:'+(config.theme==='light'?'#616161':'#a3a3a3')+';font:14px sans-serif;display:grid;place-items:center;height:100%;min-height:200px"><div>MOCK 图表占位 · 无实时数据<br><small>仅验证嵌入生命周期与页面布局</small></div></body>';host.append(iframe);})();` });
       }
       externalAttempts.push({ profile, origin: url.origin, path: url.pathname }); return route.abort('blockedbyclient');
     }
@@ -241,7 +241,7 @@ try {
       assert(controls.every(control => control.width >= 44 && control.height >= 44),JSON.stringify(controls));
       state.status.settings.enabled=true; await page.reload();
       await expect(page.getByRole('switch')).toHaveAttribute('aria-checked','true');
-      await page.screenshot({path:join(review,'mobile-enabled-en.png'),fullPage:true});
+      await page.screenshot({path:join(review,'mobile-enabled-en.png'),fullPage:true,animations:'disabled'});
       const thumb=await page.getByRole('switch').evaluate(node => { const track=node.getBoundingClientRect(),handle=node.querySelector('span').getBoundingClientRect();return {right:handle.right <= track.right,width:handle.width}; });
       assert(thumb.right); assert.equal(thumb.width,20);
       state.status.settings.enabled=false; await page.reload();
@@ -254,21 +254,21 @@ try {
     assert.equal(await page.getByLabel('Alert name').getAttribute('data-slot'),'input');
     assert.equal(await page.getByRole('dialog').getByRole('combobox',{name:'Trigger condition',exact:true}).getAttribute('data-slot'),'select-trigger');
     await noOverflow(page);
-    await page.screenshot({path:join(review,profile+'-editor-shadcn-en.png'),fullPage:true});
+    await page.screenshot({path:join(review,profile+'-editor-shadcn-en.png'),fullPage:true,animations:'disabled'});
     await page.getByRole('dialog').locator('.market-search-trigger').click();
     await expect(page.locator('.ui-market-popover')).toBeVisible();
     await noOverflow(page);
-    await page.screenshot({path:join(review,profile+'-market-shadcn-en.png'),fullPage:true});
+    await page.screenshot({path:join(review,profile+'-market-shadcn-en.png'),fullPage:true,animations:'disabled'});
     await page.keyboard.press('Escape');
     await expect(page.locator('.ui-market-popover')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Notifications',exact:true})).toBeVisible();
     await noOverflow(page);
-    await page.screenshot({path:join(review,profile+'-notifications-en.png'),fullPage:true});
+    await page.screenshot({path:join(review,profile+'-notifications-en.png'),fullPage:true,animations:'disabled'});
     await page.getByRole('navigation').getByRole('link',{name:'Account',exact:true}).click();
     await noOverflow(page);
-    await page.screenshot({path:join(review,profile+'-account-en.png'),fullPage:true});
+    await page.screenshot({path:join(review,profile+'-account-en.png'),fullPage:true,animations:'disabled'});
     assert.deepEqual(state.alerts.map(x=>JSON.stringify(x)),userRules);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('lang','en');
@@ -286,11 +286,11 @@ try {
     await expect(login.page.getByText(/Email is in test mode/)).toHaveCount(0);
     await expect(login.page.getByRole('button',{name:'Send verification code'})).toBeEnabled();
     await login.page.evaluate(() => document.fonts.ready); await noOverflow(login.page);
-    await login.page.screenshot({path:join(review,profile+'-login-en.png'),fullPage:true});
+    await login.page.screenshot({path:join(review,profile+'-login-en.png'),fullPage:true,animations:'disabled'});
     await login.page.getByLabel('Email address',{exact:true}).fill('mock@example.test');
     await login.page.getByRole('button',{name:'Send verification code'}).click();
     await expect(login.page.getByLabel('Code from your email')).toBeVisible();
-    await noOverflow(login.page); await login.page.screenshot({path:join(review,profile+'-otp-en.png'),fullPage:true});
+    await noOverflow(login.page); await login.page.screenshot({path:join(review,profile+'-otp-en.png'),fullPage:true,animations:'disabled'});
     await login.context.close();
     const admin = await setup(browser,profile,true);
     admin.state.status.user.role='admin'; admin.state.status.capabilities.canAdmin=true; admin.state.inviteDelivery={status:'accepted',reason:null};
@@ -298,12 +298,12 @@ try {
     await admin.page.getByRole('button',{name:'EN',exact:true}).click();
     await expect(admin.page.getByRole('heading',{name:'Admin',exact:true})).toBeVisible();
     await admin.page.evaluate(() => document.fonts.ready); await noOverflow(admin.page);
-    await admin.page.screenshot({path:join(review,profile+'-admin-en.png'),fullPage:true});
+    await admin.page.screenshot({path:join(review,profile+'-admin-en.png'),fullPage:true,animations:'disabled'});
     await admin.page.getByLabel('Invited email').fill('invited@example.test');
     await admin.page.getByRole('button',{name:'Create email invitation'}).click();
     await expect(admin.page.locator('.invitation-result')).toContainText('accepted the invitation email');
     await noOverflow(admin.page);
-    await admin.page.screenshot({path:join(review,profile+'-invitation-result-en.png'),fullPage:true});
+    await admin.page.screenshot({path:join(review,profile+'-invitation-result-en.png'),fullPage:true,animations:'disabled'});
     await admin.page.getByLabel('Invited email').fill('invited@example.test');
     await admin.page.getByRole('button',{name:'Create email invitation'}).click();
     await expect(admin.page.locator('.invitation-result')).toContainText('No duplicate email was sent');

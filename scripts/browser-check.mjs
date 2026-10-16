@@ -78,7 +78,7 @@ async function ok(context,path,method='GET',body,headers={}) {
   const result=await api(context,path,method,body,headers); assert(result.status>=200&&result.status<300,`${method} ${path}: ${JSON.stringify(result)}`); assert.equal(result.body.ok,true);return result.body.data;
 }
 async function profile(mobile=false) {
-  const context=await browser.newContext({...mobile?{...devices['iPhone 15'],defaultBrowserType:undefined}:{viewport:{width:1440,height:1000}},serviceWorkers:'block'});
+  const context=await browser.newContext({...mobile?{...devices['iPhone 15'],defaultBrowserType:undefined}:{viewport:{width:1440,height:1000}},locale:'zh-CN',colorScheme:'dark',serviceWorkers:'block'});
   await context.route('**/*',route=>{
     const url=new URL(route.request().url());
     if(url.origin===origin) {if(url.pathname.startsWith('/api/'))apiRequests++;return route.continue();}
