@@ -193,7 +193,10 @@ const nav = (page, name) => page.getByRole('navigation', { name: '主导航' }).
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
-async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
+async function noOverflow(page) {
+  await page.waitForFunction(() => ![...document.querySelectorAll('[data-motion-state="entering"],[data-motion-state="exiting"]')].some(node => node.getClientRects().length));
+  await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); });
+}
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 
 const review = join(root, '.impeccable/review');
@@ -308,7 +311,33 @@ try {
     await admin.page.getByRole('button',{name:'Create email invitation'}).click();
     await expect(admin.page.locator('.invitation-result')).toContainText('No duplicate email was sent');
     await admin.context.close();
-    console.log('PASS', profile, 'Chinese/English, preserved rules/market, persistence and responsive settings');
+    const appearance = await setup(browser,profile,true), a=appearance.page;
+    await a.goto(origin+'/dashboard');await expect(a.getByRole('switch')).toBeVisible();
+    await a.getByRole('combobox',{name:'外观主题',exact:true}).click();await a.locator('[role="option"][data-value="light"]').click();
+    await noOverflow(a);await a.screenshot({path:join(review,profile+'-gsap-light-dashboard.png'),fullPage:true,animations:'disabled'});
+    await a.getByRole('combobox',{name:'外观主题',exact:true}).click();await noOverflow(a);
+    await a.screenshot({path:join(review,profile+'-gsap-light-menu.png'),fullPage:true,animations:'disabled'});
+    await a.keyboard.press('Escape');await expect(a.locator('[data-slot="select-content"]')).toHaveCount(0);
+    await a.getByRole('button',{name:'创建警报',exact:true}).click();await noOverflow(a);
+    await a.screenshot({path:join(review,profile+'-gsap-light-editor.png'),fullPage:true,animations:'disabled'});
+    await a.getByRole('combobox',{name:'触发条件',exact:true}).click();await noOverflow(a);
+    await a.screenshot({path:join(review,profile+'-gsap-light-field-menu.png'),fullPage:true,animations:'disabled'});
+    await a.keyboard.press('Escape');await expect(a.locator('[data-slot="select-content"]')).toHaveCount(0);
+    await a.keyboard.press('Escape');await expect(a.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+    await nav(a,'手机通知');await noOverflow(a);await a.screenshot({path:join(review,profile+'-gsap-light-notifications.png'),fullPage:true,animations:'disabled'});
+    await nav(a,'我的账户');await noOverflow(a);await a.screenshot({path:join(review,profile+'-gsap-light-account.png'),fullPage:true,animations:'disabled'});
+    appearance.state.status.user.role='admin';appearance.state.status.capabilities.canAdmin=true;
+    await a.goto(origin+'/admin');await expect(a.getByRole('heading',{name:'邀请邮箱',exact:true})).toBeVisible();
+    await noOverflow(a);await a.screenshot({path:join(review,profile+'-gsap-light-admin.png'),fullPage:true,animations:'disabled'});
+    await a.getByRole('combobox',{name:'外观主题',exact:true}).click();await a.locator('[role="option"][data-value="dark"]').click();
+    await a.getByRole('combobox',{name:'外观主题',exact:true}).click();await noOverflow(a);
+    await a.screenshot({path:join(review,profile+'-gsap-dark-menu.png'),fullPage:true,animations:'disabled'});
+    await appearance.context.close();
+    const publicLight=await setup(browser,profile,false);
+    publicLight.state.googleEnabled=true;publicLight.state.emailSenderMode='resend_sending_only';
+    await publicLight.page.goto(origin+'/login');await publicLight.page.getByRole('combobox',{name:'外观主题',exact:true}).click();await publicLight.page.locator('[role="option"][data-value="light"]').click();
+    await noOverflow(publicLight.page);await publicLight.page.screenshot({path:join(review,profile+'-gsap-light-login.png'),fullPage:true,animations:'disabled'});await publicLight.context.close();
+    console.log('PASS', profile, 'Chinese/English, both themes, dialogs/menus/settings, persistence and responsive layout');
   }
   assert.equal(runtimeErrors.length,0,JSON.stringify(runtimeErrors));
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

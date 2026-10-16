@@ -1,10 +1,11 @@
+import { useFloatingMotion, useLoadingMotion, useMotionPresence } from '../motion.js';
 import { useTheme } from '../theme.js';
 import { Skeleton } from './ui/skeleton.js';
 import { EmptyState } from './Surface.js';
 import { Button } from './ui/button.js';
 import { t } from '../i18n.js';
 import { useLanguage } from '../i18n.js';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { safeChartSymbol } from '../utils.js';
 // Official reference embed only; symbols must satisfy the verified allowlist.
 export const TradingChart = memo(function TradingChart({ symbol, source }: {
@@ -16,7 +17,7 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
     const host = useRef<HTMLDivElement>(null);
     const [retry, setRetry] = useState(0);
     const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
-    useEffect(() => {
+    useLayoutEffect(() => {
         const container = host.current!;
         if (!safeChartSymbol(symbol)) {
             setState('failed');
@@ -58,10 +59,18 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
     return <>
     <div className="chart-caption"><span role="status">{state === 'loading' ? t("正在连接 TradingView 图表…") : state === 'failed' ? t("图表连接不可用") : t("图表由 TradingView 提供")}</span><Button variant="ghost" className="text-button" onClick={() => setRetry(value => value + 1)}>{t("重连图表")}</Button></div>
     <div className="chart-shell">
-      {state === 'loading' && <div className="chart-loading" aria-hidden="true"><Skeleton className="skeleton-line"/><div className="skeleton-chart-grid"/></div>}
+      <ChartLoading open={state === 'loading'}/>
       <div ref={host} className="tradingview-widget-container"/>
       {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t("图表暂时无法连接")}</strong><p>{t("后台警报使用 ")}{source}{t(" 最新成交价。可以重试参考图表，或打开 TradingView 查看。")}</p><Button variant="default" className="primary" onClick={() => setRetry(value => value + 1)}>{t("重试图表")}</Button>{safeChartSymbol(symbol) && <a href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 打开")}</a>}</EmptyState>}
     </div>
     <div className="chart-bottom"><span>{t("TradingView 仅供参考；警报按 ")}{source}{t(" 后台最新成交价判断。")}</span>{safeChartSymbol(symbol) && <a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 追踪所有市场")}</a>}</div>
   </>;
 });
+
+function ChartLoading({ open }: { open: boolean }) {
+  const root = useRef<HTMLDivElement>(null);
+  const { present, finish } = useMotionPresence(open);
+  useLoadingMotion(root, 'skeleton', open);
+  useFloatingMotion(root, open, present, finish);
+  return present ? <div ref={root} className="chart-loading" aria-hidden="true"><Skeleton className="skeleton-line"/><div className="skeleton-chart-grid"/></div> : null;
+}

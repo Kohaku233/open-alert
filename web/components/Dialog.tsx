@@ -1,3 +1,4 @@
+import { useDialogPresence } from '../motion.js';
 import { Notice } from './Surface.js';
 import { useRef } from 'react';
 import type { ReactNode } from 'react';
@@ -8,9 +9,10 @@ export function Dialog({ title, children, onClose, busy = false }: {
     onClose: () => void;
     busy?: boolean;
 }) {
+    const presence = useDialogPresence();
     const previousFocus = useRef(document.activeElement as HTMLElement | null);
-    return <DialogRoot open onOpenChange={open => { if (!open && !busy) onClose(); }}>
-      <DialogContent className="app-dialog" closeDisabled={busy} aria-modal="true" aria-describedby={undefined}
+    return <DialogRoot open={presence?.open ?? true} onOpenChange={open => { if (!open && !busy) onClose(); }}>
+      <DialogContent onExitComplete={presence?.finish} className="app-dialog" closeDisabled={busy} aria-modal="true" aria-describedby={undefined}
         onEscapeKeyDown={event => { if (busy) event.preventDefault(); }}
         onPointerDownOutside={event => event.preventDefault()}
         onCloseAutoFocus={event => { event.preventDefault(); previousFocus.current?.focus(); }}>

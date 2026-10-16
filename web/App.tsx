@@ -7,7 +7,7 @@ import { Button } from './components/ui/button.js';
 import { t } from './i18n.js';
 import { Icon } from './components/Icon.js';
 import { useLanguage, setLanguage } from './i18n.js';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { authClient } from './auth.js';
 import { clearEmailLoginFlow } from './email-login-flow.js';
 import { loginCallbackURL } from './api.js';
@@ -18,10 +18,13 @@ import { Notifications } from './pages/Notifications.js';
 import { Account } from './pages/Account.js';
 import { Admin } from './pages/Admin.js';
 import { FormError } from './components/Dialog.js';
+import { useIndicatorMotion } from './motion.js';
 const routes = ['/dashboard', '/notifications', '/account', '/admin'];
 function LanguageSwitch() {
     const language = useLanguage();
-    return <div className="preferences"><Appearance/><div className="languages" aria-label={t("界面语言")}><Button type="button" aria-pressed={language === "zh-CN"} onClick={() => setLanguage("zh-CN")}>{t("中文")}</Button><Button type="button" aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</Button></div></div>;
+    const root = useRef<HTMLDivElement>(null), indicator = useRef<HTMLSpanElement>(null);
+    useIndicatorMotion(root, indicator, '[aria-pressed="true"]', language);
+    return <div className="preferences"><Appearance/><div ref={root} className="languages" role="group" aria-label={t("界面语言")}><span ref={indicator} className="segment-indicator" aria-hidden="true"/><Button type="button" aria-pressed={language === "zh-CN"} onClick={() => setLanguage("zh-CN")}>{t("中文")}</Button><Button type="button" aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</Button></div></div>;
 }
 function Brand({ navigate }: {
     navigate: (path: string) => void;
@@ -92,9 +95,11 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
         }
     }
     const canAdmin = model.data?.status.user.role === 'admin' && model.data.status.capabilities.canAdmin;
+    const navRef = useRef<HTMLElement>(null), navIndicator = useRef<HTMLSpanElement>(null);
     const tabs = [['/dashboard', t("行情与警报")], ['/notifications', t("手机通知")], ['/account', t("我的账户")], ...(canAdmin ? [['/admin', t("管理")]] : [])];
+    useIndicatorMotion(navRef, navIndicator, '[aria-current="page"]', path + tabs.map(tab => tab[1]).join());
     return <>
-    <header className="masthead"><Brand navigate={navigate}/><nav className="app-nav" aria-label={t("主导航")}>{tabs.map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}>{label}</a>)}</nav><div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div></header>
+    <header className="masthead"><Brand navigate={navigate}/><nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}>{label}</a>)}</nav><div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div></header>
     <main className="app-main" id="main-content"><FormError message={logoutError}/>{model.error && <Notice className="connection-error" role="alert"><p>{model.error}</p><Button disabled={model.busy} onClick={() => void model.refresh()}>{t("重新读取状态")}</Button></Notice>}
       {/* Keep the dashboard mounted across settings pages; polling never remounts the chart. */}
       <Dashboard model={model} active={path === '/dashboard' || !routes.includes(path)} notify={notify} navigate={navigate}/>

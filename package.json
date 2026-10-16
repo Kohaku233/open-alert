@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.7",
+    "@gsap/react": "2.1.2",
     "@hono/node-server": "2.1.4",
     "@radix-ui/react-checkbox": "1.4.1",
     "@radix-ui/react-collapsible": "1.2.1",
@@ -52,6 +53,7 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "drizzle-orm": "0.45.4",
+    "gsap": "3.15.0",
     "hono": "4.13.13",
     "lucide-react": "1.57.0",
     "nodemailer": "10.1.0",

@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../i18n.js';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { Button } from './ui/button.js';
 import { Label } from './ui/label.js';
@@ -25,6 +25,11 @@ export function MarketPicker({ label, markets, value, onChange, disabled = false
     const id = useId();
     const searchRef = useRef<HTMLInputElement>(null);
     const [open, setOpen] = useState(false);
+    useEffect(() => {
+        if (!open) return;
+        const frame = requestAnimationFrame(() => searchRef.current?.focus());
+        return () => cancelAnimationFrame(frame);
+    }, [open]);
     const [term, setTerm] = useState('');
     const [venue, setVenue] = useState<Venue | ''>('');
     const [type, setType] = useState<MarketType | ''>('');

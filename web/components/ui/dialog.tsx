@@ -1,13 +1,18 @@
 "use client"
 
 import * as React from "react"
+import { FloatingOpenContext, useFloatingMotion, useMotionPresence, useOpenState } from '../../motion.js'
+
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "../../lib/utils.js"
 import { t } from '../../i18n.js'
 
-const Dialog = DialogPrimitive.Root
+function Dialog({ open, defaultOpen, onOpenChange, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  const [current, change] = useOpenState({ open, defaultOpen, onOpenChange });
+  return <FloatingOpenContext value={current}><DialogPrimitive.Root open={current} onOpenChange={change} {...props}/></FloatingOpenContext>;
+}
 
 const DialogTrigger = DialogPrimitive.Trigger
 
@@ -23,7 +28,7 @@ const DialogOverlay = React.forwardRef<
     ref={ref}
     data-slot="dialog-overlay"
     className={cn(
-      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/80  ",
       className
     )}
     {...props}
@@ -33,15 +38,23 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeDisabled?: boolean }
->(({ className, children, closeDisabled = false, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeDisabled?: boolean; onExitComplete?: (() => void) | undefined }
+>(({ className, children, closeDisabled = false, onExitComplete, ...props }, ref) => {
+  const open = React.useContext(FloatingOpenContext);
+  const { present, finish } = useMotionPresence(open);
+  const content = React.useRef<HTMLDivElement>(null), overlay = React.useRef<HTMLDivElement>(null);
+  const attach = useFloatingMotion(content, open, present, () => { finish(); onExitComplete?.(); }, 'dialog', overlay, ref);
+  if (!present) return null;
+  return (
+  <DialogPortal forceMount>
+    <DialogOverlay ref={overlay} forceMount />
     <DialogPrimitive.Content
-      ref={ref}
+      forceMount
+      ref={attach}
+      inert={!open}
       data-slot="dialog-content"
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg transform-[translate(-50%,-50%)] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg transform-[translate(-50%,-50%)] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg",
         className
       )}
       {...props}
@@ -53,7 +66,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+);
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

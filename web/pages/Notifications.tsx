@@ -1,3 +1,4 @@
+import { usePageMotion, DialogPresence } from '../motion.js';
 import { Panel, PageHeader, Notice, PageSkeleton } from '../components/Surface.js';
 import { Badge } from '../components/ui/badge.js';
 import { FieldSelect } from '../components/FieldSelect.js';
@@ -5,7 +6,7 @@ import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { Label } from '../components/ui/label.js';
 import { t } from '../i18n.js';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { FormEvent } from 'react';
 import type { ChannelProfile, NotificationOptions } from '../../src/contracts/domain.js';
 import type { WorkspaceModel } from '../model.js';
@@ -16,6 +17,8 @@ export function Notifications({ model, notify }: {
     model: WorkspaceModel;
     notify: (text: string) => void;
 }) {
+    const pageRef = useRef<HTMLElement>(null);
+    usePageMotion(pageRef, !!model.data, true, 'settings');
     const { data, busy, mutate } = model;
     const [userKey, setUserKey] = useState('');
     const [appToken, setAppToken] = useState('');
@@ -122,7 +125,7 @@ export function Notifications({ model, notify }: {
         }
     }
     function openConfirm(kind: 'test' | 'remove') { setConfirm(kind); setConfirmError(''); }
-    return <section className="settings-page"><PageHeader className="page-heading"><div><h1>{t("手机通知")}</h1><p>{t("把价格警报发到自己的 Pushover 账户。")}</p></div><Badge variant="outline" className={`status-pill ${channel.configured ? 'success' : ''}`}>{channel.configured ? t("已配置") : t("未完成配置")}</Badge></PageHeader>
+    return <section ref={pageRef} className="settings-page"><PageHeader className="page-heading"><div><h1>{t("手机通知")}</h1><p>{t("把价格警报发到自己的 Pushover 账户。")}</p></div><Badge variant="outline" className={`status-pill ${channel.configured ? 'success' : ''}`}>{channel.configured ? t("已配置") : t("未完成配置")}</Badge></PageHeader>
     {pending && <Notice as="p" className="warning">{t("通知正在排队或发送，暂时无法修改渠道与设置。可等待完成，或在仪表盘明确暂停监控。")}</Notice>}
     <div className="settings-grid"><Panel className="settings-panel"><h2>{t("Pushover 连接")}</h2><p className="small muted">{t("先在手机安装 Pushover，再从账户页面取得 User Key。")}</p><dl className="key-state"><div><dt>{t("用户密钥")}</dt><dd>{channel.userKeyPresent ? t("•••••••• 已保存") : t("尚未保存")}</dd></div><div><dt>{t("个人应用令牌")}</dt><dd>{channel.privateTokenPresent ? t("•••••••• 已保存") : t("未设置")}</dd></div><div><dt>{t("当前应用令牌")}</dt><dd>{channel.tokenSource === 'private' ? t("使用个人令牌") : channel.tokenSource === 'shared' ? t("使用部署共享令牌") : t("不可用")}</dd></div><div><dt>{t("最近更新")}</dt><dd>{formatTime(channel.updatedAt)}</dd></div></dl>
       <form onSubmit={event => void saveChannel(event)}><fieldset disabled={busy || pending || !!model.error}><Label>{channel.userKeyPresent ? t("替换用户密钥（留空保留）") : t("Pushover 用户密钥")}<Input type="password" autoComplete="off" autoCapitalize="none" spellCheck={false} value={userKey} onChange={event => setUserKey(event.target.value)} required={!channel.userKeyPresent} maxLength={30} placeholder={channel.userKeyPresent ? t("已保存；留空保留") : t("30 位 User Key")}/></Label><Label>{t("应用令牌来源")}<FieldSelect label={t("应用令牌来源")} value={tokenMode} onValueChange={value => setTokenMode(value as typeof tokenMode)} disabled={busy || pending || !!model.error} options={[{value:'retain',label:t("保留当前设置")},{value:'shared',label:t("使用部署共享令牌")},{value:'private',label:t("设置个人应用令牌")}]} /></Label>
@@ -135,6 +138,6 @@ export function Notifications({ model, notify }: {
       <form onSubmit={event => void saveSettings(event)}><fieldset disabled={busy || pending || !!model.error}><Label>{t("提醒级别")}<FieldSelect label={t("提醒级别")} value={String(options.priority)} onValueChange={value => updateOptions({priority:Number(value)})} disabled={busy || pending || !!model.error} options={[{value:'2',label:t("紧急提醒 · 重复直到确认或到期")},{value:'1',label:t("高优先级 · 单次提醒")},{value:'0',label:t("普通提醒 · 单次提醒")},{value:'-1',label:t("低优先级 · 单次提醒")},{value:'-2',label:t("静默提醒 · 单次提醒")}]} /></Label><Label>{t("铃声标识")}<Input value={options.sound} maxLength={64} pattern={'[A-Za-z0-9_\\-]*'} onChange={event => updateOptions({ sound: event.target.value })} placeholder="siren"/><span className="small muted">{t("填写 Pushover 已支持的铃声名称，例如 siren 或 pushover。")}</span></Label><div className="form-row"><Label>{t("重复间隔 · 秒")}<Input type="number" min={30} max={3600} step={1} required value={options.retry} onChange={event => updateOptions({ retry: Number(event.target.value) })}/></Label><Label>{t("到期时间 · 秒")}<Input type="number" min={30} max={10800} step={1} required value={options.expire} onChange={event => updateOptions({ expire: Number(event.target.value) })}/></Label></div><p className="small muted">{t("重复间隔与到期时间仅在紧急提醒下生效。")}</p><Label>{t("每日通知尝试上限")}<Input type="number" min={1} max={20} step={1} required value={dailyLimit} onChange={event => setDraft({ options, dailyLimit: Number(event.target.value), generation: draft?.generation ?? data.status.settingsGeneration })}/><span className="small muted">{t("包含测试、失败与重试，按 UTC 零点重置。")}</span></Label><Button variant="default" className="primary wide">{busy ? t("正在保存…") : t("保存提醒设置")}</Button></fieldset><FormError message={settingsError}/>
       {draft && <Button type="button" className="text-button" disabled={busy} onClick={() => { setDraft(null); setSettingsError(''); }}>{t("重新读取当前设置")}</Button>}</form><div className="quota-note"><strong>{t("今日 ")}{data.status.daily.attempts} / {data.status.daily.limit}</strong><span>{data.status.daily.date}（UTC）</span></div>
     </Panel></div>
-    {confirm && <Dialog title={confirm === 'test' ? t("发送一条测试通知？") : t("删除通知密钥？")} onClose={() => setConfirm(null)} busy={busy}><p>{confirm === 'test' ? t("将向当前保存的 Pushover 账户发送普通优先级测试，消耗一次当日通知尝试。请确认手机账户正确。") : t("将删除已保存的用户密钥和个人应用令牌。重新配置前无法发送通知。")}</p><FormError message={confirmError}/><div className="confirm-actions"><Button onClick={() => setConfirm(null)} disabled={busy}>{t("取消")}</Button><Button variant="default" className="primary" disabled={busy} onClick={() => void confirmAction()}>{busy ? t("正在处理…") : confirm === 'test' ? t("确认发送测试") : t("删除密钥")}</Button></div></Dialog>}
+    <DialogPresence present={!!confirm}>{confirm && <Dialog title={confirm === 'test' ? t("发送一条测试通知？") : t("删除通知密钥？")} onClose={() => setConfirm(null)} busy={busy}><p>{confirm === 'test' ? t("将向当前保存的 Pushover 账户发送普通优先级测试，消耗一次当日通知尝试。请确认手机账户正确。") : t("将删除已保存的用户密钥和个人应用令牌。重新配置前无法发送通知。")}</p><FormError message={confirmError}/><div className="confirm-actions"><Button onClick={() => setConfirm(null)} disabled={busy}>{t("取消")}</Button><Button variant="default" className="primary" disabled={busy} onClick={() => void confirmAction()}>{busy ? t("正在处理…") : confirm === 'test' ? t("确认发送测试") : t("删除密钥")}</Button></div></Dialog>}</DialogPresence>
   </section>;
 }

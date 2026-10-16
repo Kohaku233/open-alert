@@ -1,0 +1,7 @@
+/* Product layouts cannot override the state/variant styles of shadcn controls. */
+@layer theme, base, legacy, components, utilities, product;
+@import './styles.css' layer(legacy);
+@import './workbench.css' layer(legacy);
+@import './ui.css';
+@import './appearance.css';
+@import './motion.css';

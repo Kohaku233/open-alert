@@ -1,3 +1,4 @@
+import { usePageMotion, DialogPresence } from '../motion.js';
 import { Panel, PageHeader, EmptyState, Notice, Disclosure, PageSkeleton } from '../components/Surface.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip.js';
 import { Switch } from '../components/ui/switch.js';
@@ -6,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.
 import { Button } from '../components/ui/button.js';
 import { t } from '../i18n.js';
 import { Icon } from '../components/Icon.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import type { WorkspaceModel } from '../model.js';
 import { api, errorText } from '../api.js';
@@ -29,6 +30,8 @@ export function Dashboard({ model, active, notify, navigate }: {
     notify: (text: string) => void;
     navigate: (path: string) => void;
 }) {
+    const pageRef = useRef<HTMLElement>(null);
+    usePageMotion(pageRef, !!model.data, active, 'workspace');
     const { data, error, busy, loadedAt, mutate } = model;
     const [chartVisited, setChartVisited] = useState(active);
     useEffect(() => { if (active)
@@ -101,7 +104,7 @@ export function Dashboard({ model, active, notify, navigate }: {
     function openConfirm(action: ConfirmAction) { setActionError(''); setConfirm(action); }
     const rearmTick = confirm && confirm.kind === 'rearm' ? data.status.prices.find(item => sameMarket(item.instrument, confirm.alert.instrument)) : undefined;
     const rearmHit = confirm && confirm.kind === 'rearm' && breached(confirm.alert.side, confirm.alert.threshold, rearmTick);
-    return <section className="route-surface" hidden={!active} aria-label={t("行情与警报")}>
+    return <section ref={pageRef} className="route-surface" hidden={!active} aria-label={t("行情与警报")}>
     <PageHeader className="page-heading"><h1>{t("行情与警报")}</h1><Button variant="default" className="primary" onClick={() => setEditor({ alert: null })} disabled={busy || !available || !!error || data.alerts.length >= 20}><Icon name="plus"/>{t("创建警报")}</Button></PageHeader>
     <div className="market-header"><div className="market-title"><h2>{identity.base || identity.nativeId || '—'} <span className="quote">/ {identity.quote || '—'}</span></h2><span className="contract">{source} · {identity.type ? typeLabels[identity.type] : t("市场类型未知")}</span></div><div className="price-block"><strong>{tick ? formatPrice(tick.price) : '—'}{tick && <small className="price-unit"> {marketQuote(selected, market)}</small>}</strong><span>{tick ? `${fresh ? t("{0} 最新报价", source) : t("报价更新暂停")} · ${formatTime(tick.observedAt)}` : quoteState.error ? t("报价暂时不可用") : t("正在获取所选市场报价…")}</span></div><div className="health"><span className={`dot ${fresh ? 'live' : 'stale'}`}/><span>{fresh ? t("报价已更新") : tick ? t("报价待更新") : t("等待市场报价")}</span><small>{t("今日通知尝试 ")}{data.status.daily.attempts} / {data.status.daily.limit}</small></div></div>
     {quoteState.error && <Notice as="p" className="warning inline-warning" role="status">{t("行情报价更新失败，将自动重试。")}{quoteState.error}</Notice>}
@@ -125,12 +128,12 @@ export function Dashboard({ model, active, notify, navigate }: {
     <p className="history-note">{t("查看市场时每 5 秒更新报价，无需创建警报。后台监控仅采集启用且未锁定规则所需的成交价；参考报价不会触发警报。近期无成交不代表断线。")}</p>
     </Disclosure>
     {!confirm && <FormError message={actionError}/>}
-    {editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} onClose={() => setEditor(null)} notify={notify}/>}
-    {confirm && <Dialog title={confirm.kind === 'disable' ? t("暂停所有监控？") : confirm.kind === 'delete' ? t("删除这条警报？") : t("重新武装这条警报？")} onClose={() => setConfirm(null)} busy={busy}>
+    <DialogPresence present={!!editor}>{editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} onClose={() => setEditor(null)} notify={notify}/>}</DialogPresence>
+    <DialogPresence present={!!confirm}>{confirm && <Dialog title={confirm.kind === 'disable' ? t("暂停所有监控？") : confirm.kind === 'delete' ? t("删除这条警报？") : t("重新武装这条警报？")} onClose={() => setConfirm(null)} busy={busy}>
       <p>{confirm.kind === 'disable' ? t("暂停后不再触发新通知，并取消仍在队列中的投递。已经开始发送的请求无法撤回，结果可能不确定。") : confirm.kind === 'delete' ? t("将删除「{0}」。历史投递记录由后台保留。", confirm.alert.name) : t("「{0}」将解除触发锁定。之后首次满足条件的新鲜价格会再次触发。", confirm.alert.name)}</p>
       {confirm.kind === 'rearm' && confirm.alert.last?.outcome === 'uncertain' && <Notice as="p" className="warning">{t("上次投递结果不确定，可能已经送达。请先查看手机，再决定是否重新武装。")}</Notice>}
       {rearmHit && <Notice as="p" className="warning">{t("当前新鲜成交价已经满足条件，重新武装后可能立即再次触发。")}</Notice>}
       <FormError message={actionError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setConfirm(null)}>{t("取消")}</Button><Button variant="default" className="primary" disabled={busy} onClick={() => void confirmAction()}>{busy ? t("正在处理…") : confirm.kind === 'disable' ? t("暂停监控") : confirm.kind === 'delete' ? t("删除警报") : t("重新武装")}</Button></div>
-    </Dialog>}
+    </Dialog>}</DialogPresence>
   </section>;
 }

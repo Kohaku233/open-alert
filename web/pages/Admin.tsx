@@ -1,8 +1,9 @@
+import { usePageMotion, DialogPresence } from '../motion.js';
 import { Panel, PageHeader, Notice, Disclosure, ListSkeleton } from '../components/Surface.js';
 import { Button } from '../components/ui/button.js';
 import { Invitations } from '../components/Invitations.js';
 import { t } from '../i18n.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { UserIdentity, SystemStatus } from '../../src/contracts/domain.js';
 import type { Paginated } from '../../src/contracts/api.js';
 import type { WorkspaceModel } from '../model.js';
@@ -18,6 +19,8 @@ export function Admin({ model, notify }: {
     model: WorkspaceModel;
     notify: (text: string) => void;
 }) {
+    const pageRef = useRef<HTMLElement>(null);
+    usePageMotion(pageRef, !!model.data, true, 'settings');
     const [users, setUsers] = useState<UserIdentity[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
     const [adminStatus, setAdminStatus] = useState<AdminStatus | null>(null);
@@ -63,7 +66,7 @@ export function Admin({ model, notify }: {
     }
     if (!canAdmin)
         return <section className="page-loading"><h1>{t("管理")}</h1><p>{t("此页面仅供管理员使用。")}</p></section>;
-    return <section className="settings-page"><PageHeader className="page-heading"><div><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></PageHeader>
+    return <section ref={pageRef} className="settings-page"><PageHeader className="page-heading"><div><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></PageHeader>
     <FormError message={error}/>
     <div className="admin-overview"><span>{t("活跃账户 ")}<strong>{adminStatus?.activeUsers ?? '—'}</strong></span><span>{t("活跃警报 ")}<strong>{adminStatus?.activeAlerts ?? '—'}</strong></span><span>{t("运行状态 ")}<strong>{adminStatus ? healthLabels[adminStatus.health.overall] : t("读取中")}</strong></span></div>
     <div className="admin-grid"><Invitations model={model} notify={notify}/>
@@ -81,6 +84,6 @@ export function Admin({ model, notify }: {
         } })[key]}：{healthLabels[adminStatus.health[key].state]}</span>)}</div>}
       </Panel></div>
     <section className="users-section"><div className="history-heading"><h2>{t("账户列表")}</h2><span>{t("每页最多 50 个账户")}</span></div>{loading && !users.length ? <ListSkeleton label={t("正在读取账户…")}/> : users.length ? <div className="users-list">{users.map(user => <article className="user-row" key={user.id}><div><strong>{user.email}</strong><small>{user.name || t("未设置名称")} · {user.role === 'admin' ? t("管理员") : t("普通用户")}</small></div><span className={user.disabled ? 'amber-text' : 'success-text'}>{user.disabled ? t("已停用") : t("可用")}</span><Button disabled={model.busy || loading || !!model.error} onClick={() => { setTarget(user); setTargetError(''); }}>{user.disabled ? t("恢复账户") : t("停用账户")}</Button></article>)}</div> : <p className="muted">{t("没有可显示的账户。")}</p>}{cursor && <Button disabled={loading || model.busy} onClick={() => void load(cursor)}>{loading ? t("正在读取…") : t("加载更多账户")}</Button>}</section>
-    {target && <Dialog title={target.disabled ? t("恢复此账户？") : t("停用此账户？")} onClose={() => setTarget(null)} busy={model.busy}><p>{target.email}</p><p className="small muted">{target.disabled ? t("账户将恢复登录与使用。监控仍按其已保存设置运行。") : t("停用后撤销登录会话并阻止新的通知投递。已经发送的请求无法撤回。")}</p>{target.id === model.data?.status.user.id && <Notice as="p" className="warning">{t("这是当前登录的账户，停用后将无法继续管理本站。")}</Notice>}<FormError message={targetError}/><div className="confirm-actions"><Button disabled={model.busy} onClick={() => setTarget(null)}>{t("取消")}</Button><Button variant="default" className="primary" disabled={model.busy} onClick={() => void toggleUser()}>{model.busy ? t("正在处理…") : target.disabled ? t("恢复账户") : t("停用账户")}</Button></div></Dialog>}
+    <DialogPresence present={!!target}>{target && <Dialog title={target.disabled ? t("恢复此账户？") : t("停用此账户？")} onClose={() => setTarget(null)} busy={model.busy}><p>{target.email}</p><p className="small muted">{target.disabled ? t("账户将恢复登录与使用。监控仍按其已保存设置运行。") : t("停用后撤销登录会话并阻止新的通知投递。已经发送的请求无法撤回。")}</p>{target.id === model.data?.status.user.id && <Notice as="p" className="warning">{t("这是当前登录的账户，停用后将无法继续管理本站。")}</Notice>}<FormError message={targetError}/><div className="confirm-actions"><Button disabled={model.busy} onClick={() => setTarget(null)}>{t("取消")}</Button><Button variant="default" className="primary" disabled={model.busy} onClick={() => void toggleUser()}>{model.busy ? t("正在处理…") : target.disabled ? t("恢复账户") : t("停用账户")}</Button></div></Dialog>}</DialogPresence>
   </section>;
 }

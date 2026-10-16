@@ -8,7 +8,8 @@ colors:
   line: "#333333"
   text: "#ededed"
   muted: "#a3a3a3"
-  accent: "#b6f36a"
+  accent: "#303030"
+  signal: "#b6f36a"
   amber: "#f1bd72"
   danger: "#ffb4b4"
   control-border: "#555555"
@@ -26,7 +27,7 @@ appearance:
   light-text: "#171717"
   light-muted: "#616161"
   light-line: "#dedede"
-  light-accent: "#3f6212"
+  light-signal: "#3f6212"
   tokens: web/appearance.css
   persistence: explicit choices only
 language:
@@ -202,7 +203,20 @@ At 600px, buttons have minimum width and height of 44px and fields have minimum 
 
 Flat panels use tonal separation and one-pixel borders rather than shadows. Temporary toasts use `0 6px 32px #0006`; dialogs use `0 20px 80px #0007` with a `#000a` backdrop. These overlays carry depth while the persistent workbench remains flat.
 
-Controls transition colors over 140ms. A page arrives as one surface over 220ms with a 5px translation and a shallow clip reveal using `cubic-bezier(.16,1,.3,1)`. Dialogs and popovers open in 160–200ms; Radix disclosures animate their measured height in 200ms. Shared Skeletons breathe over 1.8s and Spinner indicates pending requests. Reduced-motion preferences stop looping animation and make transitions immediate; hidden pages pause loaders. Background refresh preserves content and never replays a page entrance or remounts the chart.
+GSAP 3.15 and @gsap/react own the motion system in `web/motion.tsx`; CSS defines
+resting states and 120ms color feedback. The focal sequence is the workbench
+becoming ready: the market summary reveals in place and the alert controls
+settle over 340ms. The official chart itself never translates or scales. Login
+uses a single 420ms sequence in the existing signal bars. A measured navigation
+underline and tab segment move over 280ms to preserve location across routes.
+
+Floating surfaces use reversible timelines (240ms in, 140ms out), including
+interruptions. Dialog subtrees remain mounted only through their exit. Dropdown
+focus returns on semantic close rather than waiting for a visual fade. A
+disclosure measures one region and expands in 240ms; monitoring switches move
+in 180ms. Skeletons breathe over 1.8s and spinners rotate in 1s, only while
+visible. Reduced motion changes state immediately and stops loops. All hooks
+scope and revert their contexts. Polling never replays readiness animations.
 
 ## Shapes
 
@@ -257,3 +271,11 @@ configuration and retains its 4-hour default. Changing theme or language recreat
 the official embed; ordinary polling and navigation keep it mounted. Client
 language detection supports Chinese and English; an explicit choice takes
 precedence. Automatic defaults never write localStorage.
+
+Theme colors change together without independent background/foreground fades.
+Canonical shadcn variables own component color; functional green uses `signal`,
+separate from the neutral `accent` selection surface. Legacy global control
+styling is removed, and layout CSS sits below component utilities in the
+cascade. Inputs, menus, dialogs and Sonner notifications share these tokens.
+TradingView replaces its embed before paint when theme changes, showing a
+matching loading surface until the new official widget has loaded.

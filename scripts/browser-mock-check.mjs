@@ -200,7 +200,7 @@ const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
-const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 80 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 80000);
+const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 120 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 120000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
@@ -356,6 +356,9 @@ try {
     await page.getByRole('button',{name:'重新读取当前设置'}).click(); await page.getByLabel('每日通知尝试上限').fill('18');
     await page.getByRole('button',{name:'保存提醒设置'}).click(); await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知设置已保存'})).toBeVisible();
     await check('fresh settings generation', async () => assert.equal(requests(state,'PATCH','/api/settings').at(-1).expectedGeneration,1));
+    // This reused page freezes time after GSAP cached native RAF. Test cooldowns with
+    // reduced motion here; the real-clock GSAP journeys below cover normal exits.
+    await page.emulateMedia({reducedMotion:'reduce'});
     await page.clock.install(); await page.clock.pauseAt(new Date());
     state.failNext={path:'/api/test-notification',method:'POST',code:'rate_limited',status:429,headers:{'Retry-After':'10'}};
     const businessCount = () => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities').length;
@@ -378,6 +381,7 @@ try {
     await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
     await check('expired POST requires explicit manual retry', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
     await page.clock.resume();
+    await page.emulateMedia({reducedMotion:'no-preference'});
     await nav(page,'行情与警报');
     let release; state.holdSettings={wait:new Promise(r=>{release=r;})};
     await page.getByRole('switch').click();
@@ -458,7 +462,7 @@ try {
     await mobile.context.close();
   });
   await journey('11 HTTP-date cooldown, blocked editor, delayed read coalescing and unmount abort', async () => {
-    const fixture = await setup(browser,'desktop',true), p = fixture.page, s = fixture.state;
+    const fixture = await setup(browser,'desktop',true,{reducedMotion:'reduce'}), p = fixture.page, s = fixture.state;
     const time = new Date('2026-10-12T12:00:00.000Z');
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
@@ -509,7 +513,7 @@ try {
     releaseUnmount(); await fixture.context.close();
   });
   await journey('12 invalid/missing/past Retry-After fallback, non-JSON 429 and independent auth/OTP', async () => {
-    const fixture = await setup(browser,'desktop',true), p = fixture.page, s = fixture.state;
+    const fixture = await setup(browser,'desktop',true,{reducedMotion:'reduce'}), p = fixture.page, s = fixture.state;
     const time = new Date('2026-10-12T14:00:00.000Z');
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
@@ -822,15 +826,97 @@ try {
       await fixture.context.close();
     }
   });
+  for (const profile of ['desktop','mobile']) await journey('atomic theme colors and GSAP interruption, focus and cleanup ('+profile+')',async()=>{
+    const f=await setup(browser,profile,true,{locale:'en-GB',colorScheme:'light'}),p=f.page,s=f.state;
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    await p.getByRole('button',{name:'Create alert',exact:true}).click();
+    await expect(p.locator('[data-slot="dialog-content"]')).toHaveAttribute('data-motion-state','settled');
+    await p.getByLabel('Alert name').fill('Unsent draft');
+    await p.evaluate(()=>{
+      window.__themeFrames=[];
+      const observe=()=>{
+        const colors=selector=>{const n=document.querySelector(selector);if(!n)return null;const c=getComputedStyle(n);return{bg:c.backgroundColor,text:c.color,border:c.borderColor};};
+        window.__themeFrames.push({theme:document.documentElement.dataset.theme,body:colors('body'),dialog:colors('[data-slot="dialog-content"]'),input:colors('[data-slot="dialog-content"] [data-slot="input"]'),select:colors('[data-slot="dialog-content"] [data-slot="select-trigger"]'),primary:colors('[data-slot="dialog-content"] [data-variant="default"]')});
+      };
+      window.__themeObserver=new MutationObserver(observe);
+      window.__themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+      observe();
+    });
+    for(const theme of ['dark','light']) {
+      await p.emulateMedia({colorScheme:theme});await expect(p.locator('html')).toHaveAttribute('data-theme',theme);
+      await check('theme stays coherent in the first changed frame ('+theme+')',async()=>{
+        const sample=await p.evaluate(()=>window.__themeFrames.at(-1));
+        assert.equal(sample.theme,theme);
+        assert.equal(sample.body.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(17, 17, 17)');
+        assert.equal(sample.body.text,theme==='light'?'rgb(23, 23, 23)':'rgb(237, 237, 237)');
+        assert.equal(sample.dialog.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(28, 28, 28)');
+        assert.equal(sample.input.bg,theme==='light'?'rgb(245, 245, 245)':'rgb(32, 32, 32)');
+        assert.equal(sample.select.bg,sample.input.bg);assert.equal(sample.select.text,sample.input.text);
+        assert.equal(sample.primary.bg,sample.body.text);assert.equal(sample.primary.text,sample.body.bg);
+        await expect(p.getByLabel('Alert name')).toHaveValue('Unsent draft');
+      });
+      await p.getByRole('combobox',{name:'Trigger condition',exact:true}).click();
+      await expect(p.locator('[data-slot="select-content"]')).toHaveAttribute('data-motion-state','settled');
+      await check('portalled select follows the same palette',async()=>{
+        const c=await p.locator('[data-slot="select-content"]').evaluate(n=>({bg:getComputedStyle(n).backgroundColor,color:getComputedStyle(n).color}));
+        assert.equal(c.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(28, 28, 28)');
+        assert.equal(c.color,theme==='light'?'rgb(23, 23, 23)':'rgb(237, 237, 237)');
+      });
+      await p.keyboard.press('Escape');await expect(p.locator('[data-slot="select-content"]')).toHaveCount(0);
+      await expect(p.getByRole('combobox',{name:'Trigger condition',exact:true})).toContainText('At or above');
+    }
+    await p.evaluate(()=>window.__themeObserver.disconnect());
+    await p.keyboard.press('Escape');await expect(p.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+    await check('focus returns after the actual GSAP exit',()=>expect(p.getByRole('button',{name:'Create alert',exact:true})).toBeFocused());
+    for(let cycle=0;cycle<5;cycle++) {
+      await p.getByRole('button',{name:'Create alert',exact:true}).click();
+      await expect(p.locator('[data-slot="dialog-content"]')).toBeVisible();
+      await p.keyboard.press('Escape');await expect(p.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+    }
+    await p.locator('.market-search-trigger').first().click();
+    await expect(p.getByRole('combobox',{name:'Search markets',exact:true})).toBeFocused();
+    await expect(p.locator('[data-slot="popover-content"]')).toHaveAttribute('data-motion-state','settled');
+    await p.locator('[data-slot="popover-content"]').evaluate(n=>{n.dataset.retainedForTest='yes';});
+    // Close/reopen in the same event turn: the existing timeline must reverse cleanly.
+    await p.evaluate(()=>{const trigger=document.querySelector('.market-search-trigger');trigger.click();queueMicrotask(()=>trigger.click());});
+    await expect(p.locator('[data-slot="popover-content"]')).toHaveAttribute('data-motion-state','settled');
+    await expect(p.locator('[data-slot="popover-content"]')).toHaveAttribute('data-retained-for-test','yes');
+    await p.keyboard.press('Escape');await expect(p.locator('[data-slot="popover-content"]')).toHaveCount(0);
+    const chartBefore=await p.evaluate(()=>window.__mockChartConfigs.length);
+    const runsBefore=await p.locator('.route-surface').getAttribute('data-motion-runs');
+    const readsBefore=requests(s,'GET','/api/status').length;
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(()=>requests(s,'GET','/api/status').length).toBeGreaterThan(readsBefore);
+    await check('background refresh does not replay entrances or reset the chart',async()=>{assert.equal(await p.locator('.route-surface').getAttribute('data-motion-runs'),runsBefore);assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),chartBefore);});
+    await p.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
+    await expect(p.getByRole('heading',{name:'Pushover connection',exact:true})).toBeVisible();
+    await expect(p.locator('.settings-page')).toHaveAttribute('data-motion-state','settled');
+    await check('navigation underline tracks the actual active link',async()=>{
+      const bounds=await p.locator('.app-nav').evaluate(n=>{const a=n.querySelector('[aria-current="page"]').getBoundingClientRect(),i=n.querySelector('.nav-indicator').getBoundingClientRect();return{left:Math.abs(a.left-i.left),width:Math.abs(a.width-i.width)};});assert(bounds.left<1&&bounds.width<1,JSON.stringify(bounds));
+    });
+    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
+    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toHaveAttribute('data-motion-state','settled');
+    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toBeHidden();
+    await p.emulateMedia({reducedMotion:'reduce'});
+    await p.getByRole('button',{name:'Create alert',exact:true}).click();
+    await check('reduced motion keeps the form visible and immediately usable',async()=>{await expect(p.locator('[data-slot="dialog-content"]')).toHaveAttribute('data-motion-state','settled');await p.getByLabel('Alert name').fill('Reduced-motion draft');await expect(p.getByLabel('Alert name')).toHaveValue('Reduced-motion draft');});
+    await p.keyboard.press('Escape');await expect(p.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+    const motionPath=[...assets.keys()].find(path=>path.startsWith('/assets/motion-'));
+    await check('GSAP is installed and no tween retains a detached DOM target',async()=>{
+      const status=await p.evaluate(async path=>{const module=await import(path);const engine=Object.values(module).find(value=>value&&value.globalTimeline&&value.matchMedia);if(!engine)return{found:false};const tweens=engine.globalTimeline.getChildren(true,true,false);return{found:true,version:engine.version,detached:tweens.flatMap(t=>t.targets()).filter(n=>n instanceof Element&&!n.isConnected).length};},motionPath);
+      assert(status.found);assert.equal(status.version,'3.15.0');assert.equal(status.detached,0);
+    });
+    await noOverflow(p);await f.context.close();
+  });
   await check('no runtime JS errors', async () => assert.deepEqual(runtimeErrors,[]));
   await check('no unknown API or schema violations', async () => assert.deepEqual(violations,[]));
   await check('no external requests except intercepted embed', async () => assert.deepEqual(externalAttempts,[]));
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===24&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===26&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/24 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/26 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

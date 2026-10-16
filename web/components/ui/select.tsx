@@ -1,12 +1,18 @@
 "use client"
 
 import * as React from "react"
+import { FloatingOpenContext, FloatingTriggerContext, mergeRefs, useFloatingFocus, useFloatingMotion, useMotionPresence, useOpenState } from '../../motion.js'
+
 import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "../../lib/utils.js"
 
-const Select = SelectPrimitive.Root
+function Select({ open, defaultOpen, onOpenChange, ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [current, change] = useOpenState({ open, defaultOpen, onOpenChange });
+  const trigger = React.useRef<HTMLButtonElement>(null);
+  return <FloatingOpenContext value={current}><FloatingTriggerContext value={trigger}><SelectPrimitive.Root open={current} onOpenChange={change} {...props}/></FloatingTriggerContext></FloatingOpenContext>;
+}
 
 const SelectGroup = SelectPrimitive.Group
 
@@ -15,10 +21,11 @@ const SelectValue = SelectPrimitive.Value
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger
+>(({ className, children, ...props }, ref) => {
+  const trigger = React.useContext(FloatingTriggerContext);
+  return <SelectPrimitive.Trigger
     data-slot="select-trigger"
-    ref={ref}
+    ref={mergeRefs(trigger, ref)}
     className={cn(
       "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
       className
@@ -30,7 +37,7 @@ const SelectTrigger = React.forwardRef<
       <ChevronDown className="h-4 w-4 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
-))
+})
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
 
 const SelectScrollUpButton = React.forwardRef<
@@ -71,17 +78,31 @@ SelectScrollDownButton.displayName =
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
+>(({ className, children, position = "popper", sideOffset = 8, onCloseAutoFocus, onPointerDownOutside, ...props }, ref) => {
+  const open = React.useContext(FloatingOpenContext);
+  const { present, finish } = useMotionPresence(open);
+  const local = React.useRef<HTMLDivElement>(null);
+  const focus = useFloatingFocus(open, local);
+  const attach = useFloatingMotion(local, open, present, finish, 'popover', undefined, ref);
+  // Keep Radix's detached collection mounted so SelectValue retains the selected label.
+  if (!present) return <SelectPrimitive.Content>{children}</SelectPrimitive.Content>;
+  return (
+  <SelectPrimitive.Portal forceMount>
     <SelectPrimitive.Content
-      ref={ref}
+      forceMount
+      data-slot="select-content"
+      inert={!open}
+      ref={attach}
+      onCloseAutoFocus={event => { onCloseAutoFocus?.(event); focus.preventLateFocus(event); }}
+      onPointerDownOutside={event => { onPointerDownOutside?.(event); focus.trackOutside(event); }}
       className={cn(
-        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
+        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md origin-[--radix-select-content-transform-origin]",
         position === "popper" &&
-          "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+          "",
         className
       )}
       position={position}
+      sideOffset={sideOffset}
       {...props}
     >
       <SelectScrollUpButton />
@@ -97,7 +118,8 @@ const SelectContent = React.forwardRef<
       <SelectScrollDownButton />
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
-))
+);
+})
 SelectContent.displayName = SelectPrimitive.Content.displayName
 
 const SelectLabel = React.forwardRef<
@@ -117,6 +139,7 @@ const SelectItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
+    data-slot="select-item"
     ref={ref}
     className={cn(
       "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
@@ -129,7 +152,7 @@ const SelectItem = React.forwardRef<
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    <SelectPrimitive.ItemText className="select-item-text">{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName

@@ -1,3 +1,4 @@
+import { DialogPresence } from '../motion.js';
 import { Panel, Notice, ListSkeleton } from './Surface.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -113,6 +114,6 @@ export function Invitations({ model, notify }: { model: WorkspaceModel; notify: 
           </li>;
       })}</ul>}
       {cursor && <Button disabled={loading || busy} onClick={() => void load(cursor)}>{t('加载更多邀请')}</Button>}
-      {target && <Dialog title={t('撤销此邀请？')} onClose={() => setTarget(null)} busy={busy}><p className="invitation-address">{target.email}</p><p>{t('撤销后，此邮箱不能再凭该邀请注册。已经发出的邮件无法撤回。')}</p><FormError message={targetError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setTarget(null)}>{t('取消')}</Button><Button variant="destructive" disabled={busy} onClick={() => void revoke()}>{action === 'revoke' ? t('正在处理…') : t('确认撤销')}</Button></div></Dialog>}
+      <DialogPresence present={!!target}>{target && <Dialog title={t('撤销此邀请？')} onClose={() => setTarget(null)} busy={busy}><p className="invitation-address">{target.email}</p><p>{t('撤销后，此邮箱不能再凭该邀请注册。已经发出的邮件无法撤回。')}</p><FormError message={targetError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setTarget(null)}>{t('取消')}</Button><Button variant="destructive" disabled={busy} onClick={() => void revoke()}>{action === 'revoke' ? t('正在处理…') : t('确认撤销')}</Button></div></Dialog>}</DialogPresence>
     </Panel>;
 }

@@ -14,6 +14,7 @@ export default defineConfig({
     outDir: 'dist/web', emptyOutDir: true,
     rolldownOptions: { output: { codeSplitting: { minSize: 20_000, groups: [
       { name: 'react', test: /[\\/]node_modules[\\/](?:react|react-dom|scheduler)[\\/]/, priority: 30 },
+      { name: 'motion', test: /[\\/]node_modules[\\/](?:gsap|@gsap)[\\/]/, priority: 25 },
       { name: 'ui', test: /[\\/]node_modules[\\/](?:@radix-ui|cmdk|sonner|lucide-react)[\\/]/, priority: 20 },
       { name: 'vendor', test: /[\\/]node_modules[\\/]/, priority: 10 },
     ] } } },

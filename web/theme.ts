@@ -10,9 +10,18 @@ function readPreference(): ThemePreference {
 }
 let preference = readPreference();
 export function getTheme() { return preference === 'system' ? media?.matches ? 'dark' : 'light' : preference; }
+let themeFrame = 0;
 function apply() {
   if (typeof document !== 'undefined') {
     const theme = getTheme();
+    const root = document.documentElement;
+    if (root.dataset.theme !== theme) {
+      cancelAnimationFrame(themeFrame);
+      root.dataset.themeChanging = 'true';
+      // Flush the transition barrier before applying any new foreground/background tokens.
+      void root.offsetWidth;
+      themeFrame = requestAnimationFrame(() => { themeFrame = requestAnimationFrame(() => { delete root.dataset.themeChanging; }); });
+    }
     document.documentElement.dataset.theme = theme;
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.style.colorScheme = theme;
