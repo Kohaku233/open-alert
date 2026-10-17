@@ -11,7 +11,7 @@ import { EmailDeliveryError } from '../auth/email.js';
 import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
-import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from './markets.js';
+import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
 type Env = { Variables: { requestId: string; principal: SessionPrincipal } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
@@ -134,11 +134,22 @@ export function createApi(d:ApiDependencies) {
   });
   app.get('/api/markets',async c=>{
     const raw=c.req.queries();
-    if(Object.keys(raw).length===0)return ok(c,catalogDirectory(await d.catalog.get()));
-    if(Object.values(raw).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
-    const query=marketQuerySchema.safeParse(c.req.query());
-    if(!query.success)throw new HttpError(400,'invalid_request',fields(query.error));
-    return ok(c,searchMarkets(await d.catalog.get(),query.data));
+    let query:MarketQuery|null=null;
+    if(Object.keys(raw).length){
+      if(Object.values(raw).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
+      const parsed=marketQuerySchema.safeParse(c.req.query());
+      if(!parsed.success)throw new HttpError(400,'invalid_request',fields(parsed.error));
+      query=parsed.data;
+    }
+    if(d.catalog.response){
+      const response=await d.catalog.response(query,c.get('requestId'));
+      if(response.status!==200)throw new HttpError(503,'service_unavailable');
+      // Preserve prepared API security/trace headers while forwarding the body
+      // stream, without decoding the full directory in this process.
+      return c.newResponse(response.body,{status:200,headers:response.headers});
+    }
+    const snapshot=await d.catalog.get();
+    return ok(c,query?searchMarkets(snapshot,query):catalogDirectory(snapshot));
   });
   app.get('/api/quote',async c=>{
     if(Object.values(c.req.queries()).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');

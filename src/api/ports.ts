@@ -2,6 +2,7 @@ import type { AppConfig } from '../config.js';
 import type { OpenAlertAuth } from '../auth/index.js';
 import type { ChannelRecord, Repositories, SqlDatabase } from '../contracts/db.js';
 import type { ComponentHealth, EncryptedSecret, Market, PriceTick, SystemStatus } from '../contracts/domain.js';
+import type { MarketQuery } from './markets.js';
 export interface CatalogSource { type?: 'spot' | 'swap'; venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
 export type CatalogMarket = Market & { available?: boolean };
 export interface CatalogSnapshot {
@@ -18,7 +19,12 @@ export interface NotificationPort {
 }
 export interface ApiDependencies {
   config: AppConfig; db: SqlDatabase; repositories: Repositories; auth: OpenAlertAuth;
-  catalog: { get(): Promise<CatalogSnapshot>; resolve?(instrument: string): Promise<{ market: CatalogMarket | null; stale: boolean; available: boolean }> };
+  catalog: {
+    get(): Promise<CatalogSnapshot>;
+    /** A trusted coordinator can prepare the envelope without reparsing a full directory at the edge. */
+    response?(query: MarketQuery | null, requestId: string): Promise<Response>;
+    resolve?(instrument: string): Promise<{ market: CatalogMarket | null; stale: boolean; available: boolean }>;
+  };
   quotes?: { get(market: Market): Promise<import('../markets/quotes.js').MarketQuote> };
   runtime: { snapshot(): Promise<RuntimeSnapshot> };
   notifications: NotificationPort;

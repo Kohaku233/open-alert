@@ -112,6 +112,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
       if (!loggedIn) return fail('unauthenticated', 401);
       if (state.failNext && state.failNext.path === path && state.failNext.method === method) {
         const error = state.failNext; state.failNext = null;
+        if(error.invalidateSession)state.sessionInvalid=true;
         if (error.wait) await error.wait;
         if (error.bump) state.status.settingsGeneration++;
         if (error.raw) return route.fulfill({status:error.status,headers:error.headers,contentType:'text/html',body:'<h1>MOCK rate limit</h1>'});
@@ -133,7 +134,10 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         catch(error) { if(/Target page, context or browser has been closed|Execution context was destroyed/.test(error.message))return;throw error; }
         return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
       }
-      if (path === '/api/markets' && method === 'GET') return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
+      if (path === '/api/markets' && method === 'GET') {
+        if(state.catalogFail)return route.fulfill({status:503,contentType:'text/html',headers:{'CF-Ray':'mock-catalog-HKG'},body:'<h1>Worker exceeded resource limits</h1>'});
+        return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
+      }
       if (path === '/api/alerts' && method === 'GET') return ok({ alerts: state.alerts });
       if (path === '/api/alerts' && method === 'POST') {
         const input = F.createAlertSchema.parse(body); assert(state.markets.some(m => m.instrument === input.instrument));
@@ -423,6 +427,42 @@ try {
     const manualBefore=requests(s,'GET','/api/markets').length;
     await p.getByRole('button',{name:'重新读取状态',exact:true}).click();await expect(p.locator('.connection-error')).toHaveCount(0);
     await check('manual retry refreshes cached catalog immediately',async()=>assert.equal(requests(s,'GET','/api/markets').length,manualBefore+1));
+    await cached.context.close();
+  });
+  await journey('07c directory outage keeps status/alerts live, backs off and recovers without hiding auth or rate limits', async () => {
+    const cached=await setup(browser,'desktop',true,{reducedMotion:'reduce'}),p=cached.page,s=cached.state;
+    await p.clock.install({time:new Date()});await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    const catalogsBefore=requests(s,'GET','/api/markets').length;
+    const advance=async(seconds)=>{for(let i=0;i<seconds/5;i++){await p.clock.runFor(5000);await new Promise(resolve=>setTimeout(resolve,65));}};
+    s.catalogFail=true;s.alerts[0].name='MOCK 目录故障期间更新';
+    await advance(65);
+    await check('cached directory marked stale while fresh alerts still commit',async()=>{
+      await expect(p.getByText('市场目录已过期，新增市场仍需服务端确认支持。')).toBeVisible();
+      await expect(p.getByText('MOCK 目录故障期间更新',{exact:true})).toBeVisible();
+      await expect(p.locator('.connection-error')).toHaveCount(0);
+    });
+    const statusBefore=requests(s,'GET','/api/status').length;
+    await advance(50);
+    await check('catalog failure does not retry every five seconds',async()=>{
+      assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+1);
+      assert(requests(s,'GET','/api/status').length>=statusBefore+9);
+    });
+    await advance(15);assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+2);
+    s.catalogFail=false;await advance(65);
+    await check('second metadata failure uses longer retry delay',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+2));
+    await advance(65);
+    await check('catalog automatically recovers and clears stale marker',async()=>{
+      assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+3);
+      await expect(p.getByText('市场目录已过期，新增市场仍需服务端确认支持。')).toHaveCount(0);
+    });
+    s.failNext={path:'/api/markets',method:'GET',status:429,code:'rate_limited',headers:{'Retry-After':'30'}};
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await check('directory 429 still activates global business cooldown',()=>expect(p.locator('.connection-error')).toContainText('请求过于频繁'));
+    const limited=businessRequests(s).length;await advance(20);assert.equal(businessRequests(s).length,limited);
+    await advance(15);await expect(p.locator('.connection-error')).toHaveCount(0);
+    s.failNext={path:'/api/markets',method:'GET',status:401,code:'unauthenticated',invalidateSession:true};
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await check('cached directory never masks expired login',()=>expect(p.getByRole('heading',{name:'登录或注册',exact:true})).toBeVisible());
     await cached.context.close();
   });
   await journey('08 logout expires native cookie and discards delayed workspace response', async () => {
@@ -914,9 +954,9 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===26&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===27&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/26 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/27 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

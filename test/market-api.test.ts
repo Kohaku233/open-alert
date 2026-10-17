@@ -39,8 +39,32 @@ function fixture() {
  const app=createApi(dependencies);
  const call=(path:string,method='GET',body?:unknown)=>app.request(`${config.appUrl}${path}`,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
  const data=async(path:string)=>{const response=await call(path);assert.equal(response.status,200,await response.clone().text());return (await response.json() as any).data;};
- return {call,data,records,alert,setCatalog:(value:CatalogSnapshot)=>{catalog=value;},catalog:()=>catalog,reads:()=>catalogReads,writes:()=>writes,wakes:()=>wakes,setAnonymous:()=>{anonymous=true;}};
+ return {dependencies,call,data,records,alert,setCatalog:(value:CatalogSnapshot)=>{catalog=value;},catalog:()=>catalog,reads:()=>catalogReads,writes:()=>writes,wakes:()=>wakes,setAnonymous:()=>{anonymous=true;}};
 }
+
+test('coordinator directory response streams after authentication and query validation without a second catalog parse',async()=>{
+ const f=fixture();let calls=0;
+ f.dependencies.catalog.response=async(query,requestId)=>{
+  calls++;assert.match(requestId,/^[0-9a-f-]{36}$/);
+  if(query){assert.equal(query.venue,'mexc');assert.equal(query.limit,3);}
+  const body=JSON.stringify({ok:true,data:{markets:Array.from({length:10000},()=>markets[0]),stale:false,updatedAt:1000},requestId});
+  const response=new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(body));controller.close();}}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+  response.json=async()=>{assert.fail('Edge must not parse the coordinator directory');};
+  response.text=async()=>{assert.fail('Edge must not buffer the coordinator directory');};
+  return response;
+ };
+ const response=await f.call('/api/markets');assert.equal(response.status,200);
+ assert.equal(response.headers.get('cache-control'),'no-store');
+ assert.equal(response.headers.get('X-Content-Type-Options'),'nosniff');
+ const envelope=JSON.parse(new TextDecoder().decode(await response.arrayBuffer()));
+ assert.equal(envelope.data.markets.length,10000);assert.equal(envelope.requestId,response.headers.get('X-Request-ID'));
+ assert.equal((await f.call('/api/markets?venue=mexc&limit=3')).status,200);
+ assert.equal(f.reads(),0);assert.equal(calls,2);
+ assert.equal((await f.call('/api/markets?limit=1000')).status,400);
+ assert.equal((await f.call('/api/markets?venue=mexc&venue=okx')).status,400);
+ assert.equal(calls,2);
+ f.setAnonymous();assert.equal((await f.call('/api/markets')).status,401);assert.equal(calls,2);
+});
 
 test('market directory stays complete, bounded search filters venue/product and exact lookup never aliases a market',async()=>{
  const f=fixture();

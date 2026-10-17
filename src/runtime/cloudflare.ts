@@ -16,7 +16,7 @@ import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { createVercelBinanceSource } from '../markets/vercel-relay.js';
 import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js';
-import { marketAvailable, marketSourceStale } from '../api/markets.js';
+import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from '../api/markets.js';
 import type { Market } from '../contracts/domain.js';
 import { D1SqlDatabase } from '../db/d1.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
@@ -37,7 +37,19 @@ async function workerApp(env:CloudflareBindings) {
       const response=await coordinator().fetch('https://coordinator.internal'+path);
       if(!response.ok)throw new Error('coordinator_unavailable');return await response.json() as T;
     }
-    return createApp({...services,auth,notifications,quotes:{get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument))},catalog:{get:()=>coordinatorJson<CatalogSnapshot>('/catalog'),resolve:instrument=>coordinatorJson('/market?instrument='+encodeURIComponent(instrument))},runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async()=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST'});if(!response.ok)throw new Error('coordinator_unavailable');}});
+    return createApp({...services,auth,notifications,quotes:{get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument))},catalog:{
+      get:()=>coordinatorJson<CatalogSnapshot>('/catalog'),
+      response:async(query,requestId)=>{
+        const params=new URLSearchParams();
+        if(query)for(const [key,value] of Object.entries(query))if(value!==undefined)params.set(key,String(value));
+        const response=await coordinator().fetch('https://coordinator.internal/catalog-response'+(query?'?'+params:''),{headers:{'X-Request-ID':requestId}});
+        if(!response.ok)throw new Error('coordinator_unavailable');
+        // Stream the trusted envelope. Parsing/validating/stringifying thousands
+        // of rows here spends the edge Worker's small per-request CPU budget.
+        return response as unknown as Response;
+      },
+      resolve:instrument=>coordinatorJson('/market?instrument='+encodeURIComponent(instrument)),
+    },runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async()=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST'});if(!response.ok)throw new Error('coordinator_unavailable');}});
   })();workerCache.set(env,promise);promise.catch(()=>{workerCache.delete(env);});}
   return promise;
 }
@@ -111,6 +123,15 @@ export class Coordinator {
     }
     if(path==='/catalog'&&request.method==='GET'){
       await engine.refreshCatalog();return Response.json(engine.getMarkets());
+    }
+    if(path==='/catalog-response'&&request.method==='GET'){
+      const params=new URL(request.url).searchParams;
+      const query=params.size ? marketQuerySchema.safeParse(Object.fromEntries(params)) : null;
+      if(query&&!query.success)return new Response(null,{status:400});
+      await engine.refreshCatalog();
+      const snapshot=engine.getMarkets();
+      const data=query ? searchMarkets(snapshot,query.data) : catalogDirectory(snapshot);
+      return Response.json({ok:true,data,requestId:request.headers.get('X-Request-ID')},{headers:{'Cache-Control':'no-store'}});
     }
     if(path==='/market'&&request.method==='GET'){
       await engine.refreshCatalog();

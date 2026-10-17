@@ -158,6 +158,15 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    const catalog=await coordinator.fetch('https://coordinator.internal/catalog');assert.equal(catalog.status,200);
    const catalogBody=await catalog.json() as {stale:boolean;markets:unknown[]};assert.equal(catalogBody.stale,false);assert.equal(catalogBody.markets.length,12);
    assert.equal(catalogRequests,6);assert.equal(tickerRequests,0);assert.equal((await snapshot()).lastPollAt,null);
+   const directory=await request('/api/markets','GET',undefined,aliceCookie);
+   assert.equal(directory.status,200);assert.equal(directory.headers.get('Cache-Control'),'no-store');
+   const envelope=await directory.json() as {ok:boolean;requestId:string;data:{markets:unknown[];stale:boolean}};
+   assert.equal(envelope.ok,true);assert.equal(envelope.requestId,directory.headers.get('X-Request-ID'));
+   assert.equal(envelope.data.markets.length,12);assert.equal(envelope.data.stale,false);
+   const search=await api<{markets:{venue:string;type:string}[];total:number}>('/api/markets?venue=mexc&type=swap&limit=1','GET',undefined,aliceCookie);
+   assert.equal(search.total,2);assert.equal(search.markets.length,1);assert.equal(search.markets[0]!.venue,'mexc');assert.equal(search.markets[0]!.type,'swap');
+   assert.equal((await request('/api/markets?limit=101','GET',undefined,aliceCookie)).status,400);
+   assert.equal(catalogRequests,6,'Directory forwarding reuses coordinator metadata');
    await wake();await eventually(alarm,value=>value===null,'idle wake alarm removal');
    await pause(5200);assert.equal(tickerRequests,0);assert.equal(await alarm(),null);assert.equal((await snapshot()).lastPollAt,null);
    assert.equal((await db.query('SELECT id FROM scheduler_lease')).length,0);

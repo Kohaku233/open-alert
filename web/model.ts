@@ -24,7 +24,7 @@ export function useWorkspace(onUnauthorized: () => void) {
     const mounted = useRef(true);
     const recoveryAt = useRef(0);
     const unauthorized = useRef(onUnauthorized);
-    const catalog = useRef<{ data: CatalogData; expiresAt: number } | null>(null);
+    const catalog = useRef<{ data: CatalogData; expiresAt: number; failures: number } | null>(null);
     unauthorized.current = onUnauthorized;
     const read = useCallback((duringMutation = false, forceCatalog = false): Promise<void> => {
         if (!mounted.current || (lock.current && !duringMutation))
@@ -47,7 +47,8 @@ export function useWorkspace(onUnauthorized: () => void) {
         const promise = (async () => {
             try {
                 // Keep the flight until all siblings settle, including a delayed 429 header.
-                // Commit a complete snapshot only; concurrent visibility/manual reads join it.
+                // Status and alerts form one snapshot. Directory metadata may be
+                // retained, explicitly stale, when only its transport fails.
                 const results = await Promise.allSettled([
                     request<SystemStatus>('/api/status', 'GET', undefined, { signal: controller.signal }),
                     request<{
@@ -58,17 +59,29 @@ export function useWorkspace(onUnauthorized: () => void) {
                 ]);
                 if (!mounted.current || controller.signal.aborted)
                     return;
-                const rejected = results.find(result => result.status === 'rejected');
+                const rejected = results.find((result, index) => result.status === 'rejected' &&
+                    (index !== 2 || !cachedCatalog || !(result.reason instanceof AppError) ||
+                        !(result.reason.status >= 500 || ['network_error', 'invalid_response'].includes(result.reason.code))));
                 if (rejected?.status === 'rejected')
                     throw rejected.reason;
                 const [status, alerts, markets] = results;
-                if (status.status !== 'fulfilled' || alerts.status !== 'fulfilled' || markets.status !== 'fulfilled')
+                if (status.status !== 'fulfilled' || alerts.status !== 'fulfilled')
                     return;
-                // Only a fetched directory advances expiry; frequent quote reads
-                // must not keep an old catalog alive indefinitely.
-                if (fetchCatalog)
-                    catalog.current = { data: markets.value, expiresAt: Date.now() + CATALOG_REFRESH_MS };
-                setData({ status: status.value, alerts: alerts.value.alerts, markets: markets.value.markets, marketStale: markets.value.stale });
+                let directory: CatalogData;
+                if (markets.status === 'fulfilled') {
+                    directory = markets.value;
+                    // Only a fetched directory advances expiry; frequent quote
+                    // reads must not keep an old catalog alive indefinitely.
+                    if (fetchCatalog)
+                        catalog.current = { data: directory, expiresAt: Date.now() + CATALOG_REFRESH_MS, failures: 0 };
+                } else {
+                    directory = { ...cachedCatalog!.data, stale: true };
+                    const failures = Math.min(cachedCatalog!.failures + 1, 4);
+                    // Failed metadata must not cause another full-directory read
+                    // every five seconds. Manual refresh can still bypass backoff.
+                    catalog.current = { data: directory, failures, expiresAt: Date.now() + Math.min(300000, CATALOG_REFRESH_MS * 2 ** (failures - 1)) };
+                }
+                setData({ status: status.value, alerts: alerts.value.alerts, markets: directory.markets, marketStale: directory.stale });
                 // A separate business request may have received 429 while this snapshot ran.
                 const cooldown = getBusinessCooldown();
                 if (!cooldown || cooldown.retryAt <= Date.now())

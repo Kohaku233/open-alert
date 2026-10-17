@@ -96,7 +96,9 @@ npm run admin:invite:d1 -- you@example.com --remote
 
 DO 仅在可调度规则或 queued/sending outbox 存在时设置持久化目标五秒 alarm。无工作时移除 alarm，不轮询 ticker；无 resident timer 或 watchdog interval。写操作持久化 wake 后返回；status 会重新核对工作并修复缺少的 alarm。空闲对象没有定时 fallback，丢失唤醒依赖后续 status 请求修复。行情缺失/过期保留原时间戳和 unknown/unhealthy 状态。
 
-Cloudflare 默认每 tick 最多 100 条规则评估、一次 reservation；每 drain 最多读 32 条待发送记录、一次 claim 与一次发送。cursor 跨 cycle 延续，SQL commit 再检查身份、generation、限额和 fencing。若以后提高容量到超过 100 条可调度规则，会跨轮次轮流评估；一次 reservation 或 2.5 秒评估时间预算也可提前结束本轮，因此不能保证每条规则都在五秒内检查或通知。慢发送与 polling 独立，平台 eviction、网络及 alarm 延迟会拉长周期，大 backlog 需要多轮。内部 `/snapshot`、`/catalog`、`/wake` 仅可通过 namespace 调用。
+Cloudflare 默认每 tick 最多 100 条规则评估、一次 reservation；每 drain 最多读 32 条待发送记录、一次 claim 与一次发送。cursor 跨 cycle 延续，SQL commit 再检查身份、generation、限额和 fencing。若以后提高容量到超过 100 条可调度规则，会跨轮次轮流评估；一次 reservation 或 2.5 秒评估时间预算也可提前结束本轮，因此不能保证每条规则都在五秒内检查或通知。慢发送与 polling 独立，平台 eviction、网络及 alarm 延迟会拉长周期，大 backlog 需要多轮。内部 `/snapshot`、`/catalog`、`/catalog-response`、`/wake` 仅可通过 namespace 调用。
+
+市场目录包含多个交易所的完整元数据。Cloudflare 的 `/api/markets` 在边缘完成会话、限流和查询参数校验后，由协调器生成目录或搜索结果的 API envelope，边缘仅转发响应流，避免重复解析和编码整个目录消耗 HTTP CPU 预算。浏览器每分钟更新目录，每五秒读取状态与警报；已有目录遇到临时网络或 5xx 错误时保留元数据并明确标记过期，按 1、2、4、5 分钟退避重试，手动刷新可立即重试。目录失败不会阻止新的状态和警报显示；401、403 和 429 仍按原有登录、权限和全局冷却规则处理。保存警报始终由服务端重新确认所选市场可用性。
 
 下面数字为官方资料核对时的 Free 参考，平台规则可能调整；应在上线时再次核对，并测量真实负载：
 
