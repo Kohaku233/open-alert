@@ -416,52 +416,69 @@ try {
     await page.getByRole('combobox',{name:'查看市场',exact:true}).click(); await page.getByRole('combobox',{name:'搜索市场',exact:true}).fill('ETH'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await expect(page.locator('iframe')).toBeVisible();
     await check('symbol change recreates once', async () => { const content=await page.locator('.tradingview-widget-container script').textContent(); assert.equal(JSON.parse(content).symbol,'OKX:ETHUSDT.P'); });
   });
-  await journey('07b one-minute catalog expiry and immediate manual refresh', async () => {
-    const cached=await setup(browser,'desktop',true),p=cached.page,s=cached.state;
-    await p.clock.install({time:new Date()});await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+  await journey('07b session catalog survives polling, focus, navigation and mutation; manual refresh and reload fetch again', async () => {
+    const cached=await setup(browser,'desktop',true,{reducedMotion:'reduce'}),p=cached.page,s=cached.state;
+    await p.clock.install({time:new Date()});
+    s.failNext={path:'/api/status',method:'GET',status:503,code:'service_unavailable'};
+    await p.goto(origin+'/dashboard');await expect(p.locator('.connection-error')).toBeVisible();
+    const initialCatalogs=requests(s,'GET','/api/markets').length;
+    await p.clock.runFor(5000);await expect(p.getByRole('switch')).toBeVisible();
+    await check('initial status recovery retains successfully loaded directory',async()=>assert.equal(requests(s,'GET','/api/markets').length,initialCatalogs));
     const catalogsBefore=requests(s,'GET','/api/markets').length;
     for(let i=0;i<13;i++){await p.clock.runFor(5000);await new Promise(resolve=>setTimeout(resolve,60));}
-    await check('catalog refreshes after expiry without sliding renewal',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+1));
-    s.failNext={path:'/api/status',method:'GET',status:503,code:'service_unavailable'};
-    await p.clock.runFor(5000);await expect(p.locator('.connection-error')).toBeVisible();
+    await check('catalog has no one-minute automatic expiry',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore));
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await nav(p,'手机通知');await nav(p,'行情与警报');
+    await p.getByRole('button',{name:'创建警报',exact:true}).click();
+    const editor=p.getByRole('dialog');await editor.getByLabel('警报名称').fill('MOCK 会话目录复用');await editor.getByLabel('价格 · USDT').fill('63000');
+    await editor.getByRole('button',{name:'创建警报',exact:true}).click();await expect(row(p,'MOCK 会话目录复用')).toBeVisible();
+    await check('focus, route changes and saved alert reuse directory',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore));
     const manualBefore=requests(s,'GET','/api/markets').length;
-    await p.getByRole('button',{name:'重新读取状态',exact:true}).click();await expect(p.locator('.connection-error')).toHaveCount(0);
+    let release; s.holdStatus={wait:new Promise(resolve=>{release=resolve;})};
+    const pollsBefore=requests(s,'GET','/api/status').length;
+    await p.clock.runFor(5000);await expect.poll(()=>requests(s,'GET','/api/status').length).toBeGreaterThan(pollsBefore);
+    await p.getByRole('combobox',{name:'查看市场',exact:true}).click();
+    await p.getByRole('button',{name:'重新读取市场目录',exact:true}).click();
+    release();
+    await expect.poll(()=>requests(s,'GET','/api/markets').length).toBe(manualBefore+1);await p.keyboard.press('Escape');
     await check('manual retry refreshes cached catalog immediately',async()=>assert.equal(requests(s,'GET','/api/markets').length,manualBefore+1));
+    await refreshNavigation(p);
+    await check('full page reload starts a new catalog session',async()=>assert.equal(requests(s,'GET','/api/markets').length,manualBefore+2));
     await cached.context.close();
   });
-  await journey('07c directory outage keeps status/alerts live, backs off and recovers without hiding auth or rate limits', async () => {
+  await journey('07c failed manual directory refresh retains cache without automatic retries and preserves auth/rate limits', async () => {
     const cached=await setup(browser,'desktop',true,{reducedMotion:'reduce'}),p=cached.page,s=cached.state;
     await p.clock.install({time:new Date()});await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
     const catalogsBefore=requests(s,'GET','/api/markets').length;
     const advance=async(seconds)=>{for(let i=0;i<seconds/5;i++){await p.clock.runFor(5000);await new Promise(resolve=>setTimeout(resolve,65));}};
+    const manual=async()=>{await p.getByRole('combobox',{name:'查看市场',exact:true}).click();await p.getByRole('button',{name:'重新读取市场目录',exact:true}).click();await p.keyboard.press('Escape');};
     s.catalogFail=true;s.alerts[0].name='MOCK 目录故障期间更新';
-    await advance(65);
+    await manual();
     await check('cached directory marked stale while fresh alerts still commit',async()=>{
       await expect(p.getByText('市场目录已过期，新增市场仍需服务端确认支持。')).toBeVisible();
       await expect(p.getByText('MOCK 目录故障期间更新',{exact:true})).toBeVisible();
       await expect(p.locator('.connection-error')).toHaveCount(0);
     });
     const statusBefore=requests(s,'GET','/api/status').length;
-    await advance(50);
-    await check('catalog failure does not retry every five seconds',async()=>{
+    await advance(130);
+    await check('failed manual directory refresh is not retried by polling',async()=>{
       assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+1);
       assert(requests(s,'GET','/api/status').length>=statusBefore+9);
     });
-    await advance(15);assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+2);
     s.catalogFail=false;await advance(65);
-    await check('second metadata failure uses longer retry delay',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+2));
-    await advance(65);
-    await check('catalog automatically recovers and clears stale marker',async()=>{
-      assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+3);
+    await check('cached metadata waits for explicit refresh',async()=>assert.equal(requests(s,'GET','/api/markets').length,catalogsBefore+1));
+    await manual();
+    await check('successful manual refresh clears stale marker',async()=>{
+      await expect.poll(()=>requests(s,'GET','/api/markets').length).toBe(catalogsBefore+2);
       await expect(p.getByText('市场目录已过期，新增市场仍需服务端确认支持。')).toHaveCount(0);
     });
     s.failNext={path:'/api/markets',method:'GET',status:429,code:'rate_limited',headers:{'Retry-After':'30'}};
-    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await manual();
     await check('directory 429 still activates global business cooldown',()=>expect(p.locator('.connection-error')).toContainText('请求过于频繁'));
     const limited=businessRequests(s).length;await advance(20);assert.equal(businessRequests(s).length,limited);
     await advance(15);await expect(p.locator('.connection-error')).toHaveCount(0);
     s.failNext={path:'/api/markets',method:'GET',status:401,code:'unauthenticated',invalidateSession:true};
-    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await manual();
     await check('cached directory never masks expired login',()=>expect(p.getByRole('heading',{name:'登录或注册',exact:true})).toBeVisible());
     await cached.context.close();
   });
@@ -567,7 +584,7 @@ try {
       await p.clock.runFor(59000);
       await check(`${name} header fallback zero requests before expiry`,async()=>assert.equal(businessRequests(s).length,before));
       await p.clock.runFor(1000);
-      await check(`${name} header fallback automatically resumes at expiry`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+3);});
+      await check(`${name} header fallback automatically resumes status and alerts using cached directory`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+2);});
     }
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':'120'}};
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');

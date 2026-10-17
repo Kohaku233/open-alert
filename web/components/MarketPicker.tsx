@@ -85,7 +85,7 @@ export function MarketPicker({ label, markets, value, onChange, disabled = false
           </CommandList>
           <div className="market-search-help"><p className="small muted">{t("选择后保存的是此交易所的此市场。搜索和筛选不会改变已选市场；不可用结果不能选择。")}</p>
           <FormError message={error ? t("目录刷新未完成：") + error : ''}/>
-          {(error || !markets.length) && onRetry && <Button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</Button>}
+          {onRetry && <Button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</Button>}
           {stale && <p className="small amber-text">{t("市场目录已过期。保存时由服务端再次确认可用性。")}</p>}</div>
         </Command>
       </PopoverContent>

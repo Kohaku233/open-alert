@@ -9,7 +9,6 @@ export interface WorkspaceData {
     marketStale: boolean;
 }
 interface CatalogData { markets: Market[]; stale: boolean }
-const CATALOG_REFRESH_MS = 60000;
 export function useWorkspace(onUnauthorized: () => void) {
     const [data, setData] = useState<WorkspaceData | null>(null);
     const [failure, setFailure] = useState<unknown>(null);
@@ -19,18 +18,24 @@ export function useWorkspace(onUnauthorized: () => void) {
     const current = useRef<{
         controller: AbortController;
         promise: Promise<void>;
+        catalogRequested: boolean;
     } | null>(null);
     const lock = useRef(false);
     const mounted = useRef(true);
     const recoveryAt = useRef(0);
     const unauthorized = useRef(onUnauthorized);
-    const catalog = useRef<{ data: CatalogData; expiresAt: number; failures: number } | null>(null);
+    const catalog = useRef<CatalogData | null>(null);
     unauthorized.current = onUnauthorized;
     const read = useCallback((duringMutation = false, forceCatalog = false): Promise<void> => {
         if (!mounted.current || (lock.current && !duringMutation))
             return Promise.resolve();
-        if (current.current)
-            return current.current.promise;
+        if (current.current) {
+            const flight = current.current;
+            // An explicit directory refresh must not disappear into an ongoing
+            // status-only poll. Coalesce callers once that poll has settled.
+            return forceCatalog && !flight.catalogRequested
+                ? flight.promise.then(() => read(duringMutation, true)) : flight.promise;
+        }
         // Admit the whole snapshot once; do not start three rejected promises in cooldown.
         try {
             assertBusinessReady();
@@ -43,7 +48,7 @@ export function useWorkspace(onUnauthorized: () => void) {
         recoveryAt.current = 0;
         const controller = new AbortController();
         const cachedCatalog = catalog.current;
-        const fetchCatalog = forceCatalog || !cachedCatalog || Date.now() >= cachedCatalog.expiresAt;
+        const fetchCatalog = forceCatalog || !cachedCatalog;
         const promise = (async () => {
             try {
                 // Keep the flight until all siblings settle, including a delayed 429 header.
@@ -55,10 +60,14 @@ export function useWorkspace(onUnauthorized: () => void) {
                         alerts: Alert[];
                     }>('/api/alerts', 'GET', undefined, { signal: controller.signal }),
                     fetchCatalog ? request<CatalogData>('/api/markets', 'GET', undefined, { signal: controller.signal })
-                        : Promise.resolve(cachedCatalog!.data),
+                        : Promise.resolve(cachedCatalog!),
                 ]);
                 if (!mounted.current || controller.signal.aborted)
                     return;
+                // Retain a successful directory even if a sibling status read
+                // failed; its recovery must not download the directory again.
+                if (fetchCatalog && results[2].status === 'fulfilled')
+                    catalog.current = results[2].value;
                 const rejected = results.find((result, index) => result.status === 'rejected' &&
                     (index !== 2 || !cachedCatalog || !(result.reason instanceof AppError) ||
                         !(result.reason.status >= 500 || ['network_error', 'invalid_response'].includes(result.reason.code))));
@@ -70,16 +79,12 @@ export function useWorkspace(onUnauthorized: () => void) {
                 let directory: CatalogData;
                 if (markets.status === 'fulfilled') {
                     directory = markets.value;
-                    // Only a fetched directory advances expiry; frequent quote
-                    // reads must not keep an old catalog alive indefinitely.
-                    if (fetchCatalog)
-                        catalog.current = { data: directory, expiresAt: Date.now() + CATALOG_REFRESH_MS, failures: 0 };
+                    // A loaded directory belongs to this workspace session.
+                    // Polling, focus recovery and mutations reuse it; only an
+                    // explicit refresh or a new page load requests it again.
                 } else {
-                    directory = { ...cachedCatalog!.data, stale: true };
-                    const failures = Math.min(cachedCatalog!.failures + 1, 4);
-                    // Failed metadata must not cause another full-directory read
-                    // every five seconds. Manual refresh can still bypass backoff.
-                    catalog.current = { data: directory, failures, expiresAt: Date.now() + Math.min(300000, CATALOG_REFRESH_MS * 2 ** (failures - 1)) };
+                    directory = { ...cachedCatalog!, stale: true };
+                    catalog.current = directory;
                 }
                 setData({ status: status.value, alerts: alerts.value.alerts, markets: directory.markets, marketStale: directory.stale });
                 // A separate business request may have received 429 while this snapshot ran.
@@ -102,7 +107,7 @@ export function useWorkspace(onUnauthorized: () => void) {
                     current.current = null;
             }
         })();
-        current.current = { controller, promise };
+        current.current = { controller, promise, catalogRequested: fetchCatalog };
         return promise;
     }, []);
     const refresh = useCallback(() => read(false, true), [read]);
@@ -113,7 +118,7 @@ export function useWorkspace(onUnauthorized: () => void) {
         const existing = getBusinessCooldown();
         if (existing && existing.retryAt > Date.now())
             onCooldown(existing);
-        void refresh();
+        void read();
         const clock = window.setInterval(() => {
             const time = Date.now();
             setNow(time);
@@ -125,10 +130,10 @@ export function useWorkspace(onUnauthorized: () => void) {
         const interval = window.setInterval(() => { if (!document.hidden && !lock.current)
             void read(); }, 5000);
         const onVisible = () => { if (!document.hidden && !lock.current)
-            void refresh(); };
+            void read(); };
         document.addEventListener('visibilitychange', onVisible);
         return () => { mounted.current = false; unsubscribe(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
-    }, [refresh, read]);
+    }, [read]);
     const mutate = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
         if (!mounted.current)
             throw new DOMException('Workspace unmounted', 'AbortError');
@@ -145,7 +150,7 @@ export function useWorkspace(onUnauthorized: () => void) {
                 throw new DOMException('Workspace unmounted', 'AbortError');
             assertBusinessReady();
             const result = await action();
-            await read(true, true);
+            await read(true);
             return result;
         }
         catch (cause) {
@@ -153,7 +158,7 @@ export function useWorkspace(onUnauthorized: () => void) {
             // in particular a 429 must never trigger a follow-up burst or replay the action.
             if (mounted.current && cause instanceof AppError) {
                 if (cause.code === 'generation_conflict')
-                    await read(true, true);
+                    await read(true);
                 if (cause.status === 401)
                     unauthorized.current();
             }
