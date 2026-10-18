@@ -288,7 +288,6 @@ small, .small { line-height: 1.65; }
 .chart-bottom { padding: 12px 16px; color: var(--muted-foreground); font-size: 12px; }
 .chart-bottom a { color: var(--muted-foreground); }
 .chart-loading { background: var(--deep); }
-.skeleton-chart-grid { border-color: var(--border); opacity: .55; }
 .alerts-panel { display: flex; flex-direction: column; min-height: clamp(640px, 46vw, 860px); max-height: clamp(760px, 52vw, 960px); overflow: hidden; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 16px; }
 .panel-heading h2 { font-size: 18px; font-weight: 500; }
@@ -393,8 +392,6 @@ dialog::backdrop, [data-slot="dialog-overlay"] { background: var(--overlay); bac
 .warning { border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning-text); border-radius: 10px; }
 .connection-error { border-color: var(--error-border); background: var(--error-bg); color: var(--danger); border-radius: 12px; }
 .loading-status { color: var(--muted-foreground); font-size: 12px; }
-.page-skeleton .skeleton-market { border-radius: 20px; border-color: var(--border); }
-.page-skeleton .skeleton-chart, .page-skeleton .skeleton-alerts { border-radius: 20px; border-color: var(--border); background: var(--card); }
 [data-slot="skeleton"] { background: color-mix(in srgb, var(--selected) 80%, var(--card)); }
 .disclosure-trigger { border: 0; color: var(--muted-foreground); }
 

@@ -1,5 +1,6 @@
 import { Appearance } from './components/Appearance.js';
-import { PageSkeleton, Notice, EmptyState } from './components/Surface.js';
+import { Notice, EmptyState } from './components/Surface.js';
+import { BootStageProvider, useBootClaim } from './components/BootStage.js';
 import { Toaster } from './components/ui/sonner.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
 import { toast } from 'sonner';
@@ -34,6 +35,9 @@ function Brand({ navigate }: {
     return <a className="brand" href="/dashboard" aria-label={t("价格哨站")} onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><Icon name="brand" className="brand-mark"/><span>{t("价格哨站")}<small>OPEN ALERT</small></span></a>;
 }
 export function App() {
+    return <BootStageProvider><AppRoutes/></BootStageProvider>;
+}
+function AppRoutes() {
     useLanguage();
     const session = authClient.useSession();
     const [sessionKnown, setSessionKnown] = useState(false);
@@ -42,6 +46,10 @@ export function App() {
         if (session.data) clearEmailLoginFlow();
     }, [session.isPending, session.error, session.data]);
     const [path, setPath] = useState(window.location.pathname);
+    // The entrance covers the session handshake and the sign-in redirect, so the
+    // first paint is never a half-built layout.
+    useBootClaim(t("正在确认登录状态…"), session.isPending && !sessionKnown);
+    useBootClaim(t("正在打开登录页面…"), !session.isPending && sessionKnown && !session.data && path !== '/login');
     const navigate = useCallback((next: string) => { window.history.pushState({}, '', next); setPath(next); window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
     useEffect(() => { const pop = () => setPath(window.location.pathname); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop); }, []);
     useEffect(() => {
@@ -59,10 +67,10 @@ export function App() {
     const onSignedIn = () => { void session.refetch(); navigate('/dashboard'); };
     return <TooltipProvider delayDuration={300}>
     <a className="skip-link" href="#main-content">{t("跳转到内容")}</a>
-    {session.isPending && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><PageSkeleton label={t("正在确认登录状态…")} dashboard={path === "/dashboard" || path === "/"}/></main></>
+    {session.isPending && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"/></>
             : session.error && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><EmptyState className="session-error"><h1>{t("无法确认登录状态")}</h1><p>{t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></EmptyState></main></>
                 : session.data ? <Workspace key={session.data.user.id} path={path} navigate={navigate} notify={message => toast(message)} onUnauthorized={() => { void session.refetch(); }}/>
-                    : <><header className="masthead public-masthead"><Brand navigate={navigate}/><span className="login-header-note">{t("个人价格警报与手机通知")}</span><LanguageSwitch /></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"><PageSkeleton label={t("正在打开登录页面…")}/></main>}</>}
+                    : <><header className="masthead public-masthead"><Brand navigate={navigate}/><span className="login-header-note">{t("个人价格警报与手机通知")}</span><LanguageSwitch /></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"/>}</>}
     <Toaster customAriaLabel={t("通知")} position="bottom-center" duration={6500} offset={24} mobileOffset={16} toastOptions={{ className: 'ui-toast' }} />
   </TooltipProvider>;
 }
@@ -75,6 +83,8 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     const model = useWorkspace(onUnauthorized);
     const [logoutBusy, setLogoutBusy] = useState(false);
     const [logoutError, setLogoutError] = useState('');
+    const bootLabel = path === '/account' ? t("正在读取账户信息…") : path === '/notifications' ? t("正在读取通知设置…") : t("正在读取你的警报与行情…");
+    useBootClaim(bootLabel, !model.data && !model.error);
     async function logout() {
         if (logoutBusy)
             return;

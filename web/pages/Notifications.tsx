@@ -1,5 +1,5 @@
 import { usePageMotion, DialogPresence } from '../motion.js';
-import { Panel, PageHeader, Notice, PageSkeleton } from '../components/Surface.js';
+import { Panel, PageHeader, Notice, PageError } from '../components/Surface.js';
 import { Badge } from '../components/ui/badge.js';
 import { FieldSelect } from '../components/FieldSelect.js';
 import { Button } from '../components/ui/button.js';
@@ -33,7 +33,7 @@ export function Notifications({ model, notify }: {
         generation: number;
     } | null>(null);
     if (!data)
-        return <PageSkeleton title={t("手机通知")} label={t("正在读取通知设置…")} error={model.error}/>;
+        return model.error ? <PageError title={t("手机通知")}/> : null;
     const channel = data.status.channel;
     const pending = data.alerts.some(alert => alert.pending);
     const options = draft?.options ?? data.status.settings.notification;

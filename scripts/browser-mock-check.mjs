@@ -207,7 +207,10 @@ const tick = page => page.clock.runFor(1);
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
-const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 120 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 120000);
+// Every fresh document now boots behind the entrance curtain (450ms minimum plus the
+// exit lift), so each journey's first interaction waits it out; the guard only needs
+// to catch hangs, not to fit the pre-entrance budget.
+const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 180 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 180000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
@@ -530,11 +533,17 @@ try {
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
     await p.goto(origin+'/dashboard'); await tick(p); await expect(p.getByRole('switch')).toBeVisible();
+    // The boot entrance owns the first paint and blocks pointer input; with a paused
+    // clock it only lifts while virtual time advances. Spend 1.5s of entrance here
+    // and subtract it from the later cooldown run so checkpoints stay identical.
+    await p.clock.runFor(1500); await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.getByRole('button',{name:'创建警报',exact:true}).click();
     await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK blocked by cooldown');
     await p.getByRole('dialog').getByLabel('价格 · USDT').fill('62000');
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':new Date(time.getTime()+17000).toUTCString()}};
-    await p.clock.runFor(5000);
+    // Land exactly on the 5s poll so the 429 is observed with the clock frozen at
+    // t+5s and the HTTP-date countdown still reads 12 seconds.
+    await p.clock.runFor(3500);
     await check('HTTP-date parsed against browser now',()=>expect(p.locator('.connection-error')).toContainText('重试等待：12 秒'));
     const before = businessRequests(s).length, quoteBefore=requests(s,'GET','/api/quote').length;
     await check('editor visibly disabled during cooldown',()=>expect(p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true})).toBeDisabled());
@@ -564,7 +573,16 @@ try {
     releaseLimit();
     await check('delayed read 429 blocks waiting mutation callback',()=>expect(p.getByRole('dialog').getByRole('alert')).toContainText('重试等待：2 秒'));
     await check('delayed 429 never dispatches POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
-    await p.keyboard.press('Escape'); await p.clock.runFor(2000); await expect(p.locator('.connection-error')).toHaveCount(0);
+    // Recovery clears the banner on the 1s recovery interval, whose phase is not
+    // aligned with a paused clock; keep advancing virtual time until that tick lands.
+    await p.keyboard.press('Escape');
+    // Each step has to stay small enough that the whole recovery finishes before the
+    // next 5s poll, but the real budget must cover a loaded machine's virtual ticks.
+    let virtualSteps = 0;
+    await expect.poll(async()=>{
+      if(virtualSteps<6) { virtualSteps++; await p.clock.runFor(600); }
+      return await p.locator('.connection-error').count();
+    },{timeout:20000}).toBe(0);
     // Observe browser cancellation, not just a late response ignored by React.
     let releaseUnmount; s.holdStatus={wait:new Promise(r=>{releaseUnmount=r;})};
     const unmountBefore = requests(s,'GET','/api/status').length;
@@ -597,6 +615,9 @@ try {
     const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
     await p.getByRole('button',{name:'退出登录'}).click();
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
+    // Logging out unmounts the workspace entrance; spend virtual time so the
+    // curtain is gone before the login controls are clicked.
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
     await p.getByLabel('邮箱地址').fill('mock@example.test'); await p.getByRole('button',{name:'发送验证码'}).click();
     await expect(p.getByLabel('邮件中的验证码')).toBeVisible();
@@ -696,9 +717,14 @@ try {
     await check('session pending before 15s',()=>expect(p.getByRole('status').filter({hasText:'正在确认登录状态'})).toBeVisible());
     await p.clock.runFor(2);
     await check('session timeout exits pending with retry',()=>expect(p.getByRole('heading',{name:'无法确认登录状态'})).toBeVisible());
+    // Let the entrance curtain finish lifting before the paused clock is asked to
+    // accept pointer input on the recovery button.
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.evaluate(()=>{window.__authHang='';});
     await p.getByRole('button',{name:'重试连接'}).click();
     await check('session timeout retry restores login',()=>expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled());
+    // The retry re-arms the session entrance; settle it again before the next click.
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.evaluate(()=>{window.__authHang='/api/auth/sign-in/social';});
     await p.getByRole('button',{name:'使用 Google 登录'}).click();
     await expect.poll(()=>p.evaluate(()=>window.__authHeld)).toBe(2);
@@ -781,6 +807,10 @@ try {
     s.googleEnabled=true;s.emailSenderMode='resend_sending_only';
     await p.goto(origin+'/login?email=mock%40example.test'); await tick(p);
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
+    // The entrance must lift before pointer input works; the paused clock only
+    // advances it through runFor. This happens before the first send, so the
+    // resend countdown below is unaffected.
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.getByRole('button',{name:'发送验证码',exact:true}).click();
     await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();
     await expect(p.getByText('验证码邮件已发送，请检查收件箱或垃圾邮件。')).toBeVisible();
@@ -803,9 +833,12 @@ try {
     await expect(p.getByRole('button',{name:'48 秒后重发',exact:true})).toBeDisabled();
     await p.goto(origin+'/account'); await tick(p);
     await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
+    // Reload/navigation re-armed the entrance: spend 2s of the 60s resend cooldown
+    // so the lifted curtain never swallows the step change below.
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
-    await check(profile+' same email keeps resend cooldown after changing steps',()=>expect(p.getByRole('button',{name:'48 秒后可重新发送',exact:true})).toBeDisabled());
+    await check(profile+' same email keeps resend cooldown after changing steps',()=>expect(p.getByRole('button',{name:'46 秒后可重新发送',exact:true})).toBeDisabled());
     await p.getByLabel('邮箱地址').fill('other@example.test');await expect(p.getByRole('button',{name:'发送验证码',exact:true})).toBeEnabled();
     await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'已有验证码？继续验证'}).click();
     await p.clock.runFor(300000);
@@ -814,12 +847,13 @@ try {
     await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();
     await p.reload(); await tick(p);
     await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await p.getByLabel('邮件中的验证码').fill('123456');await p.getByRole('button',{name:'验证并继续',exact:true}).click();
     await expect(p.getByRole('switch')).toBeVisible();
     await check(profile+' successful verification clears resumable email metadata',async()=>assert.equal(await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1')),null));
     await fixture.context.close();
   });
-  for (const profile of ['desktop','mobile']) await journey('appearance, client language, skeleton and reduced motion ('+profile+')', async () => {
+  for (const profile of ['desktop','mobile']) await journey('appearance, client language, entrance and reduced motion ('+profile+')', async () => {
     const fixture=await setup(browser,profile,true,{locale:'en-GB',colorScheme:'light'}),p=fixture.page,s=fixture.state;
     let releaseSession,releaseStatus;
     s.holdSession={wait:new Promise(resolve=>{releaseSession=resolve;})};
@@ -828,22 +862,27 @@ try {
     await check('client English and light appearance before session resolves',async()=>{
       await expect(p.locator('html')).toHaveAttribute('lang','en');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
       await expect(p.getByRole('status')).toContainText('Checking your session');
-      await expect(p.locator('[data-slot="page-skeleton"]')).toBeVisible();
-      assert((await p.locator('[data-slot="skeleton"]').count())>=8);
+      await expect(p.locator('[data-slot="boot-stage"]')).toBeVisible();
+      assert.equal(await p.locator('[data-slot="page-skeleton"]').count(),0);
+      assert.equal(await p.locator('[data-slot="skeleton"]').count(),0);
       assert.equal(await p.evaluate(()=>localStorage.length),0);
     });
     await noOverflow(p);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
+    s.holdSession=null;releaseSession();
+    await check('workspace entrance covers the first snapshot instead of skeletons',async()=>{
+      await expect(p.getByRole('status')).toContainText('Loading your alerts and prices');
+      assert.equal(await p.locator('[data-slot="page-skeleton"]').count(),0);
+    });
+    releaseStatus();
+    await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await expect(p.getByRole('switch')).toBeVisible();
     await chooseSelect(p,'Appearance','dark');await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
     await chooseSelect(p,'Appearance','system');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
     await check('system follows media without saving an override',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),null));
-    s.holdSession=null;releaseSession();
-    await expect(p.getByRole('status')).toContainText('Loading your alerts and prices');
     await p.getByRole('navigation').getByRole('link',{name:'Account',exact:true}).click();
-    await expect(p.getByRole('heading',{name:'Account',exact:true})).toBeVisible();
-    await expect(p.locator('[data-slot="page-skeleton"]:visible .skeleton-settings')).toHaveCount(2);
-    releaseStatus();await expect(p.getByRole('heading',{name:'Account details',exact:true})).toBeVisible();
+    await expect(p.getByRole('heading',{name:'Account details',exact:true})).toBeVisible();
     await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
     await expect(p.locator('iframe')).toHaveCount(1);
     await check('official chart config follows dark mode and remains 4h',async()=>{
@@ -908,8 +947,16 @@ try {
       window.__themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
       observe();
     });
+    // Chromium reports an emulated media change as its own task and a loaded machine can
+    // delay that delivery, so wait for the browser event before holding the app to it.
+    await p.evaluate(()=>{window.__mediaChanges=0;const probe=matchMedia('(prefers-color-scheme: dark)');probe.addEventListener('change',()=>{window.__mediaChanges+=1;});});
     for(const theme of ['dark','light']) {
-      await p.emulateMedia({colorScheme:theme});await expect(p.locator('html')).toHaveAttribute('data-theme',theme);
+      await p.evaluate(()=>{window.__mediaChanges=0;});
+      await p.emulateMedia({colorScheme:theme});
+      await check('emulated media change reaches the document ('+theme+')',async()=>{
+        await expect.poll(()=>p.evaluate(()=>window.__mediaChanges),{timeout:20000}).toBeGreaterThan(0);
+        await expect(p.locator('html')).toHaveAttribute('data-theme',theme,{timeout:15000});
+      });
       await check('theme stays coherent in the first changed frame ('+theme+')',async()=>{
         const sample=await p.evaluate(()=>window.__themeFrames.at(-1));
         const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),popover:s.getPropertyValue('--popover').trim(),field:s.getPropertyValue('--muted').trim()};});

@@ -1,5 +1,5 @@
 import { usePageMotion } from '../motion.js';
-import { Panel, PageHeader, PageSkeleton } from '../components/Surface.js';
+import { Panel, PageHeader, PageError } from '../components/Surface.js';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { Label } from '../components/ui/label.js';
@@ -21,7 +21,7 @@ export function Account({ model, notify }: {
     const [error, setError] = useState('');
     const [setup, setSetup] = useState(false);
     if (!data)
-        return <PageSkeleton title={t("我的账户")} label={t("正在读取账户信息…")} error={model.error}/>;
+        return model.error ? <PageError title={t("我的账户")}/> : null;
     async function bootstrap(event: FormEvent) {
         event.preventDefault();
         if (busy || !token)

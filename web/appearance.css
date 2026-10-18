@@ -64,29 +64,19 @@ body { background: var(--bg); color: var(--text); }
 .disclosure-content { overflow: hidden; }
 .disclosure-content>div { padding: 6px 0 16px; }
 .monitor-notes>div { max-width: 85ch; padding: 0; }
-.page-skeleton { width: 100%; }
-.page-skeleton .page-heading { min-height: 62px; }
+.page-failure { width: 100%; }
+.page-failure .page-heading { min-height: 62px; }
 .loading-status { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 1.8; color: var(--muted-foreground); margin-top: 12px; }
 .loading-status>svg { width: 16px; height: 16px; flex-shrink: 0; }
 [data-slot="skeleton"] { background: var(--selected); border-radius: 4px; }
-.skeleton-title { width: min(200px, 60%); height: 26px; }
 .skeleton-line { width: min(240px, 65%); height: 12px; }
 .skeleton-line.short { width: 42%; height: 10px; margin-top: 12px; }
-.skeleton-price { width: 180px; height: 24px; }
-.skeleton-market { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; min-height: 82px; padding: 18px; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 6px; }
-.skeleton-chart,.skeleton-alerts,.skeleton-settings { padding: 24px; min-width: 0; border-radius: 6px; }
-.skeleton-chart { height: 624px; background: var(--bg); display: flex; flex-direction: column; gap: 24px; }
-.skeleton-chart-grid { flex: 1; min-height: 240px; border-block: 1px solid var(--line); background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 100% 20%, 16.666% 100%; opacity: .4; }
-.skeleton-alerts { min-height: 440px; }
-.skeleton-settings { min-height: 420px; }
 .skeleton-row { padding: 26px 0; border-bottom: 1px solid var(--line); }
-.skeleton-field { height: 44px; width: 100%; margin-top: 14px; }
 .list-skeleton { padding-top: 8px; }
 .load-error { min-height: 300px; gap: 12px; }
 .chart-loading { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; padding: 22px; gap: 22px; background: var(--bg); pointer-events: none; }
 /* Motion is owned by web/motion.tsx. CSS defines accessible resting states. */
 @media(max-width: 1100px) { .appearance-label { display: none; } .masthead { gap: 20px; } .header-actions { gap: 10px; } }
-@media(max-width: 900px) { .skeleton-alerts { grid-row: 1; min-height: 260px; } .skeleton-chart { grid-row: 2; height: 560px; } }
 @media(max-width: 600px) {
   .preferences { gap: 6px; } .header-actions { gap: 6px; }
   .appearance-trigger[data-slot="select-trigger"] { width: 44px; height: 44px; padding: 0; justify-content: center; }
@@ -95,7 +85,6 @@ body { background: var(--bg); color: var(--text); }
   .masthead:has(.app-nav) .brand { font-size: 14px; gap: 7px; }
   .masthead:has(.app-nav) .brand-mark { width: 26px; height: 26px; }
   .languages [data-slot="button"] { padding: 5px 6px; }
-  .skeleton-chart { height: 500px; } .skeleton-settings { min-height: 340px; }
   .skeleton-row { padding: 22px 0; }
 }
 @media(max-width: 380px) { .masthead:has(.app-nav) .header-actions { flex-basis: 100%; margin-bottom: 8px; justify-content: flex-end; } }

@@ -193,7 +193,11 @@ const nav = (page, name) => page.getByRole('navigation', { name: '主导航' }).
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
+const settleEntrance = page => expect(page.locator('[data-slot="boot-stage"]')).toHaveCount(0);
 async function noOverflow(page) {
+  // The first-paint entrance covers the whole viewport, so it has to be gone before
+  // anything is measured or captured for review.
+  await settleEntrance(page);
   await page.waitForFunction(() => ![...document.querySelectorAll('[data-motion-state="entering"],[data-motion-state="exiting"]')].some(node => node.getClientRects().length));
   await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); });
   const controls = await page.evaluate(() => {
@@ -220,6 +224,26 @@ const review = join(root, '.impeccable/review');
 await mkdir(review, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
+  // The entrance owns the first paint. Hold the first snapshot so the curtain stays up
+  // long enough to prove it publishes a status label and renders no skeleton at all.
+  const boot = await setup(browser, 'desktop', true);
+  let releaseSnapshot;
+  boot.state.holdStatus = { wait: new Promise(resolve => { releaseSnapshot = resolve; }) };
+  await boot.page.goto(origin + '/dashboard');
+  await check('entrance holds the first snapshot with a status label and no skeleton', async () => {
+    await expect(boot.page.locator('[data-slot="boot-stage"]')).toBeVisible();
+    await expect(boot.page.getByRole('status')).toContainText('正在读取你的警报与行情');
+    assert.equal(await boot.page.locator('[data-slot="page-skeleton"]').count(), 0);
+    assert.equal(await boot.page.locator('[data-slot="skeleton"]').count(), 0);
+    // Capture the assembled stage, not a half-drawn first frame.
+    await expect(boot.page.locator('[data-slot="boot-stage"]')).toHaveAttribute('data-motion-state', 'settled');
+    await boot.page.screenshot({ path: join(review, 'entrance-desktop.png') });
+  });
+  releaseSnapshot();
+  await settleEntrance(boot.page);
+  await expect(boot.page.getByRole('switch')).toBeVisible();
+  await boot.context.close();
+  console.log('PASS first-paint entrance replaces the loading skeleton');
   const responsive = await setup(browser, 'desktop', true);
   await responsive.page.emulateMedia({ reducedMotion: 'reduce' });
   await responsive.page.goto(origin + '/dashboard');
@@ -274,7 +298,7 @@ try {
     await expect(page.locator('.alert-scope-count')).toHaveText('0 条');
     await expect(page.getByRole('tab',{name:'当前市场',exact:true})).toHaveAttribute('aria-selected','true');
     assert.equal(JSON.parse(await page.locator('.tradingview-widget-container script').textContent()).interval,'240');
-    await page.evaluate(() => document.fonts.ready); await page.waitForTimeout(450);
+    await page.evaluate(() => document.fonts.ready); await settleEntrance(page); await page.waitForTimeout(450);
     await page.locator('.alerts-panel').screenshot({path:join(review,profile+'-empty-zh.png')});
     state.alerts=retainedAlerts; await page.reload();
     const selected = await page.locator('.market-search-selection').first().textContent();
@@ -302,6 +326,7 @@ try {
       assert(controls.every(control => control.width >= 44 && control.height >= 44),JSON.stringify(controls));
       state.status.settings.enabled=true; await page.reload();
       await expect(page.getByRole('switch')).toHaveAttribute('aria-checked','true');
+      await settleEntrance(page);
       await page.screenshot({path:join(review,'mobile-enabled-en.png'),fullPage:true,animations:'disabled'});
       const thumb=await page.getByRole('switch').evaluate(node => { const track=node.getBoundingClientRect(),handle=node.querySelector('span').getBoundingClientRect();return {right:handle.right <= track.right,width:handle.width}; });
       assert(thumb.right); assert.equal(thumb.width,20);

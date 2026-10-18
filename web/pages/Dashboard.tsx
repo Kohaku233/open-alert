@@ -1,5 +1,5 @@
 import { DialogPresence, usePageMotion, usePriceMotion, useSignalRailMotion } from '../motion.js';
-import { Panel, PageHeader, EmptyState, Notice, Disclosure, PageSkeleton } from '../components/Surface.js';
+import { Panel, PageHeader, EmptyState, Notice, Disclosure, PageError } from '../components/Surface.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip.js';
 import { Switch } from '../components/ui/switch.js';
 import { Badge } from '../components/ui/badge.js';
@@ -62,7 +62,7 @@ export function Dashboard({ model, active, notify, navigate }: {
     const railRevision = `${selected}:${currentMarketAlerts.map(alert => `${alert.id}:${alert.side}:${alert.threshold}:${alert.triggered ? 1 : 0}`).join('|')}`;
     useSignalRailMotion(railRef, railRevision);
     if (!data)
-        return <PageSkeleton hidden={!active} title={t("我的监控")} label={t("正在读取你的警报与行情…")} dashboard error={error}/>;
+        return error ? <PageError title={t("我的监控")}/> : null;
     const available = selectableMarket(findMarket(data.markets, selected));
     const identity = marketIdentity(selected, market);
     const source = identity.venue ? venueLabels[identity.venue] : t("所选交易所");

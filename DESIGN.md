@@ -203,7 +203,8 @@ GSAP 3.15 and @gsap/react own motion in `web/motion.tsx`; CSS provides resting s
 - **Threshold rail:** the line draws and a single signal sweep crosses it once per market/rule revision; markers stagger in. Quote changes move the price marker without replaying marker entrances.
 - **Navigation:** the measured indicator animates its full box on desktop and mobile. It never stretches a one-pixel painted stripe.
 - **Floating surfaces:** reversible 240ms-in/140ms-out timelines; dialog subtrees remain mounted only for their exit.
-- **Loading:** skeletons breathe and spinners rotate only while visible.
+- **First paint:** one full-screen entrance curtain assembles the brand mark, holds a localized status line while the session and the first snapshot are in flight, then lifts as a single transform. It replaces every page-level skeleton.
+- **Loading:** list and chart placeholders breathe, and spinners rotate, only while visible.
 - **Pointer signal:** on a mouse device, a soft acid wash follows the pointer across the instrument field. Touch devices and reduced-motion users see the static field.
 
 Reduced motion removes loops and sets controls immediately. Motion never delays focus, form input or a mutation.
@@ -247,14 +248,19 @@ Controls use 10-11px radii. Content panels use 20px; the instrument uses 24px on
 
 All pages compose shadcn/Radix primitives from `web/components/ui`. Product
 patterns in `web/components/Surface.tsx` provide Panel, PageHeader, Notice,
-EmptyState, Disclosure, PageSkeleton and ListSkeleton. Preserve semantic HTML
+EmptyState, Disclosure, PageError and ListSkeleton. Preserve semantic HTML
 for content, links and forms while composing reusable controls and surfaces.
 The component README records upstream source and local adaptations.
 
-Session bootstrap, dashboard data, settings, and invitation/account lists show
-structural skeletons plus a translated status. Initial failures replace the
-skeleton with a stable retry state. Background refresh retains existing content.
-Never fabricate quotes or candlesticks in loading placeholders.
+Session bootstrap and the first snapshot for every workspace route are covered by
+the entrance curtain in `web/components/BootStage.tsx`, which publishes a
+translated `role="status"` line and never renders a skeleton. Views register their
+own `useBootClaim`, so a reload, a session timeout or a sign-out redirect re-arms
+the curtain instead of flashing a half-built layout. Invitation and account lists
+still use ListSkeleton, and the chart uses its own field placeholder. Initial
+failures replace the placeholder with a stable retry state. Background refresh
+retains existing content. Never fabricate quotes or candlesticks in loading
+placeholders.
 
 Light/dark/system preferences are available before authentication and persist
 across routes. TradingView receives the effective theme via documented embed

@@ -33,17 +33,11 @@ export function ListSkeleton({ label }: { label: string }) {
   useLoadingMotion(root);
   return <div ref={root} className="list-skeleton" aria-busy="true"><LoadingStatus>{label}</LoadingStatus><div aria-hidden="true">{[0, 1, 2].map(row => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-line short"/></div>)}</div></div>;
 }
-export function PageSkeleton({ title, label, dashboard = false, error, hidden }: { title?: string; label: string; dashboard?: boolean; error?: string; hidden?: boolean }) {
-  const root = useRef<HTMLElement>(null);
-  useLoadingMotion(root, 'skeleton', !hidden && !error);
-  return <section ref={root} className="page-skeleton" hidden={hidden} aria-busy={!error} data-slot="page-skeleton">
-    <PageHeader><div>{title ? <h1>{title}</h1> : <Skeleton className="skeleton-title" aria-hidden="true"/>}{!error && <LoadingStatus>{label}</LoadingStatus>}</div></PageHeader>
-    {error ? <EmptyState className="load-error"><p>{t('暂时无法读取页面')}</p><p className="muted small">{t('请检查网络和服务连接，再重试。')}</p></EmptyState> : <div aria-hidden="true">
-      {dashboard && <div className="skeleton-market"><Skeleton className="skeleton-line"/><Skeleton className="skeleton-price"/></div>}
-      <div className={dashboard ? 'workspace skeleton-workspace' : 'settings-grid'}>
-        <Panel className={dashboard ? 'skeleton-chart' : 'skeleton-settings'}><Skeleton className="skeleton-line"/>{dashboard ? <div className="skeleton-chart-grid"/> : [0, 1, 2, 3].map(row => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-field"/></div>)}</Panel>
-        <Panel className={dashboard ? 'skeleton-alerts' : 'skeleton-settings'}><Skeleton className="skeleton-title"/>{[0, 1, 2].map(row => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-line short"/></div>)}</Panel>
-      </div>
-    </div>}
+/** Retained failure surface for a first load that came back with an error: the
+    page states what happened instead of holding an empty placeholder. */
+export function PageError({ title }: { title?: string }) {
+  return <section className="page-failure" data-slot="page-error">
+    <PageHeader><div>{title && <h1>{title}</h1>}</div></PageHeader>
+    <EmptyState className="load-error"><p>{t('暂时无法读取页面')}</p><p className="muted small">{t('请检查网络和服务连接，再重试。')}</p></EmptyState>
   </section>;
 }

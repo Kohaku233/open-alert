@@ -41,8 +41,14 @@ Shared product patterns in `../Surface.tsx`:
 | Notice / FormError | Alert | Inline information and actionable errors |
 | EmptyState | Empty | Missing data, empty rules, initial connection failures |
 | Disclosure | Collapsible + Button | Monitoring notes and deployment help |
-| PageSkeleton / ListSkeleton | Card + Skeleton + Spinner | Session, workspace, settings and record loads |
+| PageError / ListSkeleton | Card + Empty + Skeleton | Failed first loads and record-list loads |
 | PageHeader | Semantic header layout | Consistent titles and actions |
+
+First paint is owned by `../BootStage.tsx`: a full-screen curtain that assembles
+the brand mark and holds a localized `role="status"` label until the session
+handshake and the first workspace snapshot report ready. Claims are registered
+by the views themselves (`useBootClaim`), the exit is a single transform-only
+curtain lift, and reduced motion keeps the resting state without any tween.
 
 Use these patterns before adding a page-specific equivalent. Standard text,
 links, forms, fieldsets, lists and definition lists retain HTML semantics;

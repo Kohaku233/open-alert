@@ -1,0 +1,77 @@
+/* Boot stage: a dark instrument curtain that assembles the brand mark while the
+   session and the first workspace snapshot are still in flight. Every moving
+   layer is transform/opacity only, and GSAP owns all of the motion. */
+.boot-stage {
+  --stage-bg: #101715; --stage-ink: #f4f1e6; --stage-muted: #98a39c;
+  --stage-line: color-mix(in srgb, var(--hero-signal) 12%, transparent);
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center;
+  overflow: hidden; color: var(--stage-ink); background: transparent;
+}
+:root[data-theme="dark"] .boot-stage { --stage-bg: #070b0c; --stage-ink: #f6f2e7; --stage-muted: #8f9a94; }
+.boot-curtain {
+  position: absolute; inset: 0; overflow: hidden; will-change: transform;
+  background:
+    radial-gradient(120% 90% at 50% 6%, color-mix(in srgb, var(--hero-signal) 9%, transparent), transparent 62%),
+    radial-gradient(90% 70% at 86% 98%, color-mix(in srgb, var(--hero-copper) 11%, transparent), transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--stage-bg) 86%, #000) 0%, var(--stage-bg) 54%, color-mix(in srgb, var(--stage-bg) 80%, #000) 100%);
+}
+.boot-field {
+  position: absolute; inset: -14% -8%; opacity: 0;
+  background-image:
+    linear-gradient(var(--stage-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stage-line) 1px, transparent 1px);
+  background-size: 86px 86px;
+  mask-image: radial-gradient(64% 56% at 50% 46%, #000 16%, transparent 92%);
+}
+.boot-scan {
+  position: absolute; left: -4%; right: -4%; top: 0; height: 220px; pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--hero-signal) 5%, transparent) 70%, color-mix(in srgb, var(--hero-signal) 20%, transparent) 96%, transparent 100%);
+}
+.boot-scan::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 2px; height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--hero-signal) 60%, transparent), transparent);
+}
+.boot-slats { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); }
+.boot-slats span { border-left: 1px solid #ffffff09; background: linear-gradient(180deg, #ffffff07, #ffffff00 72%); }
+.boot-slats span:first-child { border-left: 0; }
+.boot-edge {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--hero-signal) 50%, transparent);
+  box-shadow: 0 0 34px 9px color-mix(in srgb, var(--hero-signal) 34%, transparent);
+}
+.boot-core {
+  position: relative; z-index: 2; display: grid; justify-items: center; gap: 18px;
+  width: min(760px, calc(100vw - 44px)); text-align: center;
+}
+.boot-mark {
+  width: clamp(76px, 8vw, 104px); height: clamp(76px, 8vw, 104px);
+  filter: drop-shadow(0 0 30px color-mix(in srgb, var(--hero-signal) 20%, transparent));
+}
+.boot-comet { opacity: .9; }
+.boot-word { display: flex; gap: .06em; margin: 0; font-size: clamp(38px, 5.6vw, 68px); font-weight: 300; letter-spacing: -.05em; line-height: 1; }
+.boot-char { display: inline-block; overflow: hidden; padding-bottom: .08em; margin-bottom: -.08em; }
+.boot-char i { display: inline-block; font-style: normal; }
+.boot-kicker { margin: 0; color: var(--stage-muted); font-size: 11px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; }
+.boot-lock { position: relative; width: min(360px, 54vw); height: 2px; margin-top: 4px; background: color-mix(in srgb, var(--stage-ink) 13%, transparent); }
+.boot-lock span { position: absolute; inset: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--hero-signal) 26%, transparent), var(--hero-signal), color-mix(in srgb, var(--hero-signal) 26%, transparent)); }
+.boot-lock i { position: absolute; top: 50%; left: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: var(--hero-signal); box-shadow: 0 0 20px color-mix(in srgb, var(--hero-signal) 70%, transparent); }
+.boot-note { margin: 0; color: var(--stage-muted); font-size: 13px; line-height: 1.7; }
+.boot-status {
+  position: absolute; left: 0; right: 0; bottom: clamp(44px, 8vh, 84px); z-index: 3;
+  display: flex; align-items: center; gap: 10px; width: fit-content; max-width: min(560px, calc(100vw - 32px));
+  margin-inline: auto; padding: 9px 16px; border: 1px solid #ffffff14; border-radius: 999px;
+  background: #ffffff08; color: var(--stage-ink); font-size: 13px; line-height: 1.5; backdrop-filter: blur(6px);
+}
+.boot-status-text { text-wrap: pretty; }
+.boot-orb { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--hero-signal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--hero-signal) 14%, transparent); }
+@media (max-width: 600px) {
+  .boot-core { gap: 15px; }
+  .boot-word { font-size: clamp(30px, 11vw, 44px); }
+  .boot-kicker { font-size: 10px; }
+  .boot-lock { width: min(260px, 68vw); }
+  .boot-note { font-size: 12px; }
+  .boot-status { bottom: calc(38px + env(safe-area-inset-bottom, 0px)); font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-scan, .boot-comet { display: none; }
+}
