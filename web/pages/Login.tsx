@@ -1,5 +1,6 @@
 import { usePageMotion, useFormStepMotion } from '../motion.js';
 import { Panel, Notice, LoadingStatus } from '../components/Surface.js';
+import { useBootClaim } from '../components/BootStage.js';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../components/ui/button.js';
@@ -43,6 +44,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     const cooldown = Math.max(0, Math.ceil(((attempt?.retryAt ?? 0) - now) / 1000));
     const expired = codeStep && (attempt?.expiresAt ?? 0) <= now;
     const uncertain = codeStep && (attempt?.delivery === 'uncertain' || attempt?.delivery === 'pending');
+    useBootClaim(t('正在读取登录方式…'), !capabilities && !capError);
 
     function updateFlow(next: EmailLoginFlow) {
         flowRef.current = next;

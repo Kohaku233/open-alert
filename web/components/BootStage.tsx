@@ -7,17 +7,13 @@ import { t } from '../i18n.js';
 gsap.registerPlugin(useGSAP);
 const reduceQuery = '(prefers-reduced-motion: reduce)';
 const slatCount = 14;
-/** A fast load still shows the assembled stage, so the entrance never flickers. */
-const minimumVisible = 450;
+/** Wait for the mark to finish drawing before lifting, even on a fast response. */
+const markSettleAt = 0.72;
 
 type Claim = { id: symbol; label: string };
 type Phase = 'entering' | 'exiting' | 'done';
-const BootContext = createContext<{ claim: (label: string) => () => void } | null>(null);
+const BootContext = createContext<{ claim: (label: string) => () => void; visible: boolean } | null>(null);
 
-/**
- * Hold the entrance open until every mounted view reports readiness. Claims are
- * owned by the views themselves, so navigation and remounts cannot leak one.
- */
 export function useBootClaim(label: string, active = true) {
   const stage = useContext(BootContext);
   useEffect(() => {
@@ -27,44 +23,76 @@ export function useBootClaim(label: string, active = true) {
   }, [stage, label, active]);
 }
 
+export function useBootVisible() {
+  return useContext(BootContext)?.visible ?? true;
+}
+
 export function BootStageProvider({ children }: { children: ReactNode }) {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [phase, setPhase] = useState<Phase>('entering');
-  const visibleAt = useRef(0);
+  const [revealed, setRevealed] = useState(false);
+  const [committed, setCommitted] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const revealedRef = useRef(false);
+  const generationRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const claim = useCallback((label: string) => {
     const id = Symbol('boot-claim');
     setClaims(current => [...current, { id, label }]);
     return () => setClaims(current => current.filter(entry => entry.id !== id));
   }, []);
-  const context = useMemo(() => ({ claim }), [claim]);
+  const context = useMemo(() => ({ claim, visible: committed }), [claim, committed]);
   const pending = claims.length > 0;
   const contextLabel = claims.at(-1)?.label ?? '';
-  useEffect(() => { visibleAt.current = performance.now(); }, []);
   // Entering and leaving are separate states: a claim that arrives while the
   // curtain is already lifting restores the full entrance instead of flashing a
   // half-rendered page.
   useEffect(() => {
     if (pending || phase !== 'entering')
       return;
-    const remaining = Math.max(0, minimumVisible - (performance.now() - visibleAt.current));
-    const timer = window.setTimeout(() => setPhase('exiting'), remaining);
-    return () => window.clearTimeout(timer);
-  }, [pending, phase]);
+    // Reduced motion has no assembled mark to wait for. Ordinary motion only
+    // lifts after BootStage reports that the logo is readable.
+    if (!revealed && !window.matchMedia(reduceQuery).matches)
+      return;
+    setPhase('exiting');
+  }, [pending, revealed, phase]);
   useEffect(() => {
     if (!pending || phase === 'entering')
       return;
-    visibleAt.current = performance.now();
+    // A new claim arriving during the lift re-arms the curtain. Keep the content
+    // mounted so the child that registered the claim can continue its request.
+    revealedRef.current = false;
+    setRevealed(false);
+    // Invalidate callbacks from the previous entrance before replaying it.
+    generationRef.current += 1;
+    setGeneration(generationRef.current);
     setPhase('entering');
   }, [pending, phase]);
+  const reveal = useCallback((source: number) => {
+    if (!mountedRef.current)
+      return;
+    const current = generationRef.current + 1;
+    if (source !== current || revealedRef.current)
+      return;
+    revealedRef.current = true;
+    setRevealed(true);
+    setCommitted(true);
+    generationRef.current = current;
+    setGeneration(current);
+  }, []);
   return <BootContext value={context}>{children}
-    {phase !== 'done' && <BootStage label={contextLabel} phase={phase} onExited={() => setPhase('done')}/>}
+    {phase !== 'done' && <BootStage generation={generation + 1} label={contextLabel} phase={phase} onRevealed={reveal} onExited={() => setPhase('done')}/>}
   </BootContext>;
 }
 
-function BootStage({ label, phase, onExited }: { label: string; phase: Phase; onExited: () => void }) {
+function BootStage({ generation, label, phase, onRevealed, onExited }: { generation: number; label: string; phase: Phase; onRevealed: (generation: number) => void; onExited: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const entry = useRef<gsap.core.Timeline | null>(null);
   const loops = useRef<gsap.core.Timeline[]>([]);
+  const markSettled = useRef(false);
+  const reveal = useRef(onRevealed);
+  reveal.current = onRevealed;
   const exited = useRef(onExited);
   exited.current = onExited;
   const symbols = [...t('价格哨站')];
@@ -79,8 +107,11 @@ function BootStage({ label, phase, onExited }: { label: string; phase: Phase; on
     media.add({ all: 'all', reduced: reduceQuery }, context => {
       const reduced = !!context.conditions?.reduced || document.hidden;
       node.dataset.motionState = reduced ? 'settled' : 'entering';
-      if (reduced)
+      node.dataset.markReady = String(reduced);
+      if (reduced) {
+        reveal.current(generation);
         return;
+      }
       const frame = node.querySelector('.boot-frame') as SVGPathElement | null;
       const signal = node.querySelector('.boot-signal') as SVGPathElement | null;
       const comet = node.querySelector('.boot-comet') as SVGPathElement | null;
@@ -106,6 +137,12 @@ function BootStage({ label, phase, onExited }: { label: string; phase: Phase; on
       timeline.fromTo('.boot-lock span', { scaleX: 0, transformOrigin: 'center' }, { scaleX: 1, duration: .7, ease: 'power3.inOut' }, .68);
       timeline.fromTo('.boot-note', { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: .6 }, .86);
       timeline.fromTo('.boot-status', { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: .6 }, .92);
+      // The frame, signal and node form the readable logo; wait for all three.
+      timeline.add(() => {
+        markSettled.current = true;
+        node.dataset.markReady = 'true';
+        reveal.current(generation);
+      }, markSettleAt);
       entry.current = timeline;
       const cometLoop = gsap.timeline({ repeat: -1, repeatDelay: .35, paused: true })
         .set(comet, { strokeDasharray: `${Math.max(14, cometLength * .18)} ${cometLength + 24}`, strokeDashoffset: cometLength + 40 })
@@ -129,6 +166,11 @@ function BootStage({ label, phase, onExited }: { label: string; phase: Phase; on
     entry.current = null;
     loops.current.forEach(loop => loop.kill());
     loops.current = [];
+    node.dataset.bootEntrance = 'exited';
+    // A hidden/reduced tab has no readable logo to wait for; accessibility
+    // needs the session result immediately rather than a frozen curtain.
+    if (!markSettled.current)
+      node.dataset.markReady = 'true';
     if (reduced) {
       gsap.to(node, { opacity: 0, duration: .18, onComplete: () => exited.current() });
       return;

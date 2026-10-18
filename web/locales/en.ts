@@ -465,7 +465,7 @@ export const english: Record<string, string> = {
   "确认撤销": "Confirm revocation",
   "邀请已撤销。": "Invitation revoked.",
   "邀请邮件已交给邮件服务。": "The email service accepted the invitation email.",
-  "邀请仍有效，请查看邮件发送结果。": "The invitation remains active. Check the email result.",
+  "邀请仍有效，请查看邮件发送结果。": "The invitation remains active. Check the email result.",
   "外观主题": "Appearance",
   "跟随系统": "System",
   "深色": "Dark",
@@ -508,5 +508,6 @@ export const english: Record<string, string> = {
   "等待规则": "Awaiting rules",
   "等待报价": "Awaiting quote",
   "后台守夜": "Always on watch",
-  "会话由 Cookie 保护": "Cookie-protected session"
+  "会话由 Cookie 保护": "Cookie-protected session",
+  "正在读取登录方式…": "Loading sign-in methods..."
 };

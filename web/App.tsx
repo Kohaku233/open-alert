@@ -1,6 +1,6 @@
 import { Appearance } from './components/Appearance.js';
 import { Notice, EmptyState } from './components/Surface.js';
-import { BootStageProvider, useBootClaim } from './components/BootStage.js';
+import { BootStageProvider, useBootClaim, useBootVisible } from './components/BootStage.js';
 import { Toaster } from './components/ui/sonner.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
 import { toast } from 'sonner';
@@ -40,6 +40,7 @@ export function App() {
 function AppRoutes() {
     useLanguage();
     const session = authClient.useSession();
+    const visible = useBootVisible();
     const [sessionKnown, setSessionKnown] = useState(false);
     useEffect(() => {
         if (!session.isPending && !session.error) setSessionKnown(true);
@@ -65,6 +66,7 @@ function AppRoutes() {
         }
     }, [session.data, session.isPending, session.error, sessionKnown, path]);
     const onSignedIn = () => { void session.refetch(); navigate('/dashboard'); };
+    if (!visible) return null;
     return <TooltipProvider delayDuration={300}>
     <a className="skip-link" href="#main-content">{t("跳转到内容")}</a>
     {session.isPending && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"/></>

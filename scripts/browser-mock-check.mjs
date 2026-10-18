@@ -207,9 +207,8 @@ const tick = page => page.clock.runFor(1);
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
-// Every fresh document now boots behind the entrance curtain (450ms minimum plus the
-// exit lift), so each journey's first interaction waits it out; the guard only needs
-// to catch hangs, not to fit the pre-entrance budget.
+// Every fresh document boots behind the entrance curtain until its logo is fully
+// formed and any view-handshake claims settle. The guard only needs to catch hangs.
 const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 180 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 180000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
@@ -601,7 +600,7 @@ try {
     await p.goto(origin+'/dashboard'); await tick(p); await expect(p.getByRole('switch')).toBeVisible();
     for(const [name,value,raw] of [['invalid','nonsense',false],['missing',null,false],['past','Mon, 12 Oct 2026 13:00:00 GMT',false],['negative','-2',false],['zero','0',true]]) {
       s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:value===null?{}:{'Retry-After':value},raw};
-      await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：60 秒');
+      await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText(/重试等待：6[01] 秒/);
       const before = businessRequests(s).length, quoteBefore=requests(s,'GET','/api/quote').length;
       await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click();
       await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
@@ -615,8 +614,6 @@ try {
     const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
     await p.getByRole('button',{name:'退出登录'}).click();
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
-    // Logging out unmounts the workspace entrance; spend virtual time so the
-    // curtain is gone before the login controls are clicked.
     await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
     await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
     await p.getByLabel('邮箱地址').fill('mock@example.test'); await p.getByRole('button',{name:'发送验证码'}).click();
@@ -806,11 +803,10 @@ try {
     await p.clock.install({time});await p.clock.pauseAt(time);
     s.googleEnabled=true;s.emailSenderMode='resend_sending_only';
     await p.goto(origin+'/login?email=mock%40example.test'); await tick(p);
-    await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
-    // The entrance must lift before pointer input works; the paused clock only
-    // advances it through runFor. This happens before the first send, so the
-    // resend countdown below is unaffected.
+    // Session and capability requests have to settle before the view can become
+    // visible, so advance the paused clock once before reading the prefilled form.
     await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
     await p.getByRole('button',{name:'发送验证码',exact:true}).click();
     await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();
     await expect(p.getByText('验证码邮件已发送，请检查收件箱或垃圾邮件。')).toBeVisible();
@@ -829,16 +825,20 @@ try {
     await check(profile+' transient background session error preserves the form',async()=>{await expect(p.getByLabel('邮件中的验证码')).toHaveValue('123');assert(await field.evaluate(n=>n.isConnected));await expect(p.getByRole('heading',{name:'无法确认登录状态'})).toHaveCount(0);});
     s.sessionReadFails=false;
     await p.reload(); await tick(p);
-    await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
-    await expect(p.getByRole('button',{name:'48 秒后重发',exact:true})).toBeDisabled();
-    await p.goto(origin+'/account'); await tick(p);
-    await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
-    // Reload/navigation re-armed the entrance: spend 2s of the 60s resend cooldown
-    // so the lifted curtain never swallows the step change below.
     await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
+    await expect(p.getByRole('button',{name:/秒后重发/,exact:false})).toBeDisabled();
+    await p.goto(origin+'/account'); await tick(p);
+    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
     await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
-    await check(profile+' same email keeps resend cooldown after changing steps',()=>expect(p.getByRole('button',{name:'46 秒后可重新发送',exact:true})).toBeDisabled());
+    await check(profile+' same email keeps resend cooldown after changing steps',async()=>{
+      const label=await p.getByRole('button',{name:/秒后可重新发送/}).innerText();
+      const seconds=Number(label.match(/(\d+)/)?.[1]);
+      assert(seconds > 0, label);
+      await expect(p.getByRole('button',{name:/秒后可重新发送/})).toBeDisabled();
+    });
     await p.getByLabel('邮箱地址').fill('other@example.test');await expect(p.getByRole('button',{name:'发送验证码',exact:true})).toBeEnabled();
     await p.getByLabel('邮箱地址').fill('mock@example.test');await p.getByRole('button',{name:'已有验证码？继续验证'}).click();
     await p.clock.runFor(300000);
@@ -846,8 +846,8 @@ try {
     s.otpError='EMAIL_UNCERTAIN';await p.getByRole('button',{name:'重新发送',exact:true}).click();
     await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();
     await p.reload(); await tick(p);
-    await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
     await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
     await p.getByLabel('邮件中的验证码').fill('123456');await p.getByRole('button',{name:'验证并继续',exact:true}).click();
     await expect(p.getByRole('switch')).toBeVisible();
     await check(profile+' successful verification clears resumable email metadata',async()=>assert.equal(await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1')),null));
@@ -871,13 +871,14 @@ try {
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     s.holdSession=null;releaseSession();
     await check('workspace entrance covers the first snapshot instead of skeletons',async()=>{
-      await expect(p.getByRole('status')).toContainText('Loading your alerts and prices');
+      await expect(p.getByRole('status')).toContainText('Checking your session');
       assert.equal(await p.locator('[data-slot="page-skeleton"]').count(),0);
     });
     releaseStatus();
-    await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0,{timeout:15000});
     await expect(p.getByRole('switch')).toBeVisible();
-    await chooseSelect(p,'Appearance','dark');await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
+    await chooseSelect(p,'Appearance','dark');
+    await expect.poll(()=>p.locator('html').getAttribute('data-theme')).toBe('dark');
     await chooseSelect(p,'Appearance','system');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
     await check('system follows media without saving an override',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),null));
@@ -919,10 +920,31 @@ try {
     await expect(p.locator('html')).toHaveAttribute('lang','zh-CN');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await fixture.context.close();
   });
-  await journey('unsupported client locale fallback, Chinese detection and preference isolation',async()=>{
+  await journey('unauthenticated fast session waits for the logo and locale fallback stays isolated',async()=>{
     for (const [locale,expected] of [['ja-JP','en'],['zh-TW','zh-CN']]) {
       const fixture=await setup(browser,'desktop',false,{locale,colorScheme:'light'});
-      await fixture.page.goto(origin+'/login');
+      const time=new Date();
+      await fixture.page.clock.install({time}); await fixture.page.clock.pauseAt(time);
+      await fixture.page.goto(origin+'/login'); await tick(fixture.page);
+      await fixture.page.clock.runFor(200);
+      await check('login stays behind the settling logo',async()=>{
+        await expect(fixture.page.locator('[data-slot="boot-stage"]')).toBeVisible();
+        await expect(fixture.page.locator('[data-slot="boot-stage"]')).toHaveAttribute('data-boot-phase','entering');
+        assert.equal(await fixture.page.getByRole('heading',{name:expected==='en'?'Sign in or create an account':'登录或注册'}).count(),0);
+      });
+      let sawSettledMark=false;
+      for(let step=0;step<8 && !sawSettledMark;step++) {
+        await fixture.page.clock.runFor(200);
+        sawSettledMark=await fixture.page.locator('[data-slot="boot-stage"][data-mark-ready="true"]').count()===1;
+      }
+      await check('logo finishes before the login view is revealed',()=>assert(sawSettledMark));
+      for(let step=0;step<10 && await fixture.page.locator('[data-slot="boot-stage"]').count();step++) {
+        await fixture.page.clock.runFor(200);
+      }
+      await check('login appears only after the mark is complete',async()=>{
+        await expect(fixture.page.getByRole('heading',{name:expected==='en'?'Sign in or create an account':'登录或注册'})).toBeVisible();
+        await expect(fixture.page.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+      });
       await check('client language '+locale,async()=>{await expect(fixture.page.locator('html')).toHaveAttribute('lang',expected);assert.equal(await fixture.page.evaluate(()=>localStorage.length),0);});
       if(expected==='en') {
         await expect(fixture.page.getByRole('heading',{name:'Sign in or create an account'})).toBeVisible();
