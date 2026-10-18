@@ -56,11 +56,7 @@ export function Dashboard({ model, active, notify, navigate }: {
     const tick = quoteState.quote;
     const priceText = tick ? formatPrice(tick.price) : '—';
     const priceRef = useRef<HTMLSpanElement>(null);
-    const previousPrice = useRef<number | undefined>(undefined);
-    const priceDirection = previousPrice.current !== undefined && tick ? Math.sign(tick.price - previousPrice.current) || 1 : 1;
-    if (tick)
-        previousPrice.current = tick.price;
-    usePriceMotion(priceRef, priceText, priceDirection);
+    usePriceMotion(priceRef, priceText, tick?.price, selected);
     const currentMarketAlerts = data?.alerts.filter(alert => sameMarket(alert.instrument, selected)) ?? [];
     const railRef = useRef<HTMLDivElement>(null);
     const railRevision = `${selected}:${currentMarketAlerts.map(alert => `${alert.id}:${alert.side}:${alert.threshold}:${alert.triggered ? 1 : 0}`).join('|')}`;
@@ -127,7 +123,7 @@ export function Dashboard({ model, active, notify, navigate }: {
     </PageHeader>
 
     <section className="market-header signal-hero" aria-label={t("当前市场信号")} onPointerMove={event => {
-        if (event.pointerType !== 'mouse')
+        if (event.pointerType !== 'mouse' || window.matchMedia('(prefers-reduced-motion: reduce)').matches)
             return;
         const rect = event.currentTarget.getBoundingClientRect();
         event.currentTarget.style.setProperty('--hero-x', `${event.clientX - rect.left}px`);

@@ -31,7 +31,7 @@ function LanguageSwitch() {
 function Brand({ navigate }: {
     navigate: (path: string) => void;
 }) {
-    return <a className="brand" href="/dashboard" onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><Icon name="brand" className="brand-mark"/><span>{t("价格哨站")}<small>OPEN ALERT</small></span></a>;
+    return <a className="brand" href="/dashboard" aria-label={t("价格哨站")} onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><Icon name="brand" className="brand-mark"/><span>{t("价格哨站")}<small>OPEN ALERT</small></span></a>;
 }
 export function App() {
     useLanguage();

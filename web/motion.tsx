@@ -275,14 +275,16 @@ export function useSwitchMotion(ref: RefObject<HTMLButtonElement | null>, checke
 }
 
 /** Animate the actual incoming quote, never an invented intermediate value. */
-export function usePriceMotion(ref: RefObject<HTMLElement | null>, value: string, direction = 1) {
-  const previous = useRef(value);
+export function usePriceMotion(ref: RefObject<HTMLElement | null>, value: string, price: number | undefined, instrument: string) {
+  const previous = useRef({ value, price, instrument });
   useGSAP(() => {
     const node = ref.current;
-    if (!node || previous.current === value) return;
-    const changed = previous.current !== value;
-    previous.current = value;
-    if (!changed) return;
+    if (!node) return;
+    const last = previous.current;
+    previous.current = { value, price, instrument };
+    if (last.value === value && last.instrument === instrument) return;
+    const direction = last.instrument === instrument && last.price !== undefined && price !== undefined
+      ? Math.sign(price - last.price) : 1;
     const media = gsap.matchMedia();
     media.add({ all: 'all', reduced: reduceQuery }, context => {
       if (context.conditions?.reduced) return;
@@ -291,7 +293,7 @@ export function usePriceMotion(ref: RefObject<HTMLElement | null>, value: string
       });
     }, ref);
     return () => media.revert();
-  }, { scope: ref, dependencies: [value, direction], revertOnUpdate: true });
+  }, { scope: ref, dependencies: [value, price, instrument], revertOnUpdate: true });
 }
 
 /** Draw the threshold rail once, then let real quote changes move its marker. */

@@ -196,6 +196,23 @@ const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/
 async function noOverflow(page) {
   await page.waitForFunction(() => ![...document.querySelectorAll('[data-motion-state="entering"],[data-motion-state="exiting"]')].some(node => node.getClientRects().length));
   await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); });
+  const controls = await page.evaluate(() => {
+    const rail = document.querySelector('.app-rail')?.getBoundingClientRect();
+    return [...document.querySelectorAll('.header-actions button')].filter(node => node.getClientRects().length).map(node => {
+      const box = node.getBoundingClientRect();
+      return { text: node.textContent, contained: !rail || box.left >= rail.left - 1 && box.right <= rail.right + 1 };
+    });
+  });
+  assert(controls.every(control => control.contained), `Clipped sidebar controls: ${JSON.stringify(controls)}`);
+  const contrast = await page.locator('.create-alert-button').evaluateAll(nodes => nodes.map(node => {
+    const luminance = color => {
+      const rgb = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { const c = v / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; });
+      return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+    };
+    const style = getComputedStyle(node), fg = luminance(style.color), bg = luminance(style.backgroundColor);
+    return (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
+  }));
+  assert(contrast.every(ratio => ratio >= 4.5), `Primary action contrast: ${contrast}`);
 }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 
@@ -203,6 +220,25 @@ const review = join(root, '.impeccable/review');
 await mkdir(review, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
+  const responsive = await setup(browser, 'desktop', true);
+  await responsive.page.emulateMedia({ reducedMotion: 'reduce' });
+  await responsive.page.goto(origin + '/dashboard');
+  await expect(responsive.page.getByRole('switch')).toBeVisible();
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    await responsive.page.setViewportSize({ width, height: 900 });
+    await expect(responsive.page.locator('.brand')).toHaveAccessibleName('价格哨站');
+    for (const theme of ['light', 'dark']) {
+      await responsive.page.getByRole('combobox', { name: '外观主题', exact: true }).click();
+      await responsive.page.locator('[role="option"][data-value="' + theme + '"]').click();
+      await noOverflow(responsive.page);
+      if (width <= 900) {
+        const targets = await responsive.page.locator('.header-actions button,.icon-button,.instrument-button,.alert-buttons button,.alert-scope [role="tab"]').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length).map(node => { const r = node.getBoundingClientRect(); return { text: node.textContent, width: r.width, height: r.height }; }));
+        assert(targets.every(target => target.width >= 44 && target.height >= 44), JSON.stringify({ width, targets }));
+      }
+    }
+  }
+  await responsive.context.close();
+  console.log('PASS 320–1440px sidebar containment, accessible brand, primary contrast and touch targets');
   for (const profile of ['desktop', 'mobile']) {
     const {page, context, state} = await setup(browser, profile, true);
     await page.goto(origin+'/dashboard');
