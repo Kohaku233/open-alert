@@ -237,8 +237,28 @@ try {
       }
     }
   }
+  for (const [width, height] of [[1920, 1080], [2560, 1440]]) {
+    await responsive.page.setViewportSize({ width, height });
+    await noOverflow(responsive.page);
+    const wide = await responsive.page.evaluate(() => {
+      const box = selector => document.querySelector(selector)?.getBoundingClientRect() ?? null;
+      const main = box('.app-main'), chart = box('.chart-panel'), alerts = box('.alerts-panel');
+      return {
+        viewport: innerWidth,
+        rightGap: main ? Math.round(innerWidth - main.right) : null,
+        scrollWidth: document.documentElement.scrollWidth,
+        columnDelta: chart && alerts ? Math.round(Math.abs(chart.bottom - alerts.bottom)) : null,
+        alertNameSize: parseFloat(getComputedStyle(document.querySelector('.alert-name')).fontSize)
+      };
+    });
+    // Wide displays used to leave a dead strip right of the capped content column.
+    assert(wide.rightGap !== null && Math.abs(wide.rightGap) <= 1, `Content column leaves a right gap at ${width}px: ${JSON.stringify(wide)}`);
+    assert(wide.scrollWidth <= wide.viewport + 1, `Horizontal overflow at ${width}px: ${JSON.stringify(wide)}`);
+    assert(wide.columnDelta !== null && wide.columnDelta <= 2, `Dashboard columns do not end together at ${width}px: ${JSON.stringify(wide)}`);
+    assert(wide.alertNameSize >= 14, `Alert name text is too small at ${width}px: ${JSON.stringify(wide)}`);
+  }
   await responsive.context.close();
-  console.log('PASS 320–1440px sidebar containment, accessible brand, primary contrast and touch targets');
+  console.log('PASS 320–2560px sidebar containment, accessible brand, primary contrast, touch targets and wide-display layout');
   for (const profile of ['desktop', 'mobile']) {
     const {page, context, state} = await setup(browser, profile, true);
     await page.goto(origin+'/dashboard');

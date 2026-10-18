@@ -202,6 +202,8 @@ const nav = (page, name) => page.getByRole('navigation', { name: '主导航' }).
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
+// A paused virtual clock also freezes the session SDK's first timer, so a fresh document needs one virtual tick to boot.
+const tick = page => page.clock.runFor(1);
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
@@ -507,24 +509,27 @@ try {
     await nav(m,'行情与警报'); await check('mobile navigation preserves chart', async () => assert(await frame.evaluate(n=>n.isConnected)));
     await m.goto(origin+'/admin'); await check('ordinary user admin view guarded', () => expect(m.getByText('此页面仅供管理员使用。')).toBeVisible());
     await check('guard issues no admin API', async () => assert.equal(mobile.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,0));
+    await mobile.context.close();
   });
   await journey('10 admin bounded pagination and invitation copy under mobile fixture', async () => {
-    mobile.state.status.user.role='admin'; mobile.state.status.capabilities.canAdmin=true; await m.reload();
-    await expect(m.getByRole('button',{name:'加载更多账户'})).toBeVisible(); await noOverflow(m);
-    await m.getByRole('button',{name:'加载更多账户'}).click();
-    await check('admin cursor page fetched', async () => { await expect(m.getByRole('button',{name:'加载更多账户'})).toHaveCount(0); assert.equal(requests(mobile.state,'GET','/api/admin/users').length,2); });
-    await m.getByLabel('受邀邮箱').fill('invite@example.test'); await m.getByRole('button',{name:'创建邮箱邀请'}).click();
-    await check('invite distinguishes admission from restricted email', () => expect(m.getByRole('status').filter({hasText:'已创建 invite@example.test'})).toContainText('当前邮件为测试模式'));
-    mobile.state.sessionInvalid=true;
-    await check('expired session handled on poll', () => expect(m.getByRole('heading',{name:'登录或注册'})).toBeVisible({timeout:7000}));
-    await mobile.context.close();
+    // Own fixture: the journey 09 document must not stay parked on /admin when the role changes.
+    const fixture=await setup(browser,'mobile',true), p=fixture.page, s=fixture.state;
+    s.status.user.role='admin'; s.status.capabilities.canAdmin=true; await p.goto(origin+'/admin');
+    await expect(p.getByRole('button',{name:'加载更多账户'})).toBeVisible(); await noOverflow(p);
+    await p.getByRole('button',{name:'加载更多账户'}).click();
+    await check('admin cursor page fetched', async () => { await expect(p.getByRole('button',{name:'加载更多账户'})).toHaveCount(0); assert.equal(requests(s,'GET','/api/admin/users').length,2); });
+    await p.getByLabel('受邀邮箱').fill('invite@example.test'); await p.getByRole('button',{name:'创建邮箱邀请'}).click();
+    await check('invite distinguishes admission from restricted email', () => expect(p.getByRole('status').filter({hasText:'已创建 invite@example.test'})).toContainText('当前邮件为测试模式'));
+    s.sessionInvalid=true;
+    await check('expired session handled on poll', () => expect(p.getByRole('heading',{name:'登录或注册'})).toBeVisible({timeout:7000}));
+    await fixture.context.close();
   });
   await journey('11 HTTP-date cooldown, blocked editor, delayed read coalescing and unmount abort', async () => {
     const fixture = await setup(browser,'desktop',true,{reducedMotion:'reduce'}), p = fixture.page, s = fixture.state;
     const time = new Date('2026-10-12T12:00:00.000Z');
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
-    await p.goto(origin+'/dashboard'); await expect(p.getByRole('switch')).toBeVisible();
+    await p.goto(origin+'/dashboard'); await tick(p); await expect(p.getByRole('switch')).toBeVisible();
     await p.getByRole('button',{name:'创建警报',exact:true}).click();
     await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK blocked by cooldown');
     await p.getByRole('dialog').getByLabel('价格 · USDT').fill('62000');
@@ -575,7 +580,7 @@ try {
     const time = new Date('2026-10-12T14:00:00.000Z');
     await p.clock.install({time}); await p.clock.pauseAt(time);
     s.alerts = s.alerts.filter(a=>!a.pending);
-    await p.goto(origin+'/dashboard'); await expect(p.getByRole('switch')).toBeVisible();
+    await p.goto(origin+'/dashboard'); await tick(p); await expect(p.getByRole('switch')).toBeVisible();
     for(const [name,value,raw] of [['invalid','nonsense',false],['missing',null,false],['past','Mon, 12 Oct 2026 13:00:00 GMT',false],['negative','-2',false],['zero','0',true]]) {
       s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:value===null?{}:{'Retry-After':value},raw};
       await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：60 秒');
@@ -774,7 +779,7 @@ try {
     const time=new Date('2026-10-16T12:00:00.000Z');
     await p.clock.install({time});await p.clock.pauseAt(time);
     s.googleEnabled=true;s.emailSenderMode='resend_sending_only';
-    await p.goto(origin+'/login?email=mock%40example.test');
+    await p.goto(origin+'/login?email=mock%40example.test'); await tick(p);
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
     await p.getByRole('button',{name:'发送验证码',exact:true}).click();
     await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();
@@ -793,10 +798,10 @@ try {
     await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await failedRefresh;
     await check(profile+' transient background session error preserves the form',async()=>{await expect(p.getByLabel('邮件中的验证码')).toHaveValue('123');assert(await field.evaluate(n=>n.isConnected));await expect(p.getByRole('heading',{name:'无法确认登录状态'})).toHaveCount(0);});
     s.sessionReadFails=false;
-    await p.reload();
+    await p.reload(); await tick(p);
     await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
     await expect(p.getByRole('button',{name:'48 秒后重发',exact:true})).toBeDisabled();
-    await p.goto(origin+'/account');
+    await p.goto(origin+'/account'); await tick(p);
     await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
     await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
@@ -807,7 +812,7 @@ try {
     await check(profile+' expiry keeps recovery visible and disables stale verification',async()=>{await expect(p.getByText('验证码已过期，请重新发送。',{exact:true})).toBeVisible();await expect(p.getByRole('button',{name:'验证并继续',exact:true})).toBeDisabled();await expect(p.getByRole('button',{name:'重新发送',exact:true})).toBeEnabled();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
     s.otpError='EMAIL_UNCERTAIN';await p.getByRole('button',{name:'重新发送',exact:true}).click();
     await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();
-    await p.reload();
+    await p.reload(); await tick(p);
     await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
     await p.getByLabel('邮件中的验证码').fill('123456');await p.getByRole('button',{name:'验证并继续',exact:true}).click();
     await expect(p.getByRole('switch')).toBeVisible();
