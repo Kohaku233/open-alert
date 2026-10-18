@@ -89,6 +89,29 @@ test('email resend cooldown persists across factory restart and IP change; attem
   } finally { await f.close(); }
 });
 
+test('session reads use a one-minute limit across restarts without weakening OTP cooldowns', async () => {
+  const f = await fixture({ INVITE_ONLY: 'false' });
+  try {
+    for (let i = 0; i < 60; i++) {
+      const response = await f.call('/get-session');
+      assert.equal(response.status, 200);
+      assert.equal(await response.json(), null);
+    }
+    const blocked = await f.call('/get-session');
+    assert.equal(blocked.status, 429);
+    const wait = Number(blocked.headers.get('Retry-After'));
+    assert.ok(wait > 0 && wait <= 60, `Session retry must be at most one minute, got ${wait}s`);
+    const restarted = await createAuth(f.config, f.db, createNodeSqliteAuthDrizzle(f.raw), { testEmailTransport: { async verify() {}, async send() {} } });
+    try { assert.equal((await restarted.handler(f.request('/get-session'))).status, 429); }
+    finally { restarted.close(); }
+    await f.db.execute('UPDATE rate_limit SET last_request=?', [Date.now() - 61_000]);
+    assert.equal((await f.call('/get-session')).status, 200);
+    assert.equal((await f.send('session-recovery@example.com')).status, 200);
+    assert.equal((await f.send('session-recovery@example.com')).status, 429);
+    assert.equal(f.messages.length, 1);
+  } finally { await f.close(); }
+});
+
 test('expired OTP cannot sign in; disabled account denies existing session, new OTP and new session insert', async () => {
   const f = await fixture({ INVITE_ONLY: 'false' });
   try {

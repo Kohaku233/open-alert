@@ -54,6 +54,9 @@ export function authOptions(config: AppConfig, sendVerificationOTP: Parameters<t
       window: 3_600,
       max: 60,
       customRules: {
+        // '*' does not match '/get-session' in the pinned native matcher. Keep
+        // the one-hour pruning horizon without applying it to session reads.
+        '/get-session': { window: 60, max: 60 },
         '/email-otp/send-verification-otp': { window: 60, max: 5 },
         '/sign-in/email-otp': { window: 60, max: 10 },
         '*': { window: 60, max: 60 },

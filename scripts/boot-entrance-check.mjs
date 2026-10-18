@@ -36,6 +36,7 @@ const profiles = [
     { name: 'interrupt-exit', width: 1440, locale: 'zh-CN', fail: 'capabilities', interrupt: true },
     { name: 'capability-retry', width: 1440, locale: 'zh-CN', fail: 'capabilities' },
     { name: 'session-retry', width: 390, locale: 'zh-CN', fail: 'session' },
+    { name: 'session-rate-limit-retry', width: 1440, locale: 'zh-CN', fail: 'session', status: 429 },
     { name: 'reduced-desktop', width: 1440, locale: 'en-GB', reduced: true },
     { name: 'reduced-mobile', width: 390, locale: 'zh-CN', reduced: true },
   ] : []),
@@ -80,7 +81,7 @@ try {
       const isSession = path === '/api/auth/get-session';
       if (failure === (isSession ? 'session' : 'capabilities')) {
         failure = null;
-        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Unavailable', ok: false, error: { code: 'service_unavailable' } }) });
+        return route.fulfill({ status: profile.status || 503, headers: profile.status === 429 ? { 'Retry-After': '60' } : {}, contentType: 'application/json', body: JSON.stringify({ message: 'Unavailable', ok: false, error: { code: 'service_unavailable' } }) });
       }
       if (!isSession && held) await gate;
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(isSession ? null : { ok: true, data: { google: false, emailOtp: true, registration: 'invite', emailSenderMode: 'console' } }) });
@@ -100,6 +101,7 @@ try {
       await page.locator('[data-slot="boot-stage"]').waitFor({ state: 'detached' });
     if (profile.fail) {
       held = true;
+      if (profile.status === 429) await page.getByText('请求过于频繁，请稍后重试。', { exact: true }).waitFor();
       const button = page.getByRole('button', { name: profile.fail === 'session' ? '重试连接' : '重试读取登录方式' });
       if (profile.interrupt) await button.evaluate(node => node.click());
       else await button.click();

@@ -90,6 +90,8 @@ npm run admin:invite:d1 -- you@example.com --remote
 
 确认 `/api/auth-capabilities` 报告实际启用的邮箱 OTP 后登录。D1 invitation CLI 不发邮件也不授予角色。bootstrap 与 Node 相同。完成后可 `npx wrangler secret delete BOOTSTRAP_TOKEN`。
 
+会话查询 `/api/auth/get-session` 使用明确的每 IP 每分钟 60 次规则。原生限流器的默认一小时窗口用于保留共享表里的邮箱小时计数，不能作为会话查询的窗口；当前 Better Auth 通配符 `*` 不匹配带 `/` 的路径，因此此接口必须显式配置。真正达到每分钟上限时返回 429 和最多 60 秒的 `Retry-After`，冷却后可重试。验证码发送、验证码校验及邮箱独立冷却规则保持不变。
+
 本地 Worker 用 `.dev.vars` 配置本地 development、console 邮箱与 `APP_URL=http://localhost:8787`，迁移/邀请都使用 `--local`，构建前端后运行 `npm run cf:dev`。本地与远程 D1 独立，不能用一次本地初始化代替生产迁移。Worker import 链不包含本项目原生 SQLite/PG/SMTP 适配器。
 
 ## 调度、免费额度与容量
