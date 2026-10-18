@@ -1,136 +1,134 @@
 ---
 name: Open Alert
-description: A compact monochrome workbench for personal price monitoring, with light and dark appearances.
+description: A signal almanac for server-side crypto price alerts, with instrument-like telemetry, editorial type and live motion.
 colors:
-  bg: "#111111"
-  surface: "#171717"
-  field: "#202020"
-  line: "#333333"
-  text: "#ededed"
-  muted: "#a3a3a3"
-  accent: "#303030"
-  signal: "#b6f36a"
-  amber: "#f1bd72"
-  danger: "#ffb4b4"
-  control-border: "#555555"
-  secondary-hover: "#292929"
-  primary-hover: "#ccc"
-  selected-language: "#303030"
-  dialog: "#1c1c1c"
-  warning-bg: "#211d17"
-  warning-border: "#705932"
+  paper: "#f2efe7"
+  paper-raised: "#fbfaf4"
+  paper-field: "#e7e3d8"
+  paper-line: "#d5d0c2"
+  paper-text: "#111416"
+  paper-muted: "#5f655f"
+  graphite: "#090c0e"
+  graphite-raised: "#111619"
+  graphite-field: "#171d20"
+  graphite-line: "#27302e"
+  graphite-text: "#f3f0e5"
+  graphite-muted: "#9da39d"
+  instrument: "#121816"
+  instrument-line: "#37423c"
+  signal: "#d6ff4f"
+  signal-ink: "#4c6b00"
+  copper: "#f0a36b"
+  amber-ink: "#a25519"
+  danger: "#ff8b8b"
+  danger-ink: "#a52d36"
 appearance:
   default: system
   options: [light, dark, system]
-  light-bg: "#ffffff"
-  light-surface: "#fafafa"
-  light-text: "#171717"
-  light-muted: "#616161"
-  light-line: "#dedede"
-  light-signal: "#3f6212"
-  tokens: web/appearance.css
+  light-canvas: "#f2efe7"
+  light-panel: "#fbfaf4"
+  light-instrument: "#171a19"
+  dark-canvas: "#090c0e"
+  dark-panel: "#111619"
+  dark-instrument: "#121816"
+  tokens: web/redesign.css
   persistence: explicit choices only
 language:
   supported: [zh-CN, en]
   default: first supported client language, otherwise English
 typography:
   display:
-    fontSize: "42px"
-    fontWeight: 600
-    lineHeight: 1.45
-    letterSpacing: "-.03em"
-  headline:
-    fontSize: "26px"
-    fontWeight: 600
-    lineHeight: 1.3
-    letterSpacing: "-.025em"
-  title:
-    fontSize: "18px"
-    fontWeight: 600
-    lineHeight: 1.4
+    fontFamily: 'Sora, "Microsoft YaHei", "PingFang SC", sans-serif'
+    fontSize: "clamp(44px, 6vw, 82px)"
+    fontWeight: 300
+    lineHeight: 1.04
+    letterSpacing: "-.065em"
+  page-title:
+    fontSize: "clamp(36px, 4.2vw, 58px)"
+    fontWeight: 300
+    letterSpacing: "-.055em"
+  section-title:
+    fontSize: "16px"
+    fontWeight: 500
+    letterSpacing: "-.035em"
   body:
-    fontFamily: '"Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
+    fontFamily: 'Sora, "Microsoft YaHei", "PingFang SC", sans-serif'
     fontSize: "14px"
     fontWeight: 400
-  english-interface:
-    fontFamily: 'Sora, "Segoe UI", sans-serif'
-    fontSize: "14px"
-  label:
-    fontSize: "12px"
-  small:
-    fontSize: "12px"
-    lineHeight: 1.7
-  quote:
+  telemetry:
     fontFamily: 'Consolas, "SFMono-Regular", monospace'
-    fontSize: "27px"
-    fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: "-.03em"
-  threshold:
-    fontFamily: "Consolas, monospace"
-    fontSize: "20px"
-    fontWeight: 600
+    fontSize: "9px"
+    letterSpacing: ".08em"
+    textTransform: uppercase
+  live-quote:
+    fontSize: "clamp(48px, 6vw, 78px)"
+    fontWeight: 300
+    lineHeight: .95
+    letterSpacing: "-.075em"
+    fontVariantNumeric: tabular-nums
+  alert-threshold:
+    fontFamily: 'Consolas, "SFMono-Regular", monospace'
+    fontSize: "22px"
+    fontWeight: 500
+    letterSpacing: "-.04em"
 rounded:
-  standard: "6px"
-  chip: "4px"
-  overlay: "8px"
-  switch-track: "14px"
+  control: "10px"
+  panel: "20px"
+  instrument: "24px"
+  mobile-panel: "18px"
+  pill: "999px"
 spacing:
-  label-gap: "8px"
-  action-gap: "10px"
-  field-inline: "12px"
-  compact-gutter: "16px"
-  row-padding: "18px"
-  workspace-gap: "20px"
-  tablet-gutter: "22px"
-  desktop-gutter: "36px"
+  desktop-rail: "248px"
+  compact-rail: "214px"
+  desktop-gutter: "42px"
+  compact-gutter: "26px"
+  mobile-gutter: "18px"
+  workspace-gap: "18px"
+  instrument-padding: "32px"
+  alert-row-padding: "18px 2px 16px"
 components:
   button-primary:
-    backgroundColor: "{colors.text}"
-    textColor: "{colors.bg}"
-    rounded: "{rounded.standard}"
-    padding: "8px 12px"
-  button-primary-hover:
-    backgroundColor: "{colors.primary-hover}"
-    textColor: "{colors.bg}"
-  button-secondary:
-    backgroundColor: "transparent"
-    textColor: "{colors.text}"
-    rounded: "{rounded.standard}"
-    padding: "8px 12px"
-  button-secondary-hover:
-    backgroundColor: "{colors.secondary-hover}"
-  button-text:
-    backgroundColor: "transparent"
-    textColor: "{colors.muted}"
-    padding: "6px 0"
+    backgroundColor: "{colors.signal}"
+    textColor: "#0b0d0e"
+    rounded: "{rounded.pill}"
+    padding: "0 18px"
+    minHeight: "48px"
+  instrument-panel:
+    backgroundColor: "{colors.instrument}"
+    textColor: "{colors.graphite-text}"
+    rounded: "{rounded.instrument}"
+  alert-panel:
+    backgroundColor: "{colors.paper-raised}"
+    textColor: "{colors.paper-text}"
+    rounded: "{rounded.panel}"
+  dark-alert-panel:
+    backgroundColor: "{colors.graphite-raised}"
+    textColor: "{colors.graphite-text}"
+    rounded: "{rounded.panel}"
   input:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.text}"
-    rounded: "{rounded.standard}"
+    backgroundColor: "{colors.paper-field}"
+    textColor: "{colors.paper-text}"
+    rounded: "{rounded.control}"
     padding: "10px 12px"
   nav-active:
-    textColor: "{colors.text}"
-  status-pill:
-    backgroundColor: "transparent"
-    textColor: "{colors.amber}"
-    rounded: "{rounded.chip}"
-    padding: "5px 9px"
-  settings-panel:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.standard}"
-    padding: "25px"
+    backgroundColor: "var(--selected)"
+    textColor: "{colors.paper-text}"
+    indicator: "3px acid stripe + measured fill"
+  status-chip:
+    textColor: "{colors.signal}"
+    rounded: "{rounded.pill}"
+    padding: "3px 6px"
   switch:
-    backgroundColor: "{colors.control-border}"
-    rounded: "{rounded.switch-track}"
+    backgroundColor: "var(--control-border)"
+    rounded: "{rounded.pill}"
     width: "44px"
-    height: "28px"
+    height: "44px"
   switch-enabled:
-    backgroundColor: "{colors.accent}"
+    backgroundColor: "{colors.signal}"
   dialog:
-    backgroundColor: "{colors.dialog}"
-    textColor: "{colors.text}"
-    rounded: "{rounded.overlay}"
+    backgroundColor: "var(--popover)"
+    textColor: "var(--foreground)"
+    rounded: "{rounded.panel}"
     padding: "26px"
 ---
 
@@ -138,100 +136,92 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Black-White Workbench"**
+**Creative North Star: "Signal Almanac"**
 
-A familiar, compact developer workbench puts precise prices and rule actions ahead of decoration. The user selected the black-white direction and Vercel as its sole visual reference. Near-black canvas, flat charcoal panels, quiet separators and white primary actions define the implemented system.
+Open Alert is presented as a precision instrument for reading price signals, not as a generic admin dashboard. Warm paper and graphite establish two complementary editions of the same almanac. A dark instrument panel behaves like the face of a monitoring device: gridded, numbered and visibly connected to live exchange data. The surrounding workspace stays quiet so that the quote, rule state and next action remain unmistakable.
 
-The original threshold-pulse SVG supplies identity. Restrained lime communicates activity and focus; amber communicates locked states, uncertainty and warnings. Chinese uses the system sans-serif stack, English uses self-hosted Sora, and tabular monospace keeps numeric values stable.
+The visual system is editorial rather than ornamental. Oversized light-weight Sora headlines, compact monospaced telemetry, a single acid signal color, and copper for latched or uncertain states create hierarchy. Construction lines and orbit diagrams explain the product metaphor: a server-side threshold station that keeps watch after the page closes.
 
 **Key Characteristics:**
 
-- Compact neutral surfaces with clear separators, available in light and dark appearances.
-- White primary actions with restrained semantic accents.
-- Self-hosted English type, readable Chinese copy and tabular prices.
-- Equal Chinese and English functionality and mobile actions.
+- Fixed instrument rail on desktop; compact top utilities and a floating bottom navigation on mobile.
+- Warm-paper light edition and graphite-dark edition using the same semantic tokens.
+- Acid-lime signal accent, copper latch/warning accent, and explicit words for every state.
+- Oversized tabular live quote with a threshold rail showing actual rules and current price.
+- GSAP motion tied to real state changes: quote arrival, rail entry, route readiness and measured navigation.
+- Official TradingView embed retained unchanged inside a restrained reference-chart panel.
 
 ## Colors
 
-Neutral tones carry the workbench; semantic colors communicate state. The frontmatter is normative and uses the final application cascade, not the earlier preview palette.
+Neutral tones carry structure; the acid signal carries live intent. The frontmatter is normative and reflects `web/redesign.css`.
 
 ### Primary
 
-- **Workbench White** (`text`): Main text, primary action fills and SVG outline. Primary hover uses the existing softer white.
+- **Acid Signal** (`signal`): Enabled monitoring, fresh quote, active navigation stripe, primary action fill and focus.
+- **Instrument Ink** (`graphite-text`): Quote, telemetry values and labels inside the dark instrument.
 
 ### Secondary
 
-- **Armed Lime** (`accent`): Armed status, enabled monitoring track, live indicator, active navigation underline and keyboard focus.
+- **Copper Latch** (`copper`): Triggered rules, stale quotes, lower thresholds and uncertainty.
+- **Warm Paper** (`paper`): Light-edition canvas.
+- **Graphite** (`graphite`): Dark-edition canvas.
 
-### Tertiary
+### Semantic
 
-- **Uncertainty Amber** (`amber`): Locked or uncertain states, warning copy and unfinished configuration.
-- **Error Rose** (`danger`): Validation and connection errors and destructive emphasis.
+- **Error Rose** (`danger`): Connection and validation failures.
+- **Warning Paper / Ink**: Explicit notices that require review without implying failure.
 
-### Neutral
-
-- **Canvas Black** (`bg`): Page and chart surround.
-- **Panel Charcoal** (`surface`): Alert, settings and login panels.
-- **Field Graphite** (`field`): Inputs and selects.
-- **Hairline Gray** (`line`): Panel boundaries and row dividers.
-- **Quiet Gray** (`muted`): Supporting copy, timestamps and inactive navigation.
-- **Control Gray** (`control-border`): Field borders and off switch track.
-- **Hover Charcoal / Hover White**: Secondary and primary hover treatments.
-- **Selected Charcoal** (`selected-language`): Selected language segment.
-- **Dialog Charcoal** (`dialog`): Native modal surface.
-- **Warning Charcoal / Warning Edge**: Existing warning container fill and border.
-
-**The State Has Words Rule.** Pair monitoring and delivery colors with readable status labels.
+**The State Has Words Rule.** Every color-coded state also has a text label. Freshness, armed/latched state, delivery uncertainty and disabled monitoring are never color-only.
 
 ## Typography
 
-Chinese inherits the body stack. English switches the document to Sora, with Segoe UI fallback; the local variable font supports weights 100–800 and uses `font-display: swap`. The font and SIL OFL 1.1 license ship in `public/fonts/Sora-Variable.ttf` and `public/fonts/OFL.txt`. Typography inside TradingView remains native.
+Self-hosted Sora is the display and interface face, paired with Microsoft YaHei and PingFang SC for Chinese. Consolas is reserved for telemetry, timestamps, native market IDs and threshold values. The local variable font and SIL OFL 1.1 license ship in `public/fonts/`.
 
-The frontmatter records the real role sizes. Display is the login headline; headline is a page heading; title is a section heading. Rule names use body size with medium weight (500). Paragraphs use line height 1.8; small copy uses its separate compact token. Supporting dashboard labels often use 11px rather than the form label size. Quotes and thresholds use tabular numbers; result timestamps use Consolas.
+Display type is deliberately light and tightly tracked. Page headings use `clamp(36px, 4.2vw, 58px)` with weight 300. The live quote uses `clamp(48px, 6vw, 78px)` with tabular numbers, so digit changes do not reflow the row. Telemetry labels are 9px uppercase monospace with wide tracking; this is an instrument cue, not body copy.
 
-Login display sizes step to 34px at 900px and 30px at 600px. Page headings become 22px at 600px. Quotes remain 27px and thresholds 20px on mobile. Explanatory settings copy caps at 65ch, while login copy caps at 52ch. Preserve wrapping room for English labels and user-written names.
+At 600px, page headings reduce to 38px and the live quote to `clamp(44px, 14vw, 62px)`. Alert thresholds reduce to 20px. User-authored alert names may wrap anywhere. Supporting copy remains at least 10px in compact instrument areas and 11-13px in content panels. Typography inside TradingView remains native.
 
 ## Layout
 
-The centered application container caps at 1600px with 36px desktop side gutters. The workspace uses `minmax(0, 2.2fr) minmax(340px, 1fr)` and a 20px gap. At 1200px the ratio becomes 1.7fr with a 320px rules minimum. At 900px the workspace and settings/admin grids become single columns, alerts precede the chart, the header navigation occupies a second row, and side gutters become 22px. At 600px gutters become 16px and the quote strip becomes a compact two-column grid. The header navigation scrolls horizontally when needed.
+Desktop uses a fixed 248px instrument rail and a fluid content canvas with 42px gutters. At 1180px the rail narrows to 214px and gutters to 26px. The dashboard grid is `minmax(0, 1.65fr) minmax(340px, .85fr)` with an 18px gap.
 
-Chart heights step from 510px to 480px at 1200px, 460px at 900px and 400px at 600px. Alerts stop using a capped scrolling list once stacked. Settings/admin layouts retain their 24px desktop gap; the inherited narrow layout uses an 18px gap. Forms use two columns with a 14px gap, then 10px on narrow screens and one column at 380px. Read both stylesheets in import order: `web/styles.css`, then `web/workbench.css`; specific base selectors can still outrank later general rules.
+The dashboard opens with a full-width instrument panel. On desktop it is split into the live quote/rail region and a 286px telemetry stack. The stack reports monitoring state, armed rules, daily notification budget and market-data mode. Below it, the reference chart and alert panel share the workspace row.
 
-At 600px, buttons have minimum width and height of 44px and fields have minimum height of 44px. The switch uses a 44px square interactive area around a 44px by 24px visible track. Desktop inputs retain a 43px minimum height and buttons a 38px minimum height.
+At 900px the rail becomes a 70px top utility bar, navigation becomes a floating bottom dock, and the content is single-column with alerts before the chart. The instrument panel stacks its telemetry into a two-by-two grid. At 600px the quote panel uses 20px padding, the chart height is 420px, and touch controls meet the 44px target. At 380px the top utility group tightens and logout becomes an icon-only control with an accessible label.
+
+Chart heights are 540px on desktop and 420px at 600px. The chart panel keeps its own header and market picker; the official embed fills the available chart shell. The fixed mobile dock reserves 108px of bottom padding in the main content.
 
 ## Elevation & Depth
 
-Flat panels use tonal separation and one-pixel borders rather than shadows. Temporary toasts use `0 6px 32px #0006`; dialogs use `0 20px 80px #0007` with a `#000a` backdrop. These overlays carry depth while the persistent workbench remains flat.
+Persistent panels are flat and separated by hairlines. The instrument is visually raised by its graphite field, construction grid and acid halo, not by a heavy shadow. The login panel and overlays use `--shadow-deep`; toasts and menus use `--shadow-soft`. Overlays blur the page behind them.
 
-GSAP 3.15 and @gsap/react own the motion system in `web/motion.tsx`; CSS defines
-resting states and 120ms color feedback. The focal sequence is the workbench
-becoming ready: the market summary reveals in place and the alert controls
-settle over 340ms. The official chart itself never translates or scales. Login
-uses a single 420ms sequence in the existing signal bars. A measured navigation
-underline and tab segment move over 280ms to preserve location across routes.
+GSAP 3.15 and @gsap/react own motion in `web/motion.tsx`; CSS provides resting states and reduced-motion fallbacks.
 
-Floating surfaces use reversible timelines (240ms in, 140ms out), including
-interruptions. Dialog subtrees remain mounted only through their exit. Dropdown
-focus returns on semantic close rather than waiting for a visual fade. A
-disclosure measures one region and expands in 240ms; monitoring switches move
-in 180ms. Skeletons breathe over 1.8s and spinners rotate in 1s, only while
-visible. Reduced motion changes state immediately and stops loops. All hooks
-scope and revert their contexts. Polling never replays readiness animations.
+- **Page readiness:** heading and instrument clip in over 340ms. Background polling never replays it.
+- **Instrument reveal:** telemetry cells and the chart/alert workspace enter in a short stagger once real data is ready; polling never replays it.
+- **Live quote:** each real incoming value enters with a short blur-and-rise, direction-aware but never inventing intermediate prices.
+- **Threshold rail:** the line draws and a single signal sweep crosses it once per market/rule revision; markers stagger in. Quote changes move the price marker without replaying marker entrances.
+- **Navigation:** the measured indicator animates its full box on desktop and mobile. It never stretches a one-pixel painted stripe.
+- **Floating surfaces:** reversible 240ms-in/140ms-out timelines; dialog subtrees remain mounted only for their exit.
+- **Loading:** skeletons breathe and spinners rotate only while visible.
+- **Pointer signal:** on a mouse device, a soft acid wash follows the pointer across the instrument field. Touch devices and reduced-motion users see the static field.
+
+Reduced motion removes loops and sets controls immediately. Motion never delays focus, form input or a mutation.
 
 ## Shapes
 
-The standard radius governs buttons, form fields, panels and the language-control outline. Status pills use the tighter chip radius; dialogs and toasts use the overlay radius. Dots and switch thumbs are circular. The desktop switch has the extracted track radius; the mobile pseudo-element track uses 20px rounding. The SVG brand is an open angular frame with a threshold pulse and small lime square; the favicon uses the same identity. No raster assets ship in the product.
+Controls use 10-11px radii. Content panels use 20px; the instrument uses 24px on desktop and 20px on mobile. Pills, status chips, switches and the mobile dock are fully rounded. Circles appear only as live-state pips and orbit nodes. The SVG brand is an open angular frame with a threshold pulse and signal square; no raster identity ships.
 
 ## Components
 
-- **Buttons:** White primary, outlined secondary and muted text actions. Primary hover softens the white; secondary hover adds a dark fill; text hover brightens and underlines. Disabled buttons use opacity 0.45. Interactive focus is a 2px lime outline with a 3px offset. The primary and secondary padding is recorded in frontmatter; row actions use `4px 0` and chart text actions use the separate text-button padding.
-- **Inputs and selects:** Graphite fill, control-gray border, standard rounding, visible labels and explicit errors. Placeholder copy remains muted. Form fieldsets dim when disabled; checkboxes use the existing amber accent and are not rendered as decorative switches.
-- **Navigation and language:** Muted inactive links, white active text and a lime underline. The segmented language control fills its selected segment. It exposes only zh-CN and en, uses `aria-pressed`, and saves the language preference while leaving the application state intact.
-- **Status pills and rule states:** Compact outline pills summarize settings configuration. Rule states pair a small colored dot with a label; status copy must remain explicit.
-- **Panels and rule rows:** Charcoal alert/settings/login panels have hairline edges. Settings padding is 25px on desktop, 22px at 1100px, `21px 18px` in the inherited 760px layout and `22px 18px` at 600px. Alert rows use 20px side margins on desktop, 18px on mobile, and `18px 0` internal padding. Threshold, market, status and last delivery result/time remain attached to each alert. Editing and rearming are distinct actions.
-- **Monitoring switch:** Gray off track and lime enabled track, with `role="switch"`, a readable label and `aria-checked`. Desktop dimensions differ from the mobile hit area; keep the mobile track inside its square button rather than stretching the visible track.
-- **Dialogs:** Native modal surface for editing and confirmations, 26px desktop padding and 22px at 600px. The close control is inline SVG. Closing restores the prior focus; warning copy explains locked state and immediate trigger conditions.
-- **Chart and feedback:** Official external TradingView embed retains native toolbars and attribution. App-level reconnect, fallback and status copy sit outside the iframe. Toasts announce action results using a polite live region.
+- **Instrument rail:** Brand, kicker, route navigation, runtime status, appearance/language, account and sign-out. The active route uses a measured fill plus a 3px acid stripe. On mobile, only the brand and utilities remain in the top bar; routes move to the bottom dock.
+- **Signal instrument:** Market identity, source/product chip, native ID, oversized live quote, freshness label, daily attempts, threshold rail and four telemetry cells. The rail plots only real rule thresholds and the current quote.
+- **Primary action:** Acid fill, dark ink, pill shape and plus icon. It remains disabled when no selectable market, a request is in flight, or the alert limit is reached.
+- **Alert rows:** Rule name and state chip, exact market, direction and threshold, pending/latched copy, last delivery outcome/time, then explicit Edit, Rearm and Delete actions. Latching is never cleared by editing.
+- **Monitoring switch:** A square 44px hit area containing the visible track. Enabled uses acid; disabled uses control gray. Confirmation is required to pause all monitoring.
+- **Inputs and selects:** Warm field fill in light mode, graphite field in dark mode, visible labels and explicit errors. The MarketPicker remains a searchable command surface with venue/type filters.
+- **Dialogs:** Reversible motion, native focus trap, 26px desktop padding and 22px on mobile. Uncertain delivery and already-breached rearm warnings remain visible before confirmation.
+- **Chart and feedback:** Official TradingView embed, 4-hour default, native controls and attribution are unchanged. App-level reconnect/fallback copy sits outside the iframe. Toasts announce mutation results.
 
 **The Native Chart Rule.** Preserve TradingView controls and attribution when adapting the surrounding workbench.
 
@@ -239,18 +229,19 @@ The standard radius governs buttons, form fields, panels and the language-contro
 
 ### Do:
 
-- Do use neutral surfaces and white primary actions.
-- Do pair state colors with explicit Chinese and English labels.
-- Do preserve prominent tabular prices and readable supporting copy.
-- Do retain visible keyboard focus and the implemented mobile touch targets.
-- Do retain the original SVG identity and native chart affordances.
+- Do keep the live quote and rule state above decoration in the hierarchy.
+- Do pair signal/copper colors with explicit Chinese and English labels.
+- Do use motion only for real state transitions and keep it interruptible.
+- Do retain keyboard focus, 44px mobile targets and reduced-motion behavior.
+- Do retain the original SVG identity and the untouched TradingView embed.
 
 ### Don't:
 
-- Don't reintroduce the discarded plum or circuit palettes.
+- Don't turn the product into a fictional marketing page with invented customers or metrics.
 - Don't use color as the only explanation of monitoring or delivery state.
+- Don't replay quote or rail entrances on every 5-second poll.
 - Don't load raster replacements for the shipped SVG identity.
-- Don't apply the app font or custom controls inside the external TradingView iframe.
+- Don't replace, restyle inside, or obscure the official TradingView iframe.
 
 ## Shared components and loading
 
@@ -273,9 +264,9 @@ language detection supports Chinese and English; an explicit choice takes
 precedence. Automatic defaults never write localStorage.
 
 Theme colors change together without independent background/foreground fades.
-Canonical shadcn variables own component color; functional green uses `signal`,
-separate from the neutral `accent` selection surface. Legacy global control
-styling is removed, and layout CSS sits below component utilities in the
-cascade. Inputs, menus, dialogs and Sonner notifications share these tokens.
-TradingView replaces its embed before paint when theme changes, showing a
-matching loading surface until the new official widget has loaded.
+Canonical shadcn variables own component color; the functional signal color is
+separate from the neutral selected surface. `web/redesign.css` imports after
+the legacy and component layers and owns the current visual system. Inputs,
+menus, dialogs and Sonner notifications share these tokens. TradingView
+replaces its embed before paint when theme changes, showing a matching loading
+surface until the new official widget has loaded.

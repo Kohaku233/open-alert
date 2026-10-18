@@ -19,6 +19,8 @@ import { Account } from './pages/Account.js';
 import { Admin } from './pages/Admin.js';
 import { FormError } from './components/Dialog.js';
 import { useIndicatorMotion } from './motion.js';
+import { Activity, BellRing, ShieldCheck, UserRound } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 const routes = ['/dashboard', '/notifications', '/account', '/admin'];
 function LanguageSwitch() {
     const language = useLanguage();
@@ -40,7 +42,7 @@ export function App() {
         if (session.data) clearEmailLoginFlow();
     }, [session.isPending, session.error, session.data]);
     const [path, setPath] = useState(window.location.pathname);
-    const navigate = useCallback((next: string) => { window.history.pushState({}, '', next); setPath(next); }, []);
+    const navigate = useCallback((next: string) => { window.history.pushState({}, '', next); setPath(next); window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
     useEffect(() => { const pop = () => setPath(window.location.pathname); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop); }, []);
     useEffect(() => {
         if (session.isPending || (session.error && !sessionKnown))
@@ -57,10 +59,10 @@ export function App() {
     const onSignedIn = () => { void session.refetch(); navigate('/dashboard'); };
     return <TooltipProvider delayDuration={300}>
     <a className="skip-link" href="#main-content">{t("跳转到内容")}</a>
-    {session.isPending && !sessionKnown ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><PageSkeleton label={t("正在确认登录状态…")} dashboard={path === "/dashboard" || path === "/"}/></main></>
-            : session.error && !sessionKnown ? <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><EmptyState className="session-error"><h1>{t("无法确认登录状态")}</h1><p>{t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></EmptyState></main></>
+    {session.isPending && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><PageSkeleton label={t("正在确认登录状态…")} dashboard={path === "/dashboard" || path === "/"}/></main></>
+            : session.error && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><EmptyState className="session-error"><h1>{t("无法确认登录状态")}</h1><p>{t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></EmptyState></main></>
                 : session.data ? <Workspace key={session.data.user.id} path={path} navigate={navigate} notify={message => toast(message)} onUnauthorized={() => { void session.refetch(); }}/>
-                    : <><header className="masthead"><Brand navigate={navigate}/><LanguageSwitch /><span className="login-header-note">{t("个人价格警报与手机通知")}</span></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"><PageSkeleton label={t("正在打开登录页面…")}/></main>}</>}
+                    : <><header className="masthead public-masthead"><Brand navigate={navigate}/><span className="login-header-note">{t("个人价格警报与手机通知")}</span><LanguageSwitch /></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"><PageSkeleton label={t("正在打开登录页面…")}/></main>}</>}
     <Toaster customAriaLabel={t("通知")} position="bottom-center" duration={6500} offset={24} mobileOffset={16} toastOptions={{ className: 'ui-toast' }} />
   </TooltipProvider>;
 }
@@ -96,16 +98,33 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     }
     const canAdmin = model.data?.status.user.role === 'admin' && model.data.status.capabilities.canAdmin;
     const navRef = useRef<HTMLElement>(null), navIndicator = useRef<HTMLSpanElement>(null);
-    const tabs = [['/dashboard', t("行情与警报")], ['/notifications', t("手机通知")], ['/account', t("我的账户")], ...(canAdmin ? [['/admin', t("管理")]] : [])];
+    const tabs: Array<[string, string, LucideIcon]> = [['/dashboard', t("行情与警报"), Activity], ['/notifications', t("手机通知"), BellRing], ['/account', t("我的账户"), UserRound], ...(canAdmin ? [['/admin', t("管理"), ShieldCheck] as [string, string, LucideIcon]] : [])];
     useIndicatorMotion(navRef, navIndicator, '[aria-current="page"]', path + tabs.map(tab => tab[1]).join());
-    return <>
-    <header className="masthead"><Brand navigate={navigate}/><nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}>{label}</a>)}</nav><div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div></header>
+    const monitoring = model.data?.status.settings.enabled;
+    const overall = model.data?.status.health.overall;
+    return <div className="workspace-shell">
+    <header className="masthead app-rail">
+      <Brand navigate={navigate}/>
+      <p className="rail-kicker">{t("价格信号工作台")}</p>
+      <nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label, NavIcon]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}><NavIcon className="nav-icon" aria-hidden="true"/><span>{label}</span></a>)}</nav>
+      <div className="rail-footer">
+        <div className="rail-status">
+          <span className={`rail-status-dot ${monitoring ? 'is-live' : ''} ${overall && overall !== 'healthy' ? 'is-warn' : ''}`} aria-hidden="true"/>
+          <div><strong>{monitoring ? t("后台监控运行中") : t("后台监控已暂停")}</strong><small>{overall ? healthLabel(overall) : t("正在读取运行状态")}</small></div>
+        </div>
+        <div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button className="rail-signout" aria-label={logoutBusy ? t("正在退出…") : t("退出登录")} disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div>
+      </div>
+    </header>
     <main className="app-main" id="main-content"><FormError message={logoutError}/>{model.error && <Notice className="connection-error" role="alert"><p>{model.error}</p><Button disabled={model.busy} onClick={() => void model.refresh()}>{t("重新读取状态")}</Button></Notice>}
       {/* Keep the dashboard mounted across settings pages; polling never remounts the chart. */}
       <Dashboard model={model} active={path === '/dashboard' || !routes.includes(path)} notify={notify} navigate={navigate}/>
       {path === '/notifications' && <Notifications model={model} notify={notify}/>}
       {path === '/account' && <Account model={model} notify={notify}/>}
       {path === '/admin' && <Admin model={model} notify={notify}/>}
-    </main><footer className="app-footer"><span>{t("价格哨站 · Open Alert")}</span><span>{t("后台判断价格，手机接收提醒。")}</span></footer>
-  </>;
+    </main><footer className="app-footer"><span>{t("价格哨站 · Open Alert")}</span><span>{t("后台判断价格，手机接收提醒。")}</span><span className="footer-signal" aria-hidden="true">{t("SIGNAL / 24H")}</span></footer>
+  </div>;
+}
+
+function healthLabel(state: 'healthy' | 'degraded' | 'unhealthy' | 'starting') {
+    return state === 'healthy' ? t("运行正常") : state === 'degraded' ? t("部分受限") : state === 'starting' ? t("正在启动") : t("需要检查");
 }

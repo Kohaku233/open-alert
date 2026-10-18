@@ -218,6 +218,7 @@ try {
     await expect(page.locator('.alert-scope-count')).toHaveText('0 条');
     await expect(page.getByRole('tab',{name:'当前市场',exact:true})).toHaveAttribute('aria-selected','true');
     assert.equal(JSON.parse(await page.locator('.tradingview-widget-container script').textContent()).interval,'240');
+    await page.evaluate(() => document.fonts.ready); await page.waitForTimeout(450);
     await page.locator('.alerts-panel').screenshot({path:join(review,profile+'-empty-zh.png')});
     state.alerts=retainedAlerts; await page.reload();
     const selected = await page.locator('.market-search-selection').first().textContent();
@@ -237,6 +238,7 @@ try {
     await expect(page.getByRole('tab',{name:'All alerts',exact:true})).toHaveAttribute('aria-selected','true');
     await page.keyboard.press('Home');await expect(scopeTab).toHaveAttribute('aria-selected','true');
     await noOverflow(page);
+    await page.evaluate(() => document.fonts.ready); await page.waitForTimeout(450);
     await page.locator('.alerts-panel').screenshot({path:join(review,profile+'-empty-en.png')});
     state.alerts=retainedAlerts; await page.reload();
     if (profile==='mobile') {

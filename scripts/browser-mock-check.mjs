@@ -56,10 +56,11 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
   const context = await browser.newContext({ ...options, locale: 'zh-CN', colorScheme: 'dark', ...preferences, serviceWorkers: 'block' });
   if (authenticated) await context.addCookies([{ name: cookieName, value: cookieValue, url: origin, httpOnly: true, sameSite: 'Lax' }]);
-  await context.addInitScript(mark => {
+  await context.addInitScript(({ mark, hide }) => {
+    if (hide) return;
     const attach = () => { if (window.top !== window) return; if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
     document.addEventListener('DOMContentLoaded', attach);
-  }, label);
+  }, { mark: label, hide: process.env.OPEN_ALERT_HIDE_MOCK_LABEL === '1' });
   const page = await context.newPage(); page.setDefaultTimeout(6000);
   page.on('pageerror', error => runtimeErrors.push(`${profile}: ${error.message}`));
   page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource|ERR_FAILED/.test(message.text())) runtimeErrors.push(`${profile}: ${message.text()}`); });
@@ -827,7 +828,7 @@ try {
       assert.equal(await p.evaluate(()=>localStorage.length),0);
     });
     await noOverflow(p);
-    await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     await chooseSelect(p,'Appearance','dark');await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
     await chooseSelect(p,'Appearance','system');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
@@ -843,20 +844,23 @@ try {
     await check('official chart config follows dark mode and remains 4h',async()=>{
       const config=await p.evaluate(()=>window.__mockChartConfigs.at(-1));assert.equal(config.theme,'dark');assert.equal(config.interval,'240');assert.equal(config.locale,'en');
     });
-    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-dark-MOCK.png'),fullPage:true,animations:'disabled'});
+    await expect(p.locator('.route-surface')).toHaveAttribute('data-motion-state','settled');
+    await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-dark-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     await chooseSelect(p,'Appearance','light');
     await expect.poll(()=>p.evaluate(()=>window.__mockChartConfigs.at(-1)?.theme)).toBe('light');
     await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await check('explicit light choice persisted',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),'light'));
     await noOverflow(p);
-    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     const scriptsBefore=await p.evaluate(()=>window.__mockChartConfigs.length);
     await p.getByRole('button',{name:'Monitoring notes & limits'}).click();
     await expect(p.locator('.disclosure-content')).toBeVisible();
     await p.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
     await expect(p.getByRole('heading',{name:'Pushover connection',exact:true})).toBeVisible();
     await noOverflow(p);
-    await p.screenshot({path:join(outputs,'appearance-'+profile+'-notifications-light-MOCK.png'),fullPage:true,animations:'disabled'});
+    await p.screenshot({path:join(outputs,'appearance-'+profile+'-notifications-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
     await check('navigation preserves widget instance',async()=>assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),scriptsBefore));
     await p.emulateMedia({reducedMotion:'reduce'});
@@ -903,11 +907,13 @@ try {
       await p.emulateMedia({colorScheme:theme});await expect(p.locator('html')).toHaveAttribute('data-theme',theme);
       await check('theme stays coherent in the first changed frame ('+theme+')',async()=>{
         const sample=await p.evaluate(()=>window.__themeFrames.at(-1));
+        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),popover:s.getPropertyValue('--popover').trim(),field:s.getPropertyValue('--muted').trim()};});
+        const expected=await p.evaluate(values=>{const probe=document.createElement('span');probe.style.color=values.background;document.body.append(probe);const result=Object.fromEntries(Object.entries(values).map(([key,value])=>{probe.style.color=value;return[key,getComputedStyle(probe).color];}));probe.remove();return result;},tokens);
         assert.equal(sample.theme,theme);
-        assert.equal(sample.body.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(17, 17, 17)');
-        assert.equal(sample.body.text,theme==='light'?'rgb(23, 23, 23)':'rgb(237, 237, 237)');
-        assert.equal(sample.dialog.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(28, 28, 28)');
-        assert.equal(sample.input.bg,theme==='light'?'rgb(245, 245, 245)':'rgb(32, 32, 32)');
+        assert.equal(sample.body.bg,expected.background);
+        assert.equal(sample.body.text,expected.foreground);
+        assert.equal(sample.dialog.bg,expected.popover);
+        assert.equal(sample.input.bg,expected.field);
         assert.equal(sample.select.bg,sample.input.bg);assert.equal(sample.select.text,sample.input.text);
         assert.equal(sample.primary.bg,sample.body.text);assert.equal(sample.primary.text,sample.body.bg);
         await expect(p.getByLabel('Alert name')).toHaveValue('Unsent draft');
@@ -916,8 +922,10 @@ try {
       await expect(p.locator('[data-slot="select-content"]')).toHaveAttribute('data-motion-state','settled');
       await check('portalled select follows the same palette',async()=>{
         const c=await p.locator('[data-slot="select-content"]').evaluate(n=>({bg:getComputedStyle(n).backgroundColor,color:getComputedStyle(n).color}));
-        assert.equal(c.bg,theme==='light'?'rgb(255, 255, 255)':'rgb(28, 28, 28)');
-        assert.equal(c.color,theme==='light'?'rgb(23, 23, 23)':'rgb(237, 237, 237)');
+        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--popover').trim(),foreground:s.getPropertyValue('--foreground').trim()};});
+        const expected=await p.evaluate(values=>{const probe=document.createElement('span');probe.style.color=values.background;document.body.append(probe);const result=Object.fromEntries(Object.entries(values).map(([key,value])=>{probe.style.color=value;return[key,getComputedStyle(probe).color];}));probe.remove();return result;},tokens);
+        assert.equal(c.bg,expected.background);
+        assert.equal(c.color,expected.foreground);
       });
       await p.keyboard.press('Escape');await expect(p.locator('[data-slot="select-content"]')).toHaveCount(0);
       await expect(p.getByRole('combobox',{name:'Trigger condition',exact:true})).toContainText('At or above');

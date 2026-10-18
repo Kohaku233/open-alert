@@ -119,6 +119,10 @@ export function usePageMotion(ref: RefObject<HTMLElement | null>, ready: boolean
         const alertHead = node.querySelector('.alerts-panel .panel-heading');
         if (market) timeline.from(market, { clipPath: 'inset(0 0 70% 0)', duration: .28, clearProps: 'clipPath' }, .025);
         if (alertHead) timeline.from(alertHead, { y: 5, opacity: .7, clearProps: 'transform,opacity' }, .06);
+        const telemetry = node.querySelectorAll('.telemetry-item');
+        if (telemetry.length) timeline.from(telemetry, { y: 6, opacity: .35, duration: .32, stagger: .035, clearProps: 'transform,opacity' }, .08);
+        const panels = node.querySelectorAll('.workspace.dashboard-grid > *');
+        if (panels.length) timeline.from(panels, { y: 8, opacity: .55, duration: .36, stagger: .06, clearProps: 'transform,opacity' }, .1);
       } else if (kind === 'login') {
         const bars = node.querySelectorAll('.signal-mark span');
         const panel = node.querySelector('.login-panel');
@@ -147,10 +151,19 @@ export function useIndicatorMotion(ref: RefObject<HTMLElement | null>, indicator
         const active = root.querySelector<HTMLElement>(selector);
         if (!active) { gsap.set(marker, { autoAlpha: 0 }); return; }
         const parent = root.getBoundingClientRect(), target = active.getBoundingClientRect();
+        const vertical = getComputedStyle(root).flexDirection === 'column';
         const x = target.left - parent.left + root.scrollLeft - root.clientLeft;
-        marker.style.setProperty('--indicator-scale', String(Math.max(1, target.width)));
+        const y = target.top - parent.top + root.scrollTop - root.clientTop;
         marker.dataset.motionState = 'entering';
-        gsap.to(marker, { x, scaleX: target.width, autoAlpha: 1, duration: first || context.conditions?.reduced ? 0 : .28, ease: 'power3.out', overwrite: 'auto', onComplete: () => { marker.dataset.motionState = 'settled'; } });
+        // Animate the measured box itself. Scaling a 1px gradient marker would
+        // stretch its painted stripe and produce a false highlight during layout changes.
+        const duration = first || context.conditions?.reduced ? 0 : vertical ? .3 : .28;
+        gsap.to(marker, {
+          x, y, width: target.width, height: target.height,
+          scaleX: 1, scaleY: 1, transformOrigin: 'left top', autoAlpha: 1,
+          duration, ease: 'power3.out', overwrite: 'auto',
+          onComplete: () => { marker.dataset.motionState = 'settled'; },
+        });
         first = false;
       }) as () => void;
       moveRef.current = move;
@@ -259,4 +272,43 @@ export function useSwitchMotion(ref: RefObject<HTMLButtonElement | null>, checke
     }, ref);
     return () => media.revert();
   }, { scope: ref, dependencies: [checked], revertOnUpdate: true });
+}
+
+/** Animate the actual incoming quote, never an invented intermediate value. */
+export function usePriceMotion(ref: RefObject<HTMLElement | null>, value: string, direction = 1) {
+  const previous = useRef(value);
+  useGSAP(() => {
+    const node = ref.current;
+    if (!node || previous.current === value) return;
+    const changed = previous.current !== value;
+    previous.current = value;
+    if (!changed) return;
+    const media = gsap.matchMedia();
+    media.add({ all: 'all', reduced: reduceQuery }, context => {
+      if (context.conditions?.reduced) return;
+      gsap.fromTo(node, { yPercent: direction >= 0 ? 18 : -18, opacity: .55, filter: 'blur(5px)' }, {
+        yPercent: 0, opacity: 1, filter: 'blur(0px)', duration: .5, ease: 'expo.out', clearProps: 'transform,opacity,filter',
+      });
+    }, ref);
+    return () => media.revert();
+  }, { scope: ref, dependencies: [value, direction], revertOnUpdate: true });
+}
+
+/** Draw the threshold rail once, then let real quote changes move its marker. */
+export function useSignalRailMotion(ref: RefObject<HTMLElement | null>, revision: string) {
+  useGSAP(() => {
+    const root = ref.current;
+    if (!root) return;
+    const media = gsap.matchMedia();
+    media.add({ all: 'all', reduced: reduceQuery }, context => {
+      if (context.conditions?.reduced) return;
+      const line = root.querySelector('.signal-rail-track');
+      const markers = root.querySelectorAll('[data-signal-marker]');
+      const sweep = root.querySelector('.signal-rail-sweep');
+      if (line) gsap.fromTo(line, { scaleX: 0, transformOrigin: 'left center' }, { scaleX: 1, duration: .8, ease: 'expo.out', clearProps: 'transform' });
+      if (markers.length) gsap.fromTo(markers, { opacity: 0, y: 8, scale: .9 }, { opacity: 1, y: 0, scale: 1, duration: .38, stagger: .055, ease: 'back.out(1.5)', clearProps: 'transform,opacity' });
+      if (sweep) gsap.fromTo(sweep, { left: '0%', opacity: 0 }, { left: '100%', opacity: .9, duration: .85, ease: 'power2.inOut', clearProps: 'left,opacity' });
+    }, ref);
+    return () => media.revert();
+  }, { scope: ref, dependencies: [revision], revertOnUpdate: true });
 }

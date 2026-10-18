@@ -155,8 +155,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     const formRef = useRef<HTMLElement>(null);
     useFormStepMotion(formRef, flow.step);
     return <main ref={pageRef} className="login-layout" id="main-content">
-      <section className="login-intro"><div className="signal-mark" aria-hidden="true"><span/><span/><span/></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p>{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><div className="intro-detail"><strong>{t('达到或高于 / 达到或低于')}</strong><p>{t('以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。')}</p></div><p className="small muted">{t('后台运行时无需保持页面打开。')}</p></section>
+      <section className="login-intro"><div className="login-visual" aria-hidden="true"><div className="login-orbit orbit-a"/><div className="login-orbit orbit-b"/><div className="login-orbit orbit-c"/><span className="orbit-node node-a"/><span className="orbit-node node-b"/><span className="orbit-node node-c"/><div className="signal-mark"><span/><span/><span/></div><span className="orbit-caption">SERVER-SIDE / LATCHED / PUSHOVER</span></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p>{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><div className="intro-detail"><strong>{t('达到或高于 / 达到或低于')}</strong><p>{t('以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。')}</p></div><div className="login-proof-row"><span>BINANCE</span><span>OKX</span><span>MEXC</span><span>{t('后台守夜')}</span></div><p className="small muted">{t('后台运行时无需保持页面打开。')}</p></section>
       <Panel ref={formRef} className="login-panel" aria-labelledby="login-heading" aria-busy={busy}>
+        <div className="login-panel-status"><span className="live-pip"/><span>SECURE ACCESS</span><span>{t('会话由 Cookie 保护')}</span></div>
         <h2 id="login-heading">{codeStep ? t('验证邮箱') : t('登录或注册')}</h2>
         {!capabilities && !codeStep && !capError ? <LoadingStatus>{t('正在读取可用登录方式…')}</LoadingStatus> : <p className="auth-description">{codeStep ? t('输入邮件中的 6 位验证码，完成身份验证。') : registrationCopy}</p>}
         {capError && <><FormError message={capError}/><Button onClick={() => void loadCapabilities()}>{t('重试读取登录方式')}</Button></>}
