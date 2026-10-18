@@ -256,11 +256,17 @@ Session bootstrap and the first snapshot for every workspace route are covered b
 the entrance curtain in `web/components/BootStage.tsx`, which publishes a
 translated `role="status"` line and never renders a skeleton. The provider keeps
 the routes mounted so the session request starts immediately, but gates their
-visible output until the logo's frame, signal and node have all formed. The login
+visible output until the entire GSAP entrance (mark, localized word, subtitle,
+lock line, note and status) finishes, followed by a 240ms readable hold. Completion
+comes from the timeline, never an estimated point partway through it. The login
 view adds a capabilities claim, so an unauthenticated fast response still reveals
 a usable sign-in surface only after the brand entrance is readable. Views register
 their own `useBootClaim`, so a reload, a session timeout or a sign-out redirect
-re-arms the curtain instead of flashing a half-built layout. Reduced motion skips
+re-arms the curtain instead of flashing a half-built layout. Claims register before
+paint; each replay owns a keyed stage and rejects callbacks from older stages.
+`scripts/boot-entrance-check.mjs` verifies rendered SVG strokes, transforms and
+opacity before each exit, including fast responses, slow discovery and retries.
+Reduced motion skips
 the formation wait and exposes the settled view immediately. Invitation and account
 lists still use ListSkeleton, and the chart uses its own field placeholder. Initial
 failures replace the placeholder with a stable retry state. Background refresh

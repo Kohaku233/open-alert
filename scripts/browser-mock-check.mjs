@@ -204,12 +204,17 @@ const requests = (state, method, path) => state.requests.filter(r => r.method ==
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
 // A paused virtual clock also freezes the session SDK's first timer, so a fresh document needs one virtual tick to boot.
 const tick = page => page.clock.runFor(1);
+async function settleBootClock(page) {
+  for (let step = 0; step < 16 && await page.locator('[data-slot="boot-stage"]').count(); step++)
+    await page.clock.runFor(250);
+  await expect(page.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+}
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
 let browser, timedOut = false;
 // Every fresh document boots behind the entrance curtain until its logo is fully
 // formed and any view-handshake claims settle. The guard only needs to catch hangs.
-const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 180 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 180000);
+const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 300 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 300000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
@@ -614,7 +619,7 @@ try {
     const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
     await p.getByRole('button',{name:'退出登录'}).click();
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
     await p.getByLabel('邮箱地址').fill('mock@example.test'); await p.getByRole('button',{name:'发送验证码'}).click();
     await expect(p.getByLabel('邮件中的验证码')).toBeVisible();
@@ -716,12 +721,12 @@ try {
     await check('session timeout exits pending with retry',()=>expect(p.getByRole('heading',{name:'无法确认登录状态'})).toBeVisible());
     // Let the entrance curtain finish lifting before the paused clock is asked to
     // accept pointer input on the recovery button.
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await p.evaluate(()=>{window.__authHang='';});
     await p.getByRole('button',{name:'重试连接'}).click();
     await check('session timeout retry restores login',()=>expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled());
     // The retry re-arms the session entrance; settle it again before the next click.
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await p.evaluate(()=>{window.__authHang='/api/auth/sign-in/social';});
     await p.getByRole('button',{name:'使用 Google 登录'}).click();
     await expect.poll(()=>p.evaluate(()=>window.__authHeld)).toBe(2);
@@ -805,7 +810,7 @@ try {
     await p.goto(origin+'/login?email=mock%40example.test'); await tick(p);
     // Session and capability requests have to settle before the view can become
     // visible, so advance the paused clock once before reading the prefilled form.
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
     await p.getByRole('button',{name:'发送验证码',exact:true}).click();
     await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();
@@ -825,11 +830,11 @@ try {
     await check(profile+' transient background session error preserves the form',async()=>{await expect(p.getByLabel('邮件中的验证码')).toHaveValue('123');assert(await field.evaluate(n=>n.isConnected));await expect(p.getByRole('heading',{name:'无法确认登录状态'})).toHaveCount(0);});
     s.sessionReadFails=false;
     await p.reload(); await tick(p);
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
     await expect(p.getByRole('button',{name:/秒后重发/,exact:false})).toBeDisabled();
     await p.goto(origin+'/account'); await tick(p);
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
     await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
     await expect(p.getByLabel('邮箱地址')).toHaveValue('mock@example.test');
@@ -846,7 +851,7 @@ try {
     s.otpError='EMAIL_UNCERTAIN';await p.getByRole('button',{name:'重新发送',exact:true}).click();
     await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();
     await p.reload(); await tick(p);
-    await p.clock.runFor(2000);await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+    await settleBootClock(p);
     await check(profile+' uncertain delivery resumes with honest copy and no automatic resend',async()=>{await expect(p.getByText(/尚未确认邮件是否送达/)).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,2);});
     await p.getByLabel('邮件中的验证码').fill('123456');await p.getByRole('button',{name:'验证并继续',exact:true}).click();
     await expect(p.getByRole('switch')).toBeVisible();
@@ -871,7 +876,7 @@ try {
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     s.holdSession=null;releaseSession();
     await check('workspace entrance covers the first snapshot instead of skeletons',async()=>{
-      await expect(p.getByRole('status')).toContainText('Checking your session');
+      await expect(p.getByRole('status')).toContainText('Loading your alerts and prices');
       assert.equal(await p.locator('[data-slot="page-skeleton"]').count(),0);
     });
     releaseStatus();
@@ -880,7 +885,8 @@ try {
     await chooseSelect(p,'Appearance','dark');
     await expect.poll(()=>p.locator('html').getAttribute('data-theme')).toBe('dark');
     await chooseSelect(p,'Appearance','system');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
-    await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark');
+    // Match the event-delivery allowance used by the atomic-theme journey below.
+    await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark',{timeout:20000});
     await check('system follows media without saving an override',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),null));
     await p.getByRole('navigation').getByRole('link',{name:'Account',exact:true}).click();
     await expect(p.getByRole('heading',{name:'Account details',exact:true})).toBeVisible();

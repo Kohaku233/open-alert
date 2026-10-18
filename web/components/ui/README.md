@@ -48,9 +48,11 @@ First paint is owned by `../BootStage.tsx`: a full-screen curtain that assembles
 the brand mark and holds a localized `role="status"` label until the session
 handshake, the first workspace snapshot and sign-in capabilities report ready.
 The provider mounts routes immediately so requests can start, while
-`useBootVisible` withholds visible product output until the frame, signal and node
-of the mark have formed. Claims are registered by the views themselves
-(`useBootClaim`), the exit is a single transform-only curtain lift, and reduced
+`useBootVisible` withholds visible product output until the entire entrance timeline
+completes and the assembled brand rests for 240ms. This includes the localized word
+stagger, subtitle, lock line, note and status, not just the SVG mark. Claims register
+before paint (`useBootClaim`); a new claim during an exit creates a fresh keyed stage,
+and stale timeline callbacks cannot dismiss it. The exit is a single transform-only curtain lift, and reduced
 motion keeps the resting state without any tween or formation wait.
 
 Use these patterns before adding a page-specific equivalent. Standard text,
