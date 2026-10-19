@@ -1,11 +1,13 @@
 import type { AppConfig } from '../config.js';
 import type { OutboxRecord, Repositories, SchedulableAlertRecord, SchedulerLease, SqlDatabase } from '../contracts/db.js';
-import type { ComponentHealth, PriceTick, SystemStatus } from '../contracts/domain.js';
+import type { ComponentHealth, Market, PriceTick, SystemStatus } from '../contracts/domain.js';
 import type { MarketSource } from '../markets/source.js';
 import { createNotificationService } from '../notifications/service.js';
 import type { DeliveryResult } from '../notifications/service.js';
 import type { Fetch } from '../notifications/http.js';
 import { createMarketCache, freshTick } from './market.js';
+import { marketAvailable, marketSourceStale } from '../markets/catalog.js';
+import type { CatalogSelection } from '../api/ports.js';
 
 export interface SchedulerNotifications {
   deliver(event: OutboxRecord): Promise<DeliveryResult>;
@@ -18,7 +20,7 @@ export interface SchedulerOptions {
   marketSource?: MarketSource;
   /** Defaults permit one network request plus finish inside a live lease. */
   leaseMs?: number; drainBudgetMs?: number; deliveryTimeoutMs?: number;
-  /** Cloudflare defaults: 100 evaluations, 1 reservation, 32 due rows, 1 dispatch. */
+  /** Cloudflare defaults: 100 evaluations, 4 reservations, 32 due rows, 4 serial sends. */
   maxEvaluationsPerTick?: number; maxReservationsPerTick?: number;
   duePageSize?: number; maxDueRowsPerDrain?: number; maxDeliveriesPerDrain?: number; maxClaimsPerDrain?: number;
 }
@@ -143,9 +145,11 @@ export function createScheduler(options: SchedulerOptions) {
         await source.refresh();
       } else await Promise.all([market.refresh(), refreshRules()]);
       if (stopped) return;
-      const catalog = market.getMarkets();
-      if (!source && catalog.stale) { schedulerCode = 'catalog_unavailable'; return; }
-      const known = new Set(catalog.markets.map(m => m.instrument));
+      // Source eligibility already uses its indexed catalog and live scope state.
+      // Do not clone thousands of display metadata rows on every price tick.
+      const catalog = source ? null : market.getMarkets();
+      if (catalog?.stale) { schedulerCode = 'catalog_unavailable'; return; }
+      const known = catalog ? new Set(catalog.markets.map(m => m.instrument)) : null;
       // Recheck/renew after network and cache work before reservation begins.
       if (!await getLease()) return;
       const ticks = market.ticks();
@@ -180,7 +184,7 @@ export function createScheduler(options: SchedulerOptions) {
         let batch = source ? sampleBatches.get(rule.instrument) : undefined;
         const key = ruleKey(rule);
         if (!rule.triggered && !batch?.inspected.has(key)) {
-          const eligible = source ? source.eligible(rule.instrument) : known.has(rule.instrument);
+          const eligible = source ? source.eligible(rule.instrument) : known!.has(rule.instrument);
           const latest = ticks.get(rule.instrument);
           if (!eligible) missing = true;
           else {
@@ -375,6 +379,12 @@ export function createScheduler(options: SchedulerOptions) {
     /** Catalog only, safe for HTTP market discovery without starting a polling cycle. */
     refreshCatalog: market.refreshCatalog,
     getMarkets: market.getMarkets, getPrices: market.getPrices, status, getStatus: status,
+    resolveMarket(instrument: string): CatalogSelection {
+      if (market.resolve) return market.resolve(instrument);
+      // Compatibility for custom sources that implement the older catalog port.
+      const catalog = market.getMarkets(), selected = catalog.markets.find(m => m.instrument === instrument) ?? null;
+      return { market: selected, stale: marketSourceStale(catalog, selected ?? { instrument } as Market), available: !!selected && marketAvailable(catalog, selected) };
+    },
     async snapshot() { await hasWork(); const s = status(); return { health: s.health, lastPollAt: s.lastPollAt, prices: s.prices, ...(s.marketMode ? { marketMode: s.marketMode } : {}) }; },
     catalog: { async get() { return market.getMarkets(); } },
     isInstrumentSupported(instrument: string) { if (source) return source.eligible(instrument); const c = market.getMarkets(); return !c.stale && c.markets.some(m => m.instrument === instrument); },

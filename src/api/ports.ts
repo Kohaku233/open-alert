@@ -5,6 +5,7 @@ import type { ComponentHealth, EncryptedSecret, Market, PriceTick, SystemStatus 
 import type { MarketQuery } from './markets.js';
 export interface CatalogSource { type?: 'spot' | 'swap'; venue?: 'binance' | 'okx' | 'mexc'; updatedAt: number | null; stale: boolean; code?: string | null }
 export type CatalogMarket = Market & { available?: boolean };
+export interface CatalogSelection { market: CatalogMarket | null; stale: boolean; available: boolean }
 export interface CatalogSnapshot {
   markets: CatalogMarket[]; updatedAt: number | null; stale: boolean;
   /** Freshness is scoped to the selected venue; aggregate stale can mean a partial outage. */
@@ -25,7 +26,7 @@ export interface ApiDependencies {
     get(): Promise<CatalogSnapshot>;
     /** A trusted coordinator can prepare the envelope without reparsing a full directory at the edge. */
     response?(query: MarketQuery | null, requestId: string): Promise<Response>;
-    resolve?(instrument: string): Promise<{ market: CatalogMarket | null; stale: boolean; available: boolean }>;
+    resolve?(instrument: string): Promise<CatalogSelection>;
   };
   quotes?: {
     get(market: Market): Promise<import('../markets/quotes.js').MarketQuote>;

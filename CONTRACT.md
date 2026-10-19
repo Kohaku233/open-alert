@@ -10,6 +10,7 @@ Scope: new project only. Do not modify or deploy `okx-free-monitor`. This baseli
 - `src/contracts/db.ts`: SQL port, record shapes, repository and scheduler ports. Adapter agent implements `createDb(config, environment): Promise<SqlDatabase>` and repositories. Native SQLite/PG imports stay in Node-only modules; Workers must never bundle them.
 - Auth agent owns Better Auth configuration, plugins, Drizzle auth schema, migrations, invitation enforcement, Google and email OTP. Use `@better-auth/drizzle-adapter` 1.7.7 and Drizzle 0.45.4, provider `sqlite` for SQLite/D1 and `pg` for PostgreSQL. Auth Drizzle and app SQL ports use the same physical DB. Explicitly configure unsupported D1 interactive auth transactions rather than pretending they work.
 - API agent owns Hono handlers, verified session middleware, ownership, admin permissions, CSRF/origin validation and request limits. Scheduler agent owns shared poller, lease/fencing and durable outbox. Notification agent owns encryption and Pushover. UI agent owns React/Vite and TradingView chart integration.
+- Market-source `resolve(instrument)` is an optional indexed selection port with a defensive single-row copy and current venue/product freshness. Scheduler ticks use source eligibility directly, not display-directory snapshots. Legacy custom sources retain a full-snapshot fallback. Shared freshness semantics live in `src/markets/catalog.ts`, not HTTP handlers.
 
 ## Configuration
 
@@ -116,6 +117,8 @@ Bootstrap requires BOTH a verified signed-in session and `Authorization: Bearer 
 App response: `{ok:true,data,requestId,effects?}` or `{ok:false,error:{code,message,fields?},requestId}`. Mutations that wake the scheduler report `effects.schedulerWake: 'confirmed' | 'pending'`. A pending effect means the database write committed but wake acknowledgement failed after bounded retries; never replay the mutation automatically. Epoch-ms numbers and nullable timestamps. `/api/auth/*` retains Better Auth's native protocol; frontend uses its official React client. App endpoints listed in `ApiRouteMap`; responses never depend on a frontend-internal shape.
 
 `GET /api/status?include=alerts` optionally includes the tenant's hydrated `alerts` array, sharing the status request's auth/limit checks and alert read. Plain `/api/status` and `/api/alerts` remain supported. The combined read reduces round trips; it is not a cross-SQL/DO transaction. Runtime startup failure returns a retryable 503 from `/api/auth-capabilities`, never a fabricated successful disabled-method response.
+
+Business middleware reads persisted settings on every request and initializes only a missing row. Status reuses that request-local record; no cross-request/tenant settings or disabled-account cache is permitted. Read failures fail closed instead of restoring defaults. SQL mutation generation/fence checks remain authoritative.
 
 | Routes | Authorization / behavior |
 | --- | --- |

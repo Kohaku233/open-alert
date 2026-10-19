@@ -104,6 +104,23 @@ test('injected market source refreshes authoritative demand before prices, expos
   } finally { await e.stop(); await f.db.close(); }
 });
 
+test('source tick avoids directory snapshots; indexed selection and legacy-source fallback remain compatible',async t=>{
+ const f=await fixture(),e=f.engine();await f.rule('point-lookup');f.feed.append(btc,110);
+ try{
+  const original=f.feed.source.getMarkets;
+  const directory=t.mock.method(f.feed.source,'getMarkets',()=>{assert.fail('Tick and indexed lookup must not copy catalog rows');});
+  await e.tick();assert.equal((await f.repositories.scheduler.listDue(f.now(),10)).length,1);
+  const selected={market:f.feed.catalog.markets[0]!,stale:false,available:true};
+  let resolutions=0;f.feed.source.resolve=()=>{resolutions++;return selected;};
+  assert.deepEqual(e.resolveMarket(btc),selected);assert.equal(resolutions,1);assert.equal(directory.mock.callCount(),0);delete f.feed.source.resolve;
+  // Older injected sources do not implement the optional point-lookup port.
+  f.feed.source.getMarkets=original;
+  assert.deepEqual(e.resolveMarket(btc),selected);
+  f.feed.catalog.stale=true;assert.equal(e.resolveMarket(btc).stale,true);
+  assert.deepEqual(e.resolveMarket(missing),{market:null,stale:true,available:false});
+ }finally{await e.stop();await f.db.close();}
+});
+
 test('every user inspects shared high then low crossings and reserves the actual crossing price', async () => {
   const f = await fixture(), e = f.engine();
   await f.rule('upper-1'); await f.rule('upper-2', btc, 100, 'u2'); await f.rule('lower', btc, 95, 'u2', 'lower');

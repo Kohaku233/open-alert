@@ -34,7 +34,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const quotes=createMarketQuoteService();
   const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),
     marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments})});
-  const app=createApp({...services,notifications,quotes,catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const})},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const app=createApp({...services,notifications,quotes,catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const})},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   let started=false;
   return {
     config,services,engine,app,

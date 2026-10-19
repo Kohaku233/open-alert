@@ -73,6 +73,54 @@ test('combined status reuses one tenant alert read and one batched summary query
   assert.equal((await f.call('/api/status?include=alerts')).status,401);
  }finally{await f.close();}
 });
+test('business reads reuse request-local settings without initialization writes or a cross-request cache',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('settings-read@example.com'),bob=await f.login('settings-other@example.com');
+  await f.repositories.settings.initialize(alice.id,Date.now());await f.repositories.settings.initialize(bob.id,Date.now());
+  const reads=t.mock.method(f.repositories.settings,'get'),initializations=t.mock.method(f.repositories.settings,'initialize'),writes=t.mock.method(f.db,'execute'),queries=t.mock.method(f.db,'query');
+  for(const path of ['/api/status?include=alerts','/api/alerts','/api/quote?instrument=BTC-USDT-SWAP'])await f.body(await f.call(path,'GET',undefined,alice.cookie));
+  assert.equal(reads.mock.callCount(),3,'One repository settings read per business request');assert.equal(initializations.mock.callCount(),0);
+  assert.equal(queries.mock.calls.filter(call=>call.arguments[0]==='SELECT * FROM user_settings WHERE user_id=?').length,3);
+  assert.equal(writes.mock.calls.filter(call=>String(call.arguments[0]).startsWith('INSERT INTO user_settings')).length,0);
+  await f.repositories.settings.patch(alice.id,0,{enabled:true,dailyLimit:7},Date.now());
+  const status=(await f.body(await f.call('/api/status?include=alerts','GET',undefined,alice.cookie))).data;
+  assert.equal(reads.mock.callCount(),4);assert.equal(status.settingsGeneration,1);assert.equal(status.settings.enabled,true);assert.equal(status.settings.dailyLimit,7);
+  const other=(await f.body(await f.call('/api/status','GET',undefined,bob.cookie))).data;
+  assert.equal(other.user.id,bob.id);assert.equal(other.settingsGeneration,0);assert.equal(other.settings.enabled,false);assert.equal(other.settings.dailyLimit,20);
+  await f.db.execute('UPDATE user_settings SET disabled=1 WHERE user_id=?',[alice.id]);assert.equal((await f.call('/api/status','GET',undefined,alice.cookie)).status,403);
+  assert.equal(initializations.mock.callCount(),0);assert.equal(f.wakes(),0);
+ }finally{await f.close();}
+});
+
+test('missing settings initialize safely under concurrent first reads and are not recreated later',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('settings-first-read@example.com');await f.db.execute('DELETE FROM user_settings WHERE user_id=?',[alice.id]);
+  const initializations=t.mock.method(f.repositories.settings,'initialize');
+  const responses=await Promise.all(Array.from({length:8},()=>f.call('/api/status?include=alerts','GET',undefined,alice.cookie)));
+  for(const response of responses){const status=(await f.body(response)).data;assert.equal(status.settingsGeneration,0);assert.equal(status.settings.enabled,false);}
+  assert.ok(initializations.mock.callCount()>=1);assert.equal((await f.db.query('SELECT user_id FROM user_settings WHERE user_id=?',[alice.id])).length,1);
+  const count=initializations.mock.callCount();await f.body(await f.call('/api/status','GET',undefined,alice.cookie));assert.equal(initializations.mock.callCount(),count);
+ }finally{await f.close();}
+});
+
+test('first-read initialization cannot overwrite a concurrent account disable',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('settings-disable-race@example.com');await f.repositories.settings.initialize(alice.id,Date.now());
+  t.mock.method(f.repositories.settings,'get',async()=>{await f.db.execute('UPDATE user_settings SET disabled=1,generation=generation+1 WHERE user_id=?',[alice.id]);return null;});
+  const init=t.mock.method(f.repositories.settings,'initialize');assert.equal((await f.call('/api/status','GET',undefined,alice.cookie)).status,403);assert.equal(init.mock.callCount(),1);
+  const row=(await f.db.query<{disabled:number;generation:number}>('SELECT disabled,generation FROM user_settings WHERE user_id=?',[alice.id]))[0]!;assert.equal(row.disabled,1);assert.equal(row.generation,1);
+ }finally{await f.close();}
+});
+
+test('settings read failure remains unavailable rather than restoring defaults',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('settings-unavailable@example.com');await f.repositories.settings.initialize(alice.id,Date.now());
+  t.mock.method(f.repositories.settings,'get',async()=>{throw new Error('private database failure');});
+  const init=t.mock.method(f.repositories.settings,'initialize',async()=>{assert.fail('A failed read must not initialize defaults');});
+  const failure=await f.body(await f.call('/api/status?include=alerts','GET',undefined,alice.cookie),503);assert.equal(failure.error.code,'service_unavailable');assert.equal(init.mock.callCount(),0);
+ }finally{await f.close();}
+});
+
 test('health idle degrades honestly; actual DB/email/provider failures and snapshot throws survive aggregation',async()=>{
  const f=await fixture();try{
   const idle:ComponentHealth={state:'degraded',lastSuccessAt:null,code:'idle_no_active_alerts'};

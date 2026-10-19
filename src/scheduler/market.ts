@@ -71,6 +71,10 @@ export function createMarketCache(options: { fetch?: Fetch; now?: () => number }
     refreshCatalog: catalog,
     async refresh() { await catalog(); await poll(); },
     getMarkets() { return { markets: [...markets.values()].map(m => ({ ...m })), updatedAt, stale: updatedAt === null || now() - updatedAt >= CATALOG_REFRESH || catalogCode !== null }; },
+    resolve(instrument: string) {
+      const selected = markets.get(instrument), stale = updatedAt === null || now() - updatedAt >= CATALOG_REFRESH || catalogCode !== null;
+      return { market: selected ? { ...selected } : null, stale, available: !!selected && !stale && selected.state === 'live' };
+    },
     getPrices() { return [...prices.values()].map(t => ({ ...t })); },
     ticks() { return new Map(prices); },
     priceHealth() {

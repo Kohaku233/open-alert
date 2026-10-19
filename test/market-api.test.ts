@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApi } from '../src/api/index.js';
 import type { ApiDependencies, CatalogSnapshot, CatalogMarket } from '../src/api/ports.js';
 import { loadConfig } from '../src/config.js';
-import type { AlertRecord, OutboxRecord, Repositories } from '../src/contracts/db.js';
+import type { AlertRecord, OutboxRecord, Repositories, UserSettingsRecord } from '../src/contracts/db.js';
 import type { Market } from '../src/contracts/domain.js';
 import { DEFAULT_NOTIFICATION } from '../src/contracts/domain.js';
 import { createNotificationService, notificationMarketLabel } from '../src/notifications/service.js';
@@ -18,13 +18,14 @@ function fixture() {
  let catalog:CatalogSnapshot={markets:markets.map(m=>({...m})),updatedAt:1000,stale:false};
  let catalogReads=0,wakes=0,writes=0,anonymous=false;
  const records=new Map<string,AlertRecord>();
+ const settings:UserSettingsRecord={userId:'alice',generation:0,disabled:false,enabled:false,dailyLimit:20,notification:DEFAULT_NOTIFICATION};
  const alert=(id:string,instrument:string,enabled=true):AlertRecord=>({id,userId:'alice',name:'old label',instrument,side:'upper',threshold:100,enabled,generation:0,triggered:false,triggerId:null,pendingTriggerId:null,createdAt:1000,updatedAt:1000,deletedAt:null});
  const dependencies={
   config,
   db:{query:async()=>[{last_request:Date.now()}]},
   auth:{getPrincipal:async()=>anonymous?null:{userId:'alice',role:'user',sessionId:'fixture'}},
   repositories:{
-   settings:{initialize:async()=>({disabled:false})},
+   settings:{get:async()=>({...settings}),initialize:async()=>({...settings})},
    alerts:{
     getForUser:async(userId:string,id:string)=>{const a=records.get(id);return a?.userId===userId?{...a}:null;},
     create:async(userId:string,body:typeof input)=>{writes++;const a={...alert(crypto.randomUUID(),body.instrument),...body,userId};records.set(a.id,a);return a;},

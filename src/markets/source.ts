@@ -1,6 +1,6 @@
 import { parseInstrumentIdentity } from '../contracts/domain.js';
 import type { ComponentHealth, Market, MarketType, PriceTick, Venue } from '../contracts/domain.js';
-import type { CatalogSnapshot } from '../api/ports.js';
+import type { CatalogSelection, CatalogSnapshot } from '../api/ports.js';
 import { VENUES, normalizeCatalog, record } from './normalize.js';
 import type { NormalizedMarket } from './normalize.js';
 
@@ -32,6 +32,8 @@ export interface MarketSource {
   refreshCatalog(): Promise<void>;
   refresh(): Promise<void>;
   getMarkets(): CatalogSnapshot;
+  /** Point lookup with live scope freshness; never copies the full catalog. */
+  resolve?(instrument: string): CatalogSelection;
   getPrices(): PriceTick[];
   ticks(): Map<string, PriceTick>;
   priceHealth(): ComponentHealth;
@@ -393,6 +395,13 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   }
   return {
     mode: options.mode, refreshCatalog, refresh, setDemand, stop, eligible, samples,
+    resolve(instrument) {
+      const identity = parseInstrumentIdentity(instrument);
+      const scopes = identity ? states.filter(s => s.venue === identity.venue && (!s.product || s.product === identity.type)) : [];
+      const selected = scopes.find(s => s.catalog.has(instrument))?.catalog.get(instrument);
+      const available = !!selected && eligible(instrument);
+      return { market: selected ? { ...selected, available } : null, stale: !scopes.length || scopes.some(s => !catalogFresh(s)), available };
+    },
     acknowledgeSamples(id, captured) {
       const d = demand.get(id); if (!d) return;
       const key = (t: PriceTick) => JSON.stringify([t.instrument, t.price, t.timestamp, t.receivedAt]);

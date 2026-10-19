@@ -6,7 +6,7 @@ import type { CloudflareBindings } from '../src/contracts/db.js';
 test('single-hop quote lookup keeps stale, unsupported and provider errors distinct without touching alarms',async()=>{
  let refreshes=0,reads=0,stale=false,available=true,fail=false;
  const instrument='BTC-USDT-SWAP',quote={instrument,price:123,observedAt:1700000000000,timestamp:null};
- const engine={async refreshCatalog(){refreshes++;},getMarkets(){return {markets:[{instrument,base:'BTC',quote:'USDT',state:'live',available}],updatedAt:1700000000000,stale};}};
+ const engine={async refreshCatalog(){refreshes++;},getMarkets(){assert.fail('Point lookup must not copy the full catalog');},resolveMarket(value:string){return {market:value===instrument?{instrument,base:'BTC',quote:'USDT',state:'live',available}:null,stale,available:value===instrument&&available&&!stale};}};
  const coordinator=Object.assign(Object.create(Coordinator.prototype),{initialized:Promise.resolve(engine),quotes:{async get(){reads++;if(fail)throw new Error('upstream secret');return quote;}}}) as Coordinator;
  const lookup=async(value=instrument)=>{const response=await coordinator.fetch(new Request('https://coordinator.internal/quote-lookup?instrument='+value));assert.equal(response.status,200);return response.json();};
  assert.deepEqual(await lookup(),{quote});assert.equal(reads,1);assert.equal(refreshes,1);
@@ -15,6 +15,7 @@ test('single-hop quote lookup keeps stale, unsupported and provider errors disti
  stale=true;assert.deepEqual(await lookup(),{quote:null,code:'service_unavailable'});
  assert.deepEqual(await lookup('FAKE-USDT-SWAP'),{quote:null,code:'service_unavailable'});
  available=true;stale=false;fail=true;assert.deepEqual(await lookup(),{quote:null,code:'service_unavailable'});assert.equal(reads,2);
+ const selected=await coordinator.fetch(new Request('https://coordinator.internal/market?instrument='+instrument));assert.equal(selected.status,200);assert.equal((await selected.json() as {market:{instrument:string}}).market.instrument,instrument);
 });
 
 test('scheduled recovery retries the internal reconcile without depending on HTTP auth startup', async () => {

@@ -7,6 +7,8 @@ import { instrumentSchema, legacyInstrumentSchema, parseInstrumentIdentity } fro
 import { parseLegacySnapshot } from '../src/migration/legacy.js';
 import { instrumentId, normalizeCatalog, normalizeMarket } from '../src/markets/normalize.js';
 import { createCcxtMarketSource } from '../src/markets/source.js';
+import { marketAvailable, marketSourceStale } from '../src/api/markets.js';
+import type { Market } from '../src/contracts/domain.js';
 import type { CcxtExchange, MarketSourceOptions } from '../src/markets/source.js';
 import type { MarketType, Venue } from '../src/contracts/domain.js';
 const initial = 1_700_000_000_000;
@@ -91,6 +93,44 @@ test('shared venue clients load explicitly, complete catalogs remove delistings 
     assert.equal(f.source.eligible('binance:spot:BTCUSDT'),true);
   } finally {await f.source.stop();}
 });
+test('indexed catalog selection matches directory semantics across expiry, outages, delisting and stop',async()=>{
+ const f=fixture();
+ const ids=['BTC-USDT-SWAP','okx:spot:BTC-USDT','binance:spot:BTCUSDT','mexc:swap:BTC_USDT','binance:spot:FAKEUSDT','forged'];
+ const parity=()=>{const snapshot=f.source.getMarkets();for(const instrument of ids){const market=snapshot.markets.find(m=>m.instrument===instrument)??null;assert.deepEqual(f.source.resolve!(instrument),{market,stale:marketSourceStale(snapshot,market??{instrument} as Market),available:!!market&&marketAvailable(snapshot,market)});}};
+ try{
+  parity();await f.source.refreshCatalog();parity();
+  const row=f.source.resolve!('BTC-USDT-SWAP').market!;row.base='FORGED';row.available=false;assert.equal(f.source.resolve!('BTC-USDT-SWAP').market!.base,'BTC');assert.equal(f.source.resolve!('BTC-USDT-SWAP').available,true);
+  f.advance(100);parity();assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,true);
+  f.current('mexc').failCatalog=true;await f.source.refreshCatalog();parity();assert.equal(f.source.getMarkets().stale,true);assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,false);
+  f.current('okx').metadata={};f.advance(100);await f.source.refreshCatalog();parity();assert.equal(f.source.resolve!('BTC-USDT-SWAP').market,null);assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,false);
+  await f.source.stop();parity();assert.equal(f.source.resolve!('binance:spot:BTCUSDT').available,false);
+ }finally{await f.source.stop();}
+});
+
+test('indexed lookup freshness stays scoped to the product rather than the whole venue',async()=>{
+ let at=initial;const clients=new Map<string,MockExchange>();
+ const source=createCcxtMarketSource({mode:'polling',venues:['binance'],splitProducts:['binance'],now:()=>at,catalogTtlMs:100,requestTimeoutMs:1000,closeTimeoutMs:10,
+  factory(venue,settings){const client=new MockExchange(venue);client.metadata=catalog(market(venue,settings.product!));clients.set(settings.product!,client);return client;}});
+ try{
+  await source.refreshCatalog();assert.equal(source.resolve!('binance:spot:BTCUSDT').available,true);assert.equal(source.resolve!('binance:swap:BTCUSDT').available,true);
+  clients.get('spot')!.failCatalog=true;at+=100;await source.refreshCatalog();
+  assert.equal(source.getMarkets().stale,true);assert.equal(source.resolve!('binance:spot:BTCUSDT').stale,true);assert.equal(source.resolve!('binance:spot:BTCUSDT').available,false);
+  assert.equal(source.resolve!('binance:swap:BTCUSDT').stale,false);assert.equal(source.resolve!('binance:swap:BTCUSDT').available,true);
+  assert.deepEqual(source.resolve!('binance:swap:FAKEUSDT'),{market:null,stale:false,available:false});
+ }finally{await source.stop();}
+});
+
+test('large-catalog point lookups never enumerate metadata or change market demand',async t=>{
+ const f=fixture({venues:['okx'],maxCatalogMarkets:10000});const exchange=new MockExchange('okx');
+ exchange.metadata=catalog(...Array.from({length:5000},(_,i)=>market('okx','swap','COIN'+i)));f.next.okx=exchange;
+ try{
+  await f.source.refreshCatalog();assert.equal(f.source.getMarkets().markets.length,5000);const before=f.source.diagnostics();
+  const iterator=t.mock.method(Map.prototype,'values',()=>{assert.fail('Point lookup enumerated the full metadata map');});
+  for(let i=0;i<100;i++){const result=f.source.resolve!('COIN4999-USDT-SWAP');assert.equal(result.available,true);assert.equal(result.market!.base,'COIN4999');}
+  assert.equal(iterator.mock.callCount(),0);iterator.mock.restore();assert.deepEqual(f.source.diagnostics(),before);assert.equal(exchange.fetchCalls.length,0);assert.equal(exchange.loads,1);
+ }finally{t.mock.restoreAll();await f.source.stop();}
+});
+
 test('stream retains every intra-batch crossing; copies, dedup and drain are safe', async () => {
   const f=fixture({venues:['okx'],mode:'stream'});
   try {
@@ -260,6 +300,7 @@ test('stream queue overflow clears crossings and isolates the affected instrumen
     e.watches[0]!.resolve([trade(10),trade(20),trade(30),trade(40)]);
     await until(()=>f.source.diagnostics().instruments[0]!.code==='trade_queue_overflow');
     assert.equal(f.source.eligible('BTC-USDT-SWAP'),false); assert.equal(f.source.priceHealth().code,'trade_queue_overflow'); assert.equal(f.source.diagnostics().queued,0);
+    assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,false);assert.equal(f.source.resolve!('BTC-USDT-SWAP').available,false);
     e.watches[1]!.resolve([trade(80,initial,'BTC/USDT')]); await until(()=>f.source.getPrices().length===1);
     assert.equal(f.source.getPrices()[0]!.instrument,'okx:spot:BTC-USDT'); assert.equal(f.source.priceHealth().state,'degraded');
     assert.equal(e.closed,0); assert.ok(f.source.diagnostics().queued<=3);

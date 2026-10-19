@@ -16,8 +16,7 @@ import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { createVercelBinanceSource } from '../markets/vercel-relay.js';
 import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js';
-import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from '../api/markets.js';
-import type { Market } from '../contracts/domain.js';
+import { catalogDirectory, marketQuerySchema, searchMarkets } from '../api/markets.js';
 import { D1SqlDatabase } from '../db/d1.js';
 import { wakeWithRetry } from './wake.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
@@ -168,8 +167,7 @@ export class Coordinator {
     if(path==='/market'&&request.method==='GET'){
       await engine.refreshCatalog();
       const instrument=new URL(request.url).searchParams.get('instrument')??'';
-      const catalog=engine.getMarkets(),market=catalog.markets.find(m=>m.instrument===instrument)??null;
-      return Response.json({market,stale:marketSourceStale(catalog,market??{instrument} as Market),available:!!market&&marketAvailable(catalog,market)});
+      return Response.json(engine.resolveMarket(instrument));
     }
     if(path==='/snapshot'&&request.method==='GET'){
       // First read after eviction or a lost wake repairs active work, but never polls idle prices.
@@ -181,10 +179,10 @@ export class Coordinator {
       const reply=(result:QuoteLookup)=>path==='/quote-lookup'?Response.json(result):result.quote===null?new Response(null,{status:result.code==='invalid_request'?400:503}):Response.json(result.quote);
       try {
         await engine.refreshCatalog();
-        const instrument=new URL(request.url).searchParams.get('instrument');
-        const catalog=engine.getMarkets(),market=catalog.markets.find(m=>m.instrument===instrument);
-        if(marketSourceStale(catalog,market??{instrument:instrument??''} as Market)||!this.quotes)return reply({quote:null,code:'service_unavailable'});
-        if(!market||!marketAvailable(catalog,market))return reply({quote:null,code:'invalid_request'});
+        const instrument=new URL(request.url).searchParams.get('instrument')??'';
+        const {market,stale,available}=engine.resolveMarket(instrument);
+        if(stale||!this.quotes)return reply({quote:null,code:'service_unavailable'});
+        if(!market||!available)return reply({quote:null,code:'invalid_request'});
         return reply({quote:await this.quotes.get(market)});
       } catch {return reply({quote:null,code:'service_unavailable'});}
     }

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { consumeAuthLimit,privateLimitKey } from '../auth/limits.js';
 import { DisabledAccountError } from '../auth/index.js';
 import { RepositoryConflict } from '../contracts/db.js';
-import type { AlertRecord, ChannelRecord, OutboxRecord } from '../contracts/db.js';
+import type { AlertRecord, ChannelRecord, OutboxRecord, UserSettingsRecord } from '../contracts/db.js';
 import type { ApiErrorCode, InvitationResult, InvitationSummary, SessionPrincipal } from '../contracts/api.js';
 import { EmailDeliveryError } from '../auth/email.js';
 import { wakeWithRetry } from '../runtime/wake.js';
@@ -14,7 +14,7 @@ import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
-type Env = { Variables: { requestId: string; principal: SessionPrincipal; schedulerWake: 'confirmed' | 'pending' } };
+type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
 const generation = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), dailyLimit: z.number().int().min(1).max(20).optional(), notification: notificationOptionsSchema.optional() }).refine(v=>Object.keys(v).length>1);
@@ -138,12 +138,13 @@ export function createApi(d:ApiDependencies) {
     }
     const budget=await consumeAuthLimit(d.db,await privateLimitKey('api-user',principal.userId,d.config.authSecret),120,60000);
     if(!budget.allowed){c.header('Retry-After',String(budget.retryAfter));throw new HttpError(429,'rate_limited');}
-    const settings=await d.repositories.settings.initialize(principal.userId,Date.now());if(settings.disabled)throw new HttpError(403,'forbidden');
+    const settings=await d.repositories.settings.get(principal.userId)??await d.repositories.settings.initialize(principal.userId,Date.now());if(settings.disabled)throw new HttpError(403,'forbidden');
+    c.set('settings',settings);
     await next();
   });
   app.get('/api/status',async c=>{
     const include=c.req.query('include');if(include!==undefined&&(include!=='alerts'||c.req.queries('include')?.length!==1))throw new HttpError(400,'invalid_request');
-    const userId=uid(c);const [user,settings,daily,channel,runtime,records]=await Promise.all([identity(userId),d.repositories.settings.get(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot(),d.repositories.alerts.listForUser(userId)]);if(!settings)throw new HttpError(503,'service_unavailable');
+    const userId=uid(c),settings=c.get('settings');const [user,daily,channel,runtime,records]=await Promise.all([identity(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot(),d.repositories.alerts.listForUser(userId)]);
     const health=await aggregateHealth(runtime);
     const own=new Set(records.map(v=>v.instrument));
     return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});

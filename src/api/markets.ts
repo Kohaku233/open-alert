@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { instrumentSchema, parseInstrumentIdentity } from '../contracts/domain.js';
 import type { Market } from '../contracts/domain.js';
 import type { CatalogSnapshot } from './ports.js';
+import { marketAvailable } from '../markets/catalog.js';
+export { marketAvailable, marketSourceStale } from '../markets/catalog.js';
 
 const venues = ['binance', 'okx', 'mexc'] as const;
 type Venue = typeof venues[number];
@@ -21,23 +23,6 @@ export type MarketQuery = z.infer<typeof marketQuerySchema>;
 function identity(market: CatalogMarket): { venue?: Venue; type?: 'spot' | 'swap' } {
   const parsed = parseInstrumentIdentity(market.instrument);
   return parsed ? { venue: parsed.venue, type: parsed.type } : {};
-}
-export function marketSourceStale(snapshot: CatalogSnapshot, market: CatalogMarket): boolean {
-  if (snapshot.sources) {
-    const {venue,type} = identity(market);
-    if (!venue) return true;
-    if (Array.isArray(snapshot.sources)) {
-      const matches = snapshot.sources.filter(s => s.venue === venue && (!s.type || s.type === type));
-      return !matches.length || matches.some(s => s.stale || s.updatedAt === null);
-    }
-    const source = snapshot.sources[venue];
-    return !source || source.stale || source.updatedAt === null;
-  }
-  // A source can publish eligibility directly when it has no per-venue snapshot.
-  return snapshot.stale && market.available !== true;
-}
-export function marketAvailable(snapshot: CatalogSnapshot, market: CatalogMarket): boolean {
-  return market.state === 'live' && market.available !== false && !marketSourceStale(snapshot, market);
 }
 export function catalogDirectory(snapshot: CatalogSnapshot): CatalogSnapshot {
   return { ...snapshot, markets: snapshot.markets.map(m => ({ ...m, available: marketAvailable(snapshot, m) })) };

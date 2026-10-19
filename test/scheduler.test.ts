@@ -50,8 +50,9 @@ test('freshness rejects stale/future/unknown/invalid last and readonly status ne
 });
 test('catalog exposes real availability, recognized chart mapping only and hourly refresh',async()=>{
  const s=await fixture();const e=s.engine();try{assert.equal(e.getStatus().health.prices.state,'unhealthy');await e.tick();const c=e.getMarkets();assert.equal(c.stale,false);assert.equal(c.markets.find(m=>m.base==='BTC')!.tradingViewSymbol,'OKX:BTCUSDT.P');assert.equal(c.markets.find(m=>m.base==='NEW')!.tradingViewSymbol,'');assert.equal(e.isInstrumentSupported('NEW-USDT-SWAP'),true);
+  const selected=e.resolveMarket('BTC-USDT-SWAP');assert.equal(selected.available,true);assert.equal(selected.market!.base,'BTC');selected.market!.base='FORGED';assert.equal(e.resolveMarket('BTC-USDT-SWAP').market!.base,'BTC');assert.deepEqual(e.resolveMarket('FAKE-USDT-SWAP'),{market:null,stale:false,available:false});
   s.advance(5000);await e.tick();assert.equal(s.calls.filter(c=>c.url.includes('instruments')).length,1);
-  s.advance(60*60*1000);s.setCatalog([]);await e.tick();assert.equal(e.getMarkets().stale,true);assert.equal(e.isInstrumentSupported('BTC-USDT-SWAP'),false);
+  s.advance(60*60*1000);s.setCatalog([]);await e.tick();assert.equal(e.getMarkets().stale,true);assert.equal(e.isInstrumentSupported('BTC-USDT-SWAP'),false);assert.equal(e.resolveMarket('BTC-USDT-SWAP').stale,true);assert.equal(e.resolveMarket('BTC-USDT-SWAP').available,false);
  }finally{await e.stop();await s.db.close();}
 });
 test('cached rule/settings/channel generations block stale reservations; wake refreshes',async()=>{
