@@ -151,7 +151,7 @@ test('hasWork uses one EXISTS query and notices SQL changes without hydrating pr
  try{assert.equal(await e.hasWork(),false);const a=await s.rule();assert.equal(await e.hasWork(),false);await s.r.channels.put('u1',0,await encryptSecret(key,'u1','userKey','U'.repeat(30)),await encryptSecret(key,'u1','appToken',token),s.now());assert.equal(await e.hasWork(),true);await s.r.settings.patch('u1',1,{enabled:false},s.now());assert.equal(await e.hasWork(),false);assert.equal(probes,4);assert.equal(s.calls.length,0);void a;}
  finally{s.db.query=query;await e.stop();await s.db.close();}
 });
-test('Cloudflare reserves one per tick, dispatches one per drain, and page cursor reaches later users',async()=>{
+test('Cloudflare explicit single-item budgets and page cursor reach later users',async()=>{
  const s=await fixture({...cloudflareEnv,MAX_ALERTS_PER_USER:100});
  for(let i=0;i<80;i++)await s.rule();await s.rule('u2');
  const seed=s.engine({maxReservationsPerTick:100,maxEvaluationsPerTick:100});
@@ -161,13 +161,50 @@ test('Cloudflare reserves one per tick, dispatches one per drain, and page curso
  // Use trigger order via next_at so u1 occupies the first 80 positions.
  await s.db.execute("UPDATE outbox SET next_at=? WHERE user_id='u1'",[s.now()-2]);
  const pages:number[]=[],listDue=s.r.scheduler.listDue;s.r.scheduler.listDue=async(...args)=>{pages.push(args[1]);return listDue(...args);};
- const e=s.engine();
+ const e=s.engine({maxClaimsPerDrain:1,maxDeliveriesPerDrain:1});
  try{for(let i=0;i<3;i++){const before=s.calls.filter(c=>c.url.includes('messages')).length;await e.drain();assert.equal(s.calls.filter(c=>c.url.includes('messages')).length,before+1);}
   assert.deepEqual(pages,[32,32,32]);assert.equal(s.calls.filter(c=>c.url.includes('messages')).at(-1)!.body.get('user'),'V'.repeat(30));
  }finally{await e.stop();await s.db.close();}
- const t=await fixture(cloudflareEnv);for(let i=0;i<3;i++)await t.rule();const bounded=t.engine();let reservations=0;const reserve=t.r.alerts.reserveTrigger;t.r.alerts.reserveTrigger=async input=>{reservations++;return reserve(input);};
+ const t=await fixture(cloudflareEnv);for(let i=0;i<3;i++)await t.rule();const bounded=t.engine({maxReservationsPerTick:1});let reservations=0;const reserve=t.r.alerts.reserveTrigger;t.r.alerts.reserveTrigger=async input=>{reservations++;return reserve(input);};
  try{await bounded.tick();assert.equal(reservations,1);await bounded.tick();assert.equal(reservations,2);assert.equal((await t.r.scheduler.listDue(t.now(),20)).length,2);}finally{await bounded.stop();await t.db.close();}
 });
+test('Cloudflare default batch reserves four, sends serially, continues later and never replays latched rules',async()=>{
+ const s=await fixture(cloudflareEnv);for(let i=0;i<9;i++)await s.rule(i%2?'u1':'u2');
+ let inflight=0,peak=0,sent=0;
+ const real=createNotificationService({config:s.config,repositories:s.r,fetch:s.fetch,now:s.now});
+ const e=s.engine({notifications:{health:real.health,deliver:async claim=>{inflight++;peak=Math.max(peak,inflight);try{await new Promise(resolve=>setTimeout(resolve,2));sent++;return await real.deliver(claim);}finally{inflight--;}}}});
+ try{
+  for(const total of [4,8,9]){await e.tick();const rows=await s.db.query('SELECT trigger_id FROM outbox');assert.equal(rows.length,total);await e.drain();assert.equal(sent,total);}
+  assert.equal(peak,1);await e.cycle();assert.equal(sent,9);assert.equal(s.calls.filter(c=>c.url.includes('tickers')).length,1);
+  const events=await s.db.query<{phase:string}>('SELECT phase FROM outbox');assert.ok(events.every(row=>row.phase==='sent'));
+  const usages=await Promise.all(['u1','u2'].map(user=>s.r.settings.dailyUsage(user,s.now())));assert.equal(usages[0]!.attempts,4);assert.equal(usages[1]!.attempts,5);
+ }finally{await e.stop();await s.db.close();}
+});
+
+test('Cloudflare small batch keeps the drain deadline and daily quota boundaries',async t=>{
+ const s=await fixture(cloudflareEnv);for(let i=0;i<4;i++)await s.rule();let elapsed=0,sent=0;
+ const real=createNotificationService({config:s.config,repositories:s.r,fetch:s.fetch,now:s.now});
+ const e=s.engine({notifications:{health:real.health,deliver:async claim=>{sent++;const result=await real.deliver(claim);elapsed+=10000;return result;}}});
+ try{
+  await e.tick();const clock=t.mock.method(performance,'now',()=>elapsed);
+  await e.drain();assert.equal(sent,2,'A 25-second budget leaves room for the next nine-second send');
+  await e.drain();assert.equal(sent,4);clock.mock.restore();
+ }finally{t.mock.restoreAll();await e.stop();await s.db.close();}
+ const q=await fixture({...cloudflareEnv,DAILY_NOTIFICATION_LIMIT:1,GLOBAL_DAILY_NOTIFICATION_LIMIT:2});for(let i=0;i<4;i++)await q.rule(i%2?'u1':'u2');const limited=q.engine();
+ try{await limited.cycle();assert.equal(q.calls.filter(c=>c.url.includes('messages')).length,2);for(const user of ['u1','u2'])assert.equal((await q.r.settings.dailyUsage(user,q.now())).attempts,1);}
+ finally{await limited.stop();await q.db.close();}
+});
+
+test('Cloudflare small batch stops after ambiguous delivery and never resends it',async()=>{
+ const s=await fixture(cloudflareEnv);await s.rule();await s.rule('u2');s.setProvider({status:1,request:'missing-receipt'});const e=s.engine();
+ try{
+  await e.cycle();assert.equal(s.calls.filter(c=>c.url.includes('messages')).length,1);
+  const phases=await s.db.query<{phase:string}>('SELECT phase FROM outbox');assert.deepEqual(phases.map(row=>row.phase).sort(),['queued','uncertain']);
+  s.setProvider({status:1,request:'id',receipt:'R'.repeat(30)});await e.drain();await e.drain();assert.equal(s.calls.filter(c=>c.url.includes('messages')).length,2);
+  assert.deepEqual((await s.db.query<{phase:string}>('SELECT phase FROM outbox')).map(row=>row.phase).sort(),['sent','uncertain']);
+ }finally{await e.stop();await s.db.close();}
+});
+
 test('100-rule Cloudflare evaluation cursor survives periodic refresh, invalidation and deletion of last scanned rule',async()=>{
  const s=await fixture({...cloudflareEnv,MAX_ALERTS_PER_USER:100});
  for(let i=0;i<200;i++){const a=await s.rule(i<100?'u1':'u2','upper',i===199?100:200);await s.db.execute('UPDATE alerts SET id=? WHERE id=?',[`rule-${String(i).padStart(3,'0')}`,a.id]);}
@@ -183,7 +220,7 @@ test('cached lease avoids repeated renewals but reservation and claim still reje
 });
 
 test('Cloudflare claim budget bounds stale queued cleanup and SQL fence blocks cached queued delivery',async()=>{
- const s=await fixture(cloudflareEnv);await s.rule();await s.rule('u2');const e=s.engine();let claims=0;const claim=s.r.scheduler.claimDelivery;s.r.scheduler.claimDelivery=async(...args)=>{claims++;return claim(...args);};
+ const s=await fixture(cloudflareEnv);await s.rule();await s.rule('u2');const e=s.engine({maxClaimsPerDrain:1,maxDeliveriesPerDrain:1});let claims=0;const claim=s.r.scheduler.claimDelivery;s.r.scheduler.claimDelivery=async(...args)=>{claims++;return claim(...args);};
  try{await e.tick();await e.tick();await s.db.execute("UPDATE user_settings SET generation=generation+1");await e.drain();assert.equal(claims,1);assert.equal(s.calls.filter(c=>c.url.includes('messages')).length,0);await e.drain();assert.equal(claims,2);}
  finally{await e.stop();await s.db.close();}
  const t=await fixture(cloudflareEnv);await t.rule();const engine=t.engine();

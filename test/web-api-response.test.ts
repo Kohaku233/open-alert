@@ -2,7 +2,7 @@ import test from 'node:test';
 import { setLanguage } from '../web/i18n.js';
 setLanguage('zh-CN');
 import assert from 'node:assert/strict';
-import { AppError, errorText, request } from '../web/api.js';
+import { AppError, errorText, request, subscribeSchedulerWake } from '../web/api.js';
 
 test('response parsing distinguishes missing metadata, proxy failures, expired sessions and uncertain writes', async t => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -15,6 +15,16 @@ test('response parsing distinguishes missing metadata, proxy failures, expired s
     catch(error) {assert(error instanceof AppError);return error;}
   };
   try {
+    const effects:string[]=[];const unsubscribe=subscribeSchedulerWake(state=>effects.push(state));
+    try{
+      response=Response.json({ok:true,data:{generation:1},effects:{schedulerWake:'pending'}});
+      assert.deepEqual(await request('/api/settings','PATCH',{}),{generation:1});
+      response=Response.json({ok:true,data:{generation:2},effects:{schedulerWake:'confirmed'}});
+      await request('/api/settings','PATCH',{});
+      response=Response.json({ok:true,data:{},effects:{schedulerWake:'pending'}});
+      await request('/api/status');
+      assert.deepEqual(effects,['pending','confirmed']);
+    }finally{unsubscribe();}
     response=Response.json({ok:true,data:{google:true}});
     assert.deepEqual(await request('/api/auth-capabilities'),{google:true});
     response=Response.json({ok:true,data:{google:false},requestId:null});

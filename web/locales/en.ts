@@ -1,4 +1,6 @@
 export const english: Record<string, string> = {
+  "后台同步待确认": "Background sync pending",
+  "修改已保存，但后台同步尚未确认。系统会自动补偿检查；可重新读取状态确认，请勿重复提交。": "Changes are saved, but background sync is not confirmed. Recovery checks run automatically. Refresh status to confirm; do not submit again.",
   "登录或注册": "Sign in or create an account",
   "验证邮箱": "Verify your email",
   "已有账号将直接登录；新邮箱验证后自动创建账户。无需设置密码。": "Sign in to your existing account, or verify a new email to create one. No password needed.",

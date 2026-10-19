@@ -54,12 +54,13 @@ export function authOptions(config: AppConfig, sendVerificationOTP: Parameters<t
       window: 3_600,
       max: 60,
       customRules: {
-        // '*' does not match '/get-session' in the pinned native matcher. Keep
-        // the one-hour pruning horizon without applying it to session reads.
+        // Keep specific rules first: the native matcher takes the first match.
         '/get-session': { window: 60, max: 60 },
         '/email-otp/send-verification-otp': { window: 60, max: 5 },
         '/sign-in/email-otp': { window: 60, max: 10 },
-        '*': { window: 60, max: 60 },
+        // A slash-aware fallback changes only the retention-sized default, not
+        // native stricter rules such as Google sign-in's 3 requests / 10 seconds.
+        '/**': (_request, rule) => rule.window === 3_600 ? { window: 60, max: 60 } : rule,
       },
     },
     plugins: [{

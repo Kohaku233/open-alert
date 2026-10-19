@@ -213,6 +213,19 @@ export function createRepositories(db: SqlDatabase, config: Pick<AppConfig,'limi
     async recoverInterrupted(now) { return (await db.execute("UPDATE test_notifications SET phase='uncertain',code='interrupted',updated_at=? WHERE phase='sending' AND created_at<?",[now,now-RUNTIME_POLICY.requestTimeoutMs-5000])).changes; }
   };
   return {alerts,scheduler,settings:settingsRepo,channels,admin,tests,outbox:{
+    async summariesForUser(userId) {
+      // LEFT JOIN keeps current alerts as the driving set, not the user's entire
+      // history. Null partners are filtered here rather than changing the join plan.
+      return (await rows(`SELECT p.* FROM alerts a LEFT JOIN outbox p
+        ON p.trigger_id=a.pending_trigger_id AND p.user_id=a.user_id AND p.alert_id=a.id
+        WHERE a.user_id=? AND a.deleted_at IS NULL
+        UNION ALL
+        SELECT h.* FROM alerts a LEFT JOIN outbox h
+        ON h.trigger_id=(SELECT recent.trigger_id FROM outbox recent
+          WHERE recent.user_id=a.user_id AND recent.alert_id=a.id AND recent.phase NOT IN('queued','sending')
+          ORDER BY recent.generation DESC LIMIT 1) AND h.user_id=a.user_id AND h.alert_id=a.id
+        WHERE a.user_id=? AND a.deleted_at IS NULL`,[userId,userId])).filter(row=>row.trigger_id!==null).map(outbox);
+    },
     async lastForAlert(userId,alertId) { const r=await rows("SELECT * FROM outbox WHERE user_id=? AND alert_id=? AND phase NOT IN('queued','sending') ORDER BY generation DESC LIMIT 1",[userId,alertId]); return r[0]?outbox(r[0]):null; },
     async getForUser(userId,id) { const r=await rows('SELECT * FROM outbox WHERE user_id=? AND trigger_id=?',[userId,id]); return r[0]?outbox(r[0]):null; },
     async listForUser(userId,limit,cursor) { const r=await rows('SELECT * FROM outbox WHERE user_id=? AND trigger_id>? ORDER BY trigger_id LIMIT ?',[userId,cursor??'',pageLimit(limit)+1]); const items=r.slice(0,limit).map(outbox); return {items,cursor:r.length>limit?items.at(-1)!.triggerId:null}; }

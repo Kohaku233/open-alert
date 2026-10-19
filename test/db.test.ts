@@ -24,6 +24,32 @@ async function reserve(s:Awaited<ReturnType<typeof setup>>,userId='u1',name='A',
  assert.equal(await s.r.alerts.reserveTrigger({triggerId,alertId:a.id,userId,generation:0,settingsGeneration:1,channelGeneration:0,tick:{instrument:a.instrument,price:100,timestamp:now,receivedAt:now},now,lease:s.l}),true);
  return {a,triggerId};
 }
+
+test('batched outbox summaries keep latest completed plus current pending without tenant/history leakage',async t=>{
+ const s=await setup();try{
+  const own=await reserve(s),other=await reserve(s,'u2','foreign');
+  const claim=(await s.r.scheduler.claimDelivery(own.triggerId,crypto.randomUUID(),s.l,now))!;
+  assert.equal(await s.r.scheduler.finishDelivery(own.triggerId,claim.claimId!,s.l,'sent',null,null,now),true);
+  const rearmed=await s.r.alerts.rearm('u1',own.a.id,0,now);
+  const pendingId=crypto.randomUUID();
+  assert.equal(await s.r.alerts.reserveTrigger({triggerId:pendingId,alertId:own.a.id,userId:'u1',generation:rearmed.generation,settingsGeneration:1,channelGeneration:0,tick:{instrument:own.a.instrument,price:100,timestamp:now,receivedAt:now},now,lease:s.l}),true);
+  const queries=t.mock.method(s.db,'query');
+  const summary=await s.r.outbox.summariesForUser('u1');
+  assert.deepEqual(new Set(summary.map(row=>row.triggerId)),new Set([own.triggerId,pendingId]));
+  assert.ok(summary.every(row=>row.userId==='u1'&&row.alertId===own.a.id));
+  assert.equal((await s.r.outbox.summariesForUser('u2'))[0]!.triggerId,other.triggerId);
+  const query=queries.mock.calls[0]!.arguments;
+  const plan=await s.db.query<{detail:string}>('EXPLAIN QUERY PLAN '+query[0],query[1]);
+  assert.equal(plan.filter(row=>/SEARCH [ph] .*trigger_id=\?/.test(row.detail)).length,2,'Both summary branches must look up event IDs, not scan user history');
+  const second=(await s.r.scheduler.claimDelivery(pendingId,crypto.randomUUID(),s.l,now))!;
+  assert.equal(await s.r.scheduler.finishDelivery(pendingId,second.claimId!,s.l,'failed',null,null,now),true);
+  const next=await s.r.alerts.rearm('u1',own.a.id,rearmed.generation,now),third=crypto.randomUUID();
+  assert.equal(await s.r.alerts.reserveTrigger({triggerId:third,alertId:own.a.id,userId:'u1',generation:next.generation,settingsGeneration:1,channelGeneration:0,tick:{instrument:own.a.instrument,price:100,timestamp:now,receivedAt:now},now,lease:s.l}),true);
+  assert.deepEqual(new Set((await s.r.outbox.summariesForUser('u1')).map(row=>row.triggerId)),new Set([pendingId,third]),'Older completed generations are not returned');
+  await s.db.execute('UPDATE alerts SET deleted_at=? WHERE id=?',[now,own.a.id]);
+  assert.deepEqual(await s.r.outbox.summariesForUser('u1'),[]);
+ }finally{await s.db.close();}
+});
 test('SQLite ordered bound transaction, zero counts, rollback and CAS rollback',async()=>{
  const {db}=await setup();
  const c=await db.atomic([{sql:"INSERT INTO app_meta(key,value) VALUES(?,?)",params:['bound',"a'; DROP TABLE alerts;--"]},{sql:'UPDATE app_meta SET value=? WHERE key=?',params:['changed','absent']}]); assert.deepEqual(c,[1,0]);

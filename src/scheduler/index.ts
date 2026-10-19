@@ -35,17 +35,17 @@ const bounded = (value: number, min: number, max: number, code: string) => {
 export function createScheduler(options: SchedulerOptions) {
   const { config, repositories: r } = options, now = options.now ?? Date.now;
   const ownerId = options.ownerId ?? crypto.randomUUID();
-  const leaseMs = bounded(options.leaseMs ?? 40_000, 15_000, 60_000, 'invalid_lease_duration');
+  const leaseMs = bounded(options.leaseMs ?? config.runtime.leaseMs, 15_000, 60_000, 'invalid_lease_duration');
   const deliveryTimeoutMs = bounded(options.deliveryTimeoutMs ?? config.runtime.requestTimeoutMs + 1000, 1, 10_000, 'invalid_delivery_timeout');
   const drainBudgetMs = bounded(options.drainBudgetMs ?? 25_000, 1, 30_000, 'invalid_drain_budget');
   if (deliveryTimeoutMs + 5000 >= leaseMs) throw new RangeError('invalid_delivery_lease_budget');
   const cloudflare = config.deployment === 'cloudflare';
   const maxEvaluations = bounded(options.maxEvaluationsPerTick ?? (cloudflare ? 100 : 1000), 1, 1000, 'invalid_evaluation_limit');
-  const maxReservations = bounded(options.maxReservationsPerTick ?? (cloudflare ? 1 : 1000), 1, 1000, 'invalid_reservation_limit');
+  const maxReservations = bounded(options.maxReservationsPerTick ?? (cloudflare ? config.runtime.cloudflareDeliveryBatch : 1000), 1, 1000, 'invalid_reservation_limit');
   const duePageSize = bounded(options.duePageSize ?? (cloudflare ? 32 : 500), 1, 500, 'invalid_due_page_size');
   const maxDueRows = bounded(options.maxDueRowsPerDrain ?? (cloudflare ? 32 : 2000), 1, 2000, 'invalid_due_scan_limit');
-  const maxClaims = bounded(options.maxClaimsPerDrain ?? (cloudflare ? 1 : 2000), 1, 2000, 'invalid_claim_limit');
-  const maxDeliveries = bounded(options.maxDeliveriesPerDrain ?? (cloudflare ? 1 : 20), 1, 20, 'invalid_delivery_limit');
+  const maxClaims = bounded(options.maxClaimsPerDrain ?? (cloudflare ? config.runtime.cloudflareDeliveryBatch : 2000), 1, 2000, 'invalid_claim_limit');
+  const maxDeliveries = bounded(options.maxDeliveriesPerDrain ?? (cloudflare ? config.runtime.cloudflareDeliveryBatch : 20), 1, 20, 'invalid_delivery_limit');
   const notifications = options.notifications ?? createNotificationService({ config, repositories: r, ...(options.fetch ? { fetch: options.fetch } : {}), now });
   const source = options.marketSource;
   const market = source ?? createMarketCache({ ...(options.fetch ? { fetch: options.fetch } : {}), now });
@@ -316,6 +316,7 @@ export function createScheduler(options: SchedulerOptions) {
         outstandingClaim = false;
         databaseSuccess = now(); databaseCode = null;
         if (providerBlocked) { schedulerCode = 'provider_deadline_uncertain'; return; }
+        if (cloudflare && result.outcome === 'uncertain') { schedulerCode = 'provider_uncertain'; return; }
       }
     } catch { databaseCode = 'database_unavailable'; schedulerCode = 'delivery_cycle_failed'; }
     finally {

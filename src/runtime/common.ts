@@ -25,7 +25,7 @@ export function trustedRequest(request: Request,address: string|null): Request {
 }
 export function unavailableApi(path: string): Response {
   const requestId=crypto.randomUUID();
-  if(path==='/api/auth-capabilities')return Response.json({ok:true,data:{google:false,emailOtp:false,registration:'closed',inviteOnly:true,emailProvider:'unconfigured',emailSenderMode:'unconfigured'},requestId},{headers:{'Cache-Control':'no-store'}});
+  if(path==='/api/auth-capabilities')return Response.json({ok:false,error:{code:'service_unavailable',message:'Authentication methods are temporarily unavailable'},requestId},{status:503,headers:{'Cache-Control':'no-store','Retry-After':'5'}});
   if(path==='/api/health')return Response.json({ok:true,data:{state:'unhealthy'},requestId},{status:503,headers:{'Cache-Control':'no-store'}});
   if(path.startsWith('/api/auth/'))return Response.json({code:'AUTH_UNAVAILABLE',message:'Deployment configuration is incomplete'},{status:503});
   return Response.json({ok:false,error:{code:'service_unavailable',message:'Deployment configuration is incomplete'},requestId},{status:503,headers:{'Cache-Control':'no-store'}});

@@ -1,6 +1,6 @@
 import type { Alert, ChannelProfile, CreateAlert, Market, PatchAlert, PutChannel, SystemStatus, UserIdentity, UserSettings } from './domain.js';
 
-export interface ApiSuccess<T> { ok: true; data: T; requestId: string }
+export interface ApiSuccess<T> { ok: true; data: T; requestId: string; effects?: { schedulerWake: 'confirmed' | 'pending' } }
 export interface ApiError {
   ok: false;
   error: { code: ApiErrorCode; message: string; fields?: Record<string, string> };
@@ -31,7 +31,7 @@ export interface AuthCapabilities {
 /** Application routes use this envelope; /api/auth/* retains Better Auth's native API. */
 export interface ApiRouteMap {
   'GET /api/auth-capabilities': { request: never; response: AuthCapabilities };
-  'GET /api/status': { request: never; response: SystemStatus };
+  'GET /api/status': { request: never; response: SystemStatus & { alerts?: Alert[] } };
   'GET /api/markets': { request: never; response: { markets: Market[]; updatedAt: number | null; stale: boolean } };
   'GET /api/alerts': { request: never; response: { alerts: Alert[] } };
   'POST /api/alerts': { request: CreateAlert; response: { alert: Alert } };

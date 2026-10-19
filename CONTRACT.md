@@ -98,6 +98,7 @@ Edit/rearm/delete conflict (409) while that alert is queued/sending. Edits incre
 - One shared OKX bulk SWAP ticker fetch every 5s for all users; no per-user poller. 5s is a target, not a promise under Worker alarm/network delays. Do not catch up by replaying missed polls. Bounded timeout and watchdog detect delays. TradingView UI chart is display-only; backend OKX price decides triggers.
 - Node runs one scheduler process by default and uses DB lease + fence for restart/multiple-process protection. Renew with matching owner/fence; failure/expiry immediately stops new reservations/sends. Acquire/takeover increments fence monotonically.
 - Cloudflare uses exactly one DO: `COORDINATOR.idFromName('coordinator-v1')`; alarm polling, no cron-as-5s substitute. D1 holds app/auth/outbox and fences; DO storage is not a second authoritative rule DB.
+- Cloudflare defaults: at most 100 evaluations / 4 reservations per tick, 32 due rows / 4 claims / 4 sequential sends per drain. The 2.5s evaluation budget, 25s drain budget, 9s send deadline, 40s lease and SQL quotas still apply; ambiguity stops the batch without replaying that event. Batch size is not a guaranteed throughput or notification SLA.
 - Cache only indexed active rules/catalog; refresh at most every 30s and invalidate on local writes where practical. Paginate within configured limits and bound CPU/work per alarm; persist continuation and mark degraded when a cycle overruns. Every reservation and send rechecks DB generations and fence, including user settings/channel changes. Notification retry batches must not starve price polling.
 - New settings default `enabled=false`; new alert may be enabled but user must explicitly enable monitoring. No guessed default thresholds. All outcomes including sent, failed, uncertain, expired and capped remain latched until rearm.
 - Notify defaults priority 2/retry 30s/expire 1500s/sound siren. Priority -2..2; retry 30..3600; expire 30..10800 and >=retry; sound identifier max64. Emergency receipt is secret and encrypted.
@@ -112,7 +113,9 @@ Bootstrap requires BOTH a verified signed-in session and `Authorization: Bearer 
 
 ## HTTP and frontend agreement
 
-App response: `{ok:true,data,requestId}` or `{ok:false,error:{code,message,fields?},requestId}`. Epoch-ms numbers and nullable timestamps. `/api/auth/*` retains Better Auth's native protocol; frontend uses its official React client. App endpoints listed in `ApiRouteMap`; responses never depend on a frontend-internal shape.
+App response: `{ok:true,data,requestId,effects?}` or `{ok:false,error:{code,message,fields?},requestId}`. Mutations that wake the scheduler report `effects.schedulerWake: 'confirmed' | 'pending'`. A pending effect means the database write committed but wake acknowledgement failed after bounded retries; never replay the mutation automatically. Epoch-ms numbers and nullable timestamps. `/api/auth/*` retains Better Auth's native protocol; frontend uses its official React client. App endpoints listed in `ApiRouteMap`; responses never depend on a frontend-internal shape.
+
+`GET /api/status?include=alerts` optionally includes the tenant's hydrated `alerts` array, sharing the status request's auth/limit checks and alert read. Plain `/api/status` and `/api/alerts` remain supported. The combined read reduces round trips; it is not a cross-SQL/DO transaction. Runtime startup failure returns a retryable 503 from `/api/auth-capabilities`, never a fabricated successful disabled-method response.
 
 | Routes | Authorization / behavior |
 | --- | --- |
@@ -120,6 +123,7 @@ App response: `{ok:true,data,requestId}` or `{ok:false,error:{code,message,field
 | `GET /api/health` | Public minimal health only; no user, infrastructure or secret details; unavailable gets 503 |
 | `GET /api/status` | Session required; own settings, quota, safe channel state and runtime health; no other users |
 | `GET /api/markets` | Session required; supported live swaps + TradingView symbol and stale flag |
+| `GET /api/quote` | Session + strict instrument validation; display-only. Cloudflare resolves availability/freshness and price in one trusted coordinator call; unsupported400, unavailable503. Never adds alert demand or starts sending |
 | `GET/POST /api/alerts` | Own alerts; create validates catalog, schema and atomic per-user/global limits; 201 create |
 | `PATCH/DELETE /api/alerts/:id` | Own alert; expectedGeneration required; omitted patch values retained; delete JSON body contains expectedGeneration |
 | `POST /api/alerts/:id/rearm` | Explicit action with expectedGeneration, never inferred from edits |

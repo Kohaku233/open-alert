@@ -112,6 +112,31 @@ test('session reads use a one-minute limit across restarts without weakening OTP
   } finally { await f.close(); }
 });
 
+test('native fallback covers slash-separated routes without weakening Google or OTP rules', async () => {
+  const f = await fixture({ INVITE_ONLY: 'false', GOOGLE_CLIENT_ID: 'fixture.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'fixture-secret' });
+  try {
+    for (const path of ['/sign-out', '/list-sessions', '/callback/google']) {
+      await f.db.execute('DELETE FROM rate_limit');
+      // Preload the native path counter, bypassing the independent minute-wide POST budget.
+      const request = f.request(path, path === '/sign-out' ? {} : undefined);
+      const first = await f.service.auth.handler(request);
+      assert.notEqual(first.status, 429);
+      await f.db.execute('UPDATE rate_limit SET count=60,last_request=?', [Date.now()]);
+      const blocked = await f.service.auth.handler(f.request(path, path === '/sign-out' ? {} : undefined));
+      assert.equal(blocked.status, 429);
+      const retry = Number(blocked.headers.get('X-Retry-After'));
+      assert.ok(retry > 0 && retry <= 60, `${path} must not inherit the retention horizon: ${retry}`);
+    }
+    await f.db.execute('DELETE FROM rate_limit');
+    for (let i = 0; i < 3; i++) assert.equal((await f.call('/sign-in/social', { provider: 'google', callbackURL: f.config.appUrl })).status, 200);
+    const google = await f.call('/sign-in/social', { provider: 'google', callbackURL: f.config.appUrl });
+    assert.equal(google.status, 429); assert.ok(Number(google.headers.get('Retry-After')) <= 10);
+    await f.db.execute('DELETE FROM rate_limit');
+    assert.equal((await f.send('kept-hour@example.com')).status, 200);
+    assert.equal((await f.send('kept-hour@example.com')).status, 429);
+  } finally { await f.close(); }
+});
+
 test('expired OTP cannot sign in; disabled account denies existing session, new OTP and new session insert', async () => {
   const f = await fixture({ INVITE_ONLY: 'false' });
   try {

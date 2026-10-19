@@ -16,6 +16,11 @@ export class AppError extends Error {
 // have their own limits and must remain usable during a workspace cooldown.
 let businessCooldown: AppError | null = null;
 const cooldownListeners = new Set<(error: AppError) => void>();
+const wakeListeners = new Set<(state: 'confirmed' | 'pending') => void>();
+export function subscribeSchedulerWake(listener: (state: 'confirmed' | 'pending') => void): () => void {
+    wakeListeners.add(listener);
+    return () => { wakeListeners.delete(listener); };
+}
 const FALLBACK_RETRY_MS = 60000;
 export function retryDeadline(value: string | null, now = Date.now()): number {
     const text = value?.trim() ?? '';
@@ -115,6 +120,9 @@ export async function request<T>(path: string, method = 'GET', body?: unknown, o
     }
     if (!response.ok || !('data' in envelope))
         throw responseProblem(response, path, method, requestId);
+    if (method !== 'GET' && record(envelope.effects) && (envelope.effects.schedulerWake === 'confirmed' || envelope.effects.schedulerWake === 'pending')) {
+        for (const listener of wakeListeners) listener(envelope.effects.schedulerWake);
+    }
     return envelope.data as T;
 }
 export function api<K extends keyof ApiRouteMap>(route: K, body?: ApiRouteMap[K]['request'], id?: string): Promise<ApiRouteMap[K]['response']> {

@@ -3,32 +3,76 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { loadConfig } from '../src/config.js';
 import { createApp } from '../src/api/index.js';
-import type { CatalogSnapshot } from '../src/api/ports.js';
+import type { ApiDependencies, CatalogSnapshot, QuoteLookup } from '../src/api/ports.js';
 import { initializeServices } from '../src/runtime/common.js';
 import { createNodeSqliteAuthDrizzle } from '../src/auth/drizzle.node-sqlite.js';
 import { SQLiteDatabase } from '../src/db/sqlite.js';
 import type { SQLiteConnection } from '../src/db/sqlite.js';
 import { createApiNotifications } from '../src/runtime/notifications.js';
-import type { ComponentHealth } from '../src/contracts/domain.js';
+import type { Alert, ComponentHealth } from '../src/contracts/domain.js';
 import type { EmailMessage } from '../src/auth/email.js';
 import { decryptSecret } from '../src/notifications/index.js';
 import { EmailDeliveryError } from '../src/auth/email.js';
 const good:ComponentHealth={state:'healthy',lastSuccessAt:1700000000000,code:null};
-async function fixture(overrides:Record<string,string>={}) {
+async function fixture(overrides:Record<string,string>={},ports:Partial<ApiDependencies>={}) {
  const config=loadConfig({NODE_ENV:'test',APP_URL:'http://localhost:3000',AUTH_SECRET:'api-fixture-secret-at-least-thirty-two-characters',ENCRYPTION_KEY:'12'.repeat(32),EMAIL_PROVIDER:'console',BOOTSTRAP_TOKEN:'bootstrap-fixture-at-least-thirty-two-characters',PUSHOVER_APP_TOKEN:'S'.repeat(30),...overrides});
  const raw=new DatabaseSync(':memory:'),db=new SQLiteDatabase(raw as unknown as SQLiteConnection,'node:sqlite'),messages:EmailMessage[]=[],providerCalls:{url:string;body:URLSearchParams}[]=[];
  const services=await initializeServices(config,db,createNodeSqliteAuthDrizzle(raw),config.environment==='test'?{testEmailTransport:{async verify(){},async send(m){messages.push(m);}}}:{emailTransportFactory:async()=>({async verify(){},async send(m){messages.push(m);}})});
- let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0,invitationSends=0;
+ let provider:'sent'|'failed'|'uncertain'='sent',stale=false,wakes=0,invitationSends=0,wakeFailures=0;
  let invitationError:'email_rejected'|'email_uncertain'|'email_unavailable'|null=null;
  let catalogOverride:CatalogSnapshot|undefined;
  const notifications=createApiNotifications(config,{fetch:async(url,init)=>{const body=new URLSearchParams(String(init?.body));providerCalls.push({url:String(url),body});if(String(url).endsWith('validate.json'))return Response.json({status:1,request:'fixture-validation'});if(provider==='uncertain')throw new Error('mock disconnect');return Response.json({status:provider==='sent'?1:0,request:'fixture-message'},{status:provider==='sent'?200:400});}});
- const app=createApp({...services,auth:{...services.auth,sendInvitation:async(email,options)=>{invitationSends++;if(invitationError)throw new EmailDeliveryError(invitationError);await services.auth.sendInvitation(email,options);}},notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;}});
+ const app=createApp({...services,auth:{...services.auth,sendInvitation:async(email,options)=>{invitationSends++;if(invitationError)throw new EmailDeliveryError(invitationError);await services.auth.sendInvitation(email,options);}},notifications,quotes:{get:async market=>({instrument:market.instrument,price:123,observedAt:Date.now(),timestamp:null})},catalog:{get:async()=>catalogOverride??({markets:[{instrument:'BTC-USDT-SWAP',base:'BTC',quote:'USDT',tickSize:'0.1',state:'live',tradingViewSymbol:'OKX:BTCUSDT.P'},{instrument:'ETH-USDT-SWAP',base:'ETH',quote:'USDT',tickSize:'0.01',state:'live',tradingViewSymbol:'OKX:ETHUSDT.P'}],updatedAt:Date.now(),stale})},runtime:{snapshot:async()=>({health:{overall:'healthy',database:good,scheduler:good,prices:good,notifications:good,email:good},lastPollAt:Date.now(),prices:[]})},wake:async()=>{wakes++;if(wakeFailures-->0)throw new Error("injected wake failure");},...ports});
  const call=(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={})=>app.request(config.appUrl+path,{method,headers:{Origin:config.appUrl,'Content-Type':'application/json',Cookie:cookie,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
  async function login(email:string){await services.repositories.admin.createInvitation(email,Date.now()+60000,Date.now());const send=await call('/api/auth/email-otp/send-verification-otp','POST',{email,type:'sign-in'});assert.equal(send.status,200,await send.text());const otp=messages.at(-1)!.text.match(/code is (\d{6})/)![1];const response=await call('/api/auth/sign-in/email-otp','POST',{email,otp,role:'admin'});assert.equal(response.status,200,await response.clone().text());const cookie=response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; '),user=(await response.json() as any).user;assert.equal(user.role,'user');return {cookie,id:user.id};}
  const body=async(response:Response,status=200)=>{assert.equal(response.status,status,await response.clone().text());return await response.json() as any;};
- return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},setCatalog:(v:CatalogSnapshot)=>{catalogOverride=v;},wakes:()=>wakes,invitationSends:()=>invitationSends,setInvitationError:(v:typeof invitationError)=>{invitationError=v;},close:async()=>{services.auth.close();await db.close();}};
+ return {...services,messages,app,call,login,body,providerCalls,notifications,setProvider:(v:typeof provider)=>{provider=v;},setStale:(v:boolean)=>{stale=v;},setCatalog:(v:CatalogSnapshot)=>{catalogOverride=v;},wakes:()=>wakes,setWakeFailures:(count:number)=>{wakeFailures=count;},invitationSends:()=>invitationSends,setInvitationError:(v:typeof invitationError)=>{invitationError=v;},close:async()=>{services.auth.close();await db.close();}};
 }
-const input={name:'BTC ceiling',instrument:'BTC-USDT-SWAP',side:'upper',threshold:100,enabled:true};
+const input={name:'BTC ceiling',instrument:'BTC-USDT-SWAP',side:'upper',threshold:100,enabled:true} as const;
+
+test('committed writes report pending wake honestly and retry only the wake effect',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('wake@example.com');
+  const logs=t.mock.method(console,'warn',()=>{});
+  f.setWakeFailures(3);
+  const created=await f.body(await f.call('/api/alerts','POST',input,alice.cookie),201);
+  assert.equal(created.effects.schedulerWake,'pending');assert.equal(f.wakes(),3);
+  assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,1);
+  assert.equal(created.data.alert.generation,0);assert.equal(logs.mock.callCount(),1);
+  assert.equal(logs.mock.calls[0]!.arguments[0],'open_alert_scheduler_wake_pending');
+  f.setWakeFailures(2);
+  const updated=await f.body(await f.call(`/api/alerts/${created.data.alert.id}`,'PATCH',{expectedGeneration:0,name:'one update'},alice.cookie));
+  assert.equal(updated.effects.schedulerWake,'confirmed');assert.equal(f.wakes(),6);
+  assert.equal(updated.data.alert.generation,1);assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,1);
+ }finally{await f.close();}
+});
+
+test('combined status reuses one tenant alert read and one batched summary query',async t=>{
+ const f=await fixture();try{
+  const alice=await f.login('snapshot@example.com'),bob=await f.login('other-snapshot@example.com');
+  await f.repositories.settings.initialize(alice.id,Date.now());await f.repositories.settings.initialize(bob.id,Date.now());
+  for(let i=0;i<20;i++)await f.repositories.alerts.create(alice.id,{...input,name:`rule ${i}`},Date.now());
+  await f.repositories.alerts.create(bob.id,{...input,name:'foreign'},Date.now());
+  const records=await f.repositories.alerts.listForUser(alice.id),queries=t.mock.method(f.db,'query');
+  await Promise.all(records.map(record=>f.repositories.outbox.lastForAlert(alice.id,record.id)));
+  assert.equal(queries.mock.callCount(),20,'Previous per-alert history path needs 20 SQL calls');
+  await f.repositories.outbox.summariesForUser(alice.id);
+  assert.equal(queries.mock.callCount(),21,'The batched path adds exactly one SQL call');
+  const list=f.repositories.alerts.listForUser.bind(f.repositories.alerts),summaries=f.repositories.outbox.summariesForUser.bind(f.repositories.outbox);
+  const listSpy=t.mock.method(f.repositories.alerts,'listForUser',list);
+  const summarySpy=t.mock.method(f.repositories.outbox,'summariesForUser',summaries);
+  t.mock.method(f.repositories.outbox,'lastForAlert',async()=>{assert.fail('N+1 history reads');});
+  t.mock.method(f.repositories.outbox,'getForUser',async()=>{assert.fail('N+1 pending reads');});
+  const combined=(await f.body(await f.call('/api/status?include=alerts','GET',undefined,alice.cookie))).data;
+  assert.equal(combined.alerts.length,20);assert.ok(combined.alerts.every((a:Alert)=>a.name!=='foreign'));
+  assert.equal(listSpy.mock.callCount(),1);assert.equal(summarySpy.mock.callCount(),1);
+  const standalone=(await f.body(await f.call('/api/alerts','GET',undefined,alice.cookie))).data;
+  assert.deepEqual(combined.alerts,standalone.alerts);
+  assert.equal((await f.body(await f.call('/api/status','GET',undefined,alice.cookie))).data.alerts,undefined);
+  for(const query of ['include=unknown','include=alerts&include=alerts'])assert.equal((await f.call('/api/status?'+query,'GET',undefined,alice.cookie)).status,400);
+  assert.equal((await f.call('/api/status?include=alerts')).status,401);
+ }finally{await f.close();}
+});
 test('health idle degrades honestly; actual DB/email/provider failures and snapshot throws survive aggregation',async()=>{
  const f=await fixture();try{
   const idle:ComponentHealth={state:'degraded',lastSuccessAt:null,code:'idle_no_active_alerts'};
@@ -180,6 +224,24 @@ test('view quote requires session, validates canonical market and never saves or
   assert.equal(response.data.instrument,'BTC-USDT-SWAP');assert.equal(response.data.price,123);assert.equal(response.data.timestamp,null);
   assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,0);assert.equal((await f.repositories.settings.get(alice.id))!.enabled,false);assert.equal(f.wakes(),0);
   f.setStale(true);assert.equal((await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie)).status,503);
+ }finally{await f.close();}
+});
+
+test('quote lookup uses one trusted hop only after authentication/input validation and preserves API errors',async()=>{
+ let lookups=0,result:QuoteLookup={quote:{instrument:'BTC-USDT-SWAP',price:123,observedAt:1700000000000,timestamp:null}};
+ const f=await fixture({}, {catalog:{get:async()=>{throw new Error('unexpected catalog read');}},quotes:{
+  get:async()=>{throw new Error('unexpected second quote hop');},lookup:async instrument=>{lookups++;assert.equal(instrument,'BTC-USDT-SWAP');return result;},
+ }});
+ try{
+  assert.equal((await f.call('/api/quote?instrument=BTC-USDT-SWAP')).status,401);assert.equal(lookups,0);
+  const alice=await f.login('quote-lookup@example.com');
+  for(const query of ['', '?instrument=forged', '?instrument=BTC-USDT-SWAP&extra=1', '?instrument=BTC-USDT-SWAP&instrument=ETH-USDT-SWAP'])assert.equal((await f.call('/api/quote'+query,'GET',undefined,alice.cookie)).status,400);
+  assert.equal(lookups,0);
+  const response=await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie),body=await f.body(response);
+  assert.equal(lookups,1);assert.deepEqual(body.data,result.quote);assert.equal(body.requestId,response.headers.get('X-Request-ID'));
+  assert.equal(response.headers.get('Cache-Control'),'no-store');assert.equal(response.headers.get('X-Content-Type-Options'),'nosniff');
+  for(const code of ['invalid_request','service_unavailable'] as const){result={quote:null,code};const failure=await f.body(await f.call('/api/quote?instrument=BTC-USDT-SWAP','GET',undefined,alice.cookie),code==='invalid_request'?400:503);assert.equal(failure.error.code,code);}
+  assert.equal(lookups,3);assert.equal(f.wakes(),0);assert.deepEqual(await f.repositories.alerts.listForUser(alice.id),[]);
  }finally{await f.close();}
 });
 

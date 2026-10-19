@@ -82,7 +82,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
     const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
     state.requests.push(evidence);
     const send = (data, status = 200, headers = {}) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(data) });
-    const ok = (data, status = 200) => send({ ok: true, data, ...(!state.omitRequestIds ? {requestId:'mock-request'} : {}) }, status);
+    const ok = (data, status = 200) => send({ ok: true, data, ...(method!=='GET'&&state.wakePending?{effects:{schedulerWake:'pending'}}:{}), ...(!state.omitRequestIds ? {requestId:'mock-request'} : {}) }, status);
     const fail = (code, status = 409, headers = {}) => send({ ok: false, error: { code, message: `MOCK ${code}` }, requestId: 'mock-request' }, status, headers);
     try {
       const cookies = await context.cookies(origin);
@@ -121,10 +121,11 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         return fail(error.code, error.status, error.headers);
       }
       if (path === '/api/status' && method === 'GET') {
+        if(state.statusUnavailable)return fail('service_unavailable',503);
         const snapshot = structuredClone(state.status), now = Date.now();
         snapshot.prices.forEach(p => { p.timestamp = now - (state.stale ? 60000 : 0); p.receivedAt = p.timestamp; });
         if (state.holdStatus) { const release = state.holdStatus; state.holdStatus = null; await release.wait; }
-        return ok(snapshot);
+        return ok({...snapshot,...(url.searchParams.get('include')==='alerts'&&!state.legacyStatus?{alerts:structuredClone(state.alerts)}:{})});
       }
       if (path === '/api/quote' && method === 'GET') {
         if (state.quoteFail) return fail('service_unavailable',503);
@@ -389,7 +390,7 @@ try {
     await check('shared wait blocks manual/visibility/timers/mutation: zero requests', async () => assert.equal(businessCount(),blockedCount));
     await check('remaining wait uses existing model clock', () => expect(page.locator('.connection-error')).toContainText('重试等待：1 秒'));
     await page.clock.runFor(1000);
-    await check('expiry automatically restores exactly one snapshot', async () => { await expect(page.locator('.connection-error')).toHaveCount(0); assert.equal(businessCount(),blockedCount+2); });
+    await check('expiry automatically restores exactly one combined snapshot', async () => { await expect(page.locator('.connection-error')).toHaveCount(0); assert.equal(businessCount(),blockedCount+1); });
     await check('expiry never automatically replays POST', async () => assert.equal(requests(state,'POST','/api/test-notification').length,testsBeforeWait));
     await page.getByRole('button',{name:'发送测试通知',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
@@ -492,6 +493,44 @@ try {
     await check('cached directory never masks expired login',()=>expect(p.getByRole('heading',{name:'登录或注册',exact:true})).toBeVisible());
     await cached.context.close();
   });
+  await journey('07d combined status eliminates list polling and remains compatible with older servers', async () => {
+    for(const legacy of [false,true]){
+      const fixture=await setup(browser,'desktop',true,{reducedMotion:'reduce'}),p=fixture.page,s=fixture.state;
+      s.legacyStatus=legacy;
+      await p.clock.install({time:new Date()});await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+      const catalogs=requests(s,'GET','/api/markets').length;
+      for(let i=0;i<3;i++){await p.clock.runFor(5000);await new Promise(resolve=>setTimeout(resolve,60));}
+      const statusReads=requests(s,'GET','/api/status').length,alertReads=requests(s,'GET','/api/alerts').length;
+      await check(legacy?'legacy server list fallback remains available':'combined snapshots need no separate list request',async()=>{
+        assert(statusReads>=4);assert.equal(alertReads,legacy?statusReads:0);
+        assert.equal(requests(s,'GET','/api/markets').length,catalogs);
+      });
+      await fixture.context.close();
+    }
+  });
+  await journey('07e committed pending wake shows desktop/mobile warning without replaying a mutation',async()=>{
+    for(const profile of ['desktop','mobile']){
+      const fixture=await setup(browser,profile,true,{reducedMotion:'reduce'}),p=fixture.page,s=fixture.state;
+      await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+      await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0);
+      await p.getByRole('button',{name:'创建警报',exact:true}).click();
+      await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK pending wake');
+      await p.getByRole('dialog').getByLabel('价格 · USDT').fill('63000');
+      s.wakePending=true;s.statusUnavailable=true;
+      await p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true}).click();
+      await check(`${profile} saved effect has an honest persistent warning`,()=>expect(p.locator('.scheduler-wake-warning')).toContainText('修改已保存'));
+      if(profile==='mobile'){
+        await p.getByRole('button',{name:'EN',exact:true}).click();
+        await expect(p.locator('.scheduler-wake-warning')).toContainText('Changes are saved');
+      }
+      await p.screenshot({path:join(outputs,`wake-pending-${profile}-MOCK.png`),fullPage:true});
+      s.statusUnavailable=false;
+      await p.locator('.connection-error button').click();
+      await check(`${profile} successful reconciliation clears pending warning`,()=>expect(p.locator('.scheduler-wake-warning')).toHaveCount(0));
+      await check(`${profile} saved action is never replayed`,async()=>assert.equal(requests(s,'POST','/api/alerts').length,1));
+      await fixture.context.close();
+    }
+  });
   await journey('08 logout expires native cookie and discards delayed workspace response', async () => {
     let release; const held={wait:new Promise(r=>{release=r;})}; state.holdStatus=held;
     const start=requests(state,'GET','/api/status').length;
@@ -558,10 +597,10 @@ try {
     await check('date cooldown zero requests across all read triggers and POST',async()=>assert.equal(businessRequests(s).length,before));
     await check('HTTP-date countdown reaches one second',()=>expect(p.locator('.connection-error')).toContainText('重试等待：1 秒'));
     let release; s.holdStatus={wait:new Promise(r=>{release=r;})};
-    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore).toBe(before+2);
+    await p.clock.runFor(1000); await expect.poll(()=>businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore).toBe(before+1);
     for(let i=0;i<3;i++) { await p.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click(); await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange'))); }
     await p.clock.runFor(3000);
-    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+2));
+    await check('manual/visible/timer reads merge into held flight',async()=>assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+1));
     release(); await check('visibility never aborts valid in-flight snapshot',()=>expect(p.locator('.connection-error')).toHaveCount(0));
     await check('snapshot refresh does not replay blocked editor POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
     // A mutation clicked during an admitted read must observe its delayed 429.
@@ -612,7 +651,7 @@ try {
       await p.clock.runFor(59000);
       await check(`${name} header fallback zero requests before expiry`,async()=>assert.equal(businessRequests(s).length,before));
       await p.clock.runFor(1000);
-      await check(`${name} header fallback automatically resumes status and alerts using cached directory`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+2);});
+      await check(`${name} header fallback automatically resumes combined snapshot using cached directory`,async()=>{await expect(p.locator('.connection-error')).toHaveCount(0);assert.equal(businessRequests(s).length-requests(s,'GET','/api/quote').length+quoteBefore,before+1);});
     }
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':'120'}};
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');
@@ -1059,9 +1098,9 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===27&&results.every(r=>r.passed)&&!process.exitCode};
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===29&&results.every(r=>r.passed)&&!process.exitCode};
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/27 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/29 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
 async function chooseSelect(page,label,value) {

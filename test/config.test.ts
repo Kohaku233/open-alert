@@ -18,6 +18,7 @@ test('local defaults are invite-only, disabled credentials, Node SQLite and 5s p
   assert.equal(config.google, null);
   assert.equal(config.secureCookies, false);
   assert.equal(config.runtime.pollIntervalMs, 5000);
+  assert.equal(config.runtime.leaseMs, 40000);
   assert.equal(config.limits.dailyNotificationAttempts, 20);
 });
 

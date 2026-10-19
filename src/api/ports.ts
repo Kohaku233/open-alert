@@ -11,6 +11,8 @@ export interface CatalogSnapshot {
   sources?: Partial<Record<'binance' | 'okx' | 'mexc', CatalogSource>> | (CatalogSource & { venue: 'binance' | 'okx' | 'mexc' })[];
 }
 export interface RuntimeSnapshot { health: SystemStatus['health']; lastPollAt: number | null; prices: PriceTick[]; marketMode?: 'stream' | 'polling' }
+export type QuoteLookup = { quote: import('../markets/quotes.js').MarketQuote; code?: never }
+  | { quote: null; code: 'invalid_request' | 'service_unavailable' };
 export interface NotificationPort {
   encrypt(key: string, userId: string, field: 'userKey' | 'appToken' | 'receipt', plaintext: string): Promise<EncryptedSecret>;
   validate(userId: string, channel: ChannelRecord): Promise<void>;
@@ -25,8 +27,12 @@ export interface ApiDependencies {
     response?(query: MarketQuery | null, requestId: string): Promise<Response>;
     resolve?(instrument: string): Promise<{ market: CatalogMarket | null; stale: boolean; available: boolean }>;
   };
-  quotes?: { get(market: Market): Promise<import('../markets/quotes.js').MarketQuote> };
+  quotes?: {
+    get(market: Market): Promise<import('../markets/quotes.js').MarketQuote>;
+    /** Resolve freshness, availability and the display quote in one coordinator call. */
+    lookup?(instrument: string): Promise<QuoteLookup>;
+  };
   runtime: { snapshot(): Promise<RuntimeSnapshot> };
   notifications: NotificationPort;
-  wake(): Promise<void>;
+  wake(signal?: AbortSignal): Promise<void>;
 }

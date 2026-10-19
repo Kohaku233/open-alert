@@ -122,12 +122,12 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
       <div className="rail-footer">
         <div className="rail-status">
           <span className={`rail-status-dot ${monitoring ? 'is-live' : ''} ${overall && overall !== 'healthy' ? 'is-warn' : ''}`} aria-hidden="true"/>
-          <div><strong>{monitoring ? t("后台监控运行中") : t("后台监控已暂停")}</strong><small>{overall ? healthLabel(overall) : t("正在读取运行状态")}</small></div>
+          <div><strong>{model.wakePending ? t("后台同步待确认") : monitoring ? t("后台监控运行中") : t("后台监控已暂停")}</strong><small>{overall ? healthLabel(overall) : t("正在读取运行状态")}</small></div>
         </div>
         <div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button className="rail-signout" aria-label={logoutBusy ? t("正在退出…") : t("退出登录")} disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div>
       </div>
     </header>
-    <main className="app-main" id="main-content"><FormError message={logoutError}/>{model.error && <Notice className="connection-error" role="alert"><p>{model.error}</p><Button disabled={model.busy} onClick={() => void model.refresh()}>{t("重新读取状态")}</Button></Notice>}
+    <main className="app-main" id="main-content"><FormError message={logoutError}/>{model.wakePending && <Notice className="warning scheduler-wake-warning" role="status"><p>{t("修改已保存，但后台同步尚未确认。系统会自动补偿检查；可重新读取状态确认，请勿重复提交。")}</p></Notice>}{model.error && <Notice className="connection-error" role="alert"><p>{model.error}</p><Button disabled={model.busy} onClick={() => void model.refresh()}>{t("重新读取状态")}</Button></Notice>}
       {/* Keep the dashboard mounted across settings pages; polling never remounts the chart. */}
       <Dashboard model={model} active={path === '/dashboard' || !routes.includes(path)} notify={notify} navigate={navigate}/>
       {path === '/notifications' && <Notifications model={model} notify={notify}/>}

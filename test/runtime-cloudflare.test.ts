@@ -81,8 +81,10 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
   const db=new D1SqlDatabase(raw as unknown as D1Database);
   await t.test('requests fail closed without operator migrations and create no application tables',async()=>{
    const before=await db.query<{name:string}>("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB '_cf_*' ORDER BY name");
-   const capabilities=await api<{google:boolean;emailOtp:boolean;registration:string;emailProvider:string}>('/api/auth-capabilities');
-   assert.deepEqual({google:capabilities.google,emailOtp:capabilities.emailOtp,registration:capabilities.registration,emailProvider:capabilities.emailProvider},{google:false,emailOtp:false,registration:'closed',emailProvider:'unconfigured'});
+   const unavailable=await request('/api/auth-capabilities');
+   assert.equal(unavailable.status,503);assert.equal(unavailable.headers.get('Retry-After'),'5');
+   const capabilities=await unavailable.json() as {ok:boolean;error:{code:string};data?:unknown};
+   assert.equal(capabilities.ok,false);assert.equal(capabilities.error.code,'service_unavailable');assert.equal(capabilities.data,undefined);
    assert.equal((await request('/api/health')).status,503);
    assert.equal((await request('/api/auth/email-otp/send-verification-otp','POST',{email:'alice@example.com',type:'sign-in'})).status,503);
    assert.equal((await request('/api/status')).status,503);
@@ -191,14 +193,25 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.equal(status.settings.enabled,false);assert.equal(tickerRequests,0);assert.equal(deliveries.length,0);await eventually(alarm,value=>value===null,'disabled settings leave coordinator idle');
   });
 
-  await t.test('API activation reserves/delivers at most one alert per cycle and next wake processes the rest',async()=>{
+  await t.test('independent reconcile repairs a committed lost wake without a browser status read',async()=>{
+   assert.equal(await alarm(),null);const polls=tickerRequests;
+   await db.execute('UPDATE user_settings SET enabled=1,generation=generation+1 WHERE user_id=?',[aliceId]);settingsGeneration++;
+   assert.equal(await alarm(),null);
+   assert.equal((await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST'})).status,202);
+   const repaired=await alarm();assert.ok(repaired!==null&&repaired>Date.now()&&repaired<=Date.now()+5000);
+   assert.equal(tickerRequests,polls,'Repair schedules work but never forces an immediate market poll');
+   await db.execute('UPDATE user_settings SET enabled=0,generation=generation+1 WHERE user_id=?',[aliceId]);settingsGeneration++;
+   await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST'});assert.equal(await alarm(),null);
+  });
+
+  await t.test('API activation delivers a bounded small batch and repeated reads/wakes never duplicate it',async()=>{
    const enabled=await api<{generation:number}>('/api/settings','PATCH',{expectedGeneration:settingsGeneration,enabled:true},aliceCookie);settingsGeneration=enabled.generation;
-   await eventually(()=>db.query<{phase:string}>('SELECT phase FROM outbox'),rows=>rows.length===1&&rows[0]!.phase==='sent','first real alarm delivery commit');
-   await pause(150);assert.equal(deliveries.length,1);assert.equal((await db.query('SELECT trigger_id FROM outbox')).length,1);assert.equal(tickerRequests,1);
+   await eventually(()=>db.query<{phase:string}>('SELECT phase FROM outbox'),rows=>rows.length===2&&rows.every(row=>row.phase==='sent'),'small batch delivery commits');
+   await pause(150);assert.equal(deliveries.length,2);assert.equal((await db.query('SELECT trigger_id FROM outbox')).length,2);assert.equal(tickerRequests,1);
    const nextAlarm=await alarm();assert.ok(nextAlarm!==null&&nextAlarm>Date.now()&&nextAlarm<=Date.now()+5000,'Active coordinator persists its five-second recovery alarm');
    assert.equal(deliveries[0]!.get('user'),userKey);assert.equal(deliveries[0]!.get('token'),appToken);assert.equal(deliveries[0]!.get('priority'),'2');assert.equal(deliveries[0]!.get('sound'),'siren');
    await Promise.all([snapshot(),snapshot(),snapshot()]);await pause(100);
-   assert.equal(deliveries.length,1,'Read-only status requests must not accelerate dispatch or refresh active rules');
+   assert.equal(deliveries.length,2,'Read-only status requests must not accelerate dispatch or refresh active rules');
    await wake();
    await eventually(()=>db.query<{phase:string}>('SELECT phase FROM outbox'),rows=>rows.length===2&&rows.every(row=>row.phase==='sent'),'second bounded wake delivery commit');
    assert.equal(deliveries.length,2);assert.equal(tickerRequests,1,'Cached tick is reused within the five-second price cadence');
@@ -230,7 +243,7 @@ test('bundled workerd Worker: explicit fresh D1 migration, real OTP sessions, te
    assert.deepEqual((await api<{alerts:Alert[]}>('/api/alerts','GET',undefined,aliceCookie)).alerts,original);
    assert.deepEqual((await snapshot()).prices,engineBefore.prices);assert.equal(await alarm(),null);
    assert.equal((await api<SystemStatus>('/api/status','GET',undefined,aliceCookie)).settings.enabled,false);
-   for(const path of ['/quote?instrument=BTC-USDT-SWAP','/market?instrument=BTC-USDT-SWAP'])assert.notEqual((await request(path)).status,200);
+   for(const path of ['/quote?instrument=BTC-USDT-SWAP','/quote-lookup?instrument=BTC-USDT-SWAP','/market?instrument=BTC-USDT-SWAP'])assert.notEqual((await request(path)).status,200);
   });
   await t.test('D1 invitation survives rejected email, repeated POST is idempotent and configured OTP can recover',async()=>{
    rejectInvitationMail=true;

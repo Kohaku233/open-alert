@@ -177,5 +177,11 @@ export interface TestNotificationRepository {
 export interface Repositories {
   alerts: AlertRepository; scheduler: SchedulerRepository; settings: SettingsRepository;
   channels: ChannelRepository; admin: AdministrationRepository; tests: TestNotificationRepository;
-  outbox: { lastForAlert(userId: Id, alertId: Id): Promise<OutboxRecord | null>; getForUser(userId: Id, triggerId: Id): Promise<OutboxRecord | null>; listForUser(userId: Id, limit: number, cursor?: string): Promise<{ items: OutboxRecord[]; cursor: string | null }> };
+  outbox: {
+    /** At most the pending and latest completed event for each nondeleted alert. */
+    summariesForUser(userId: Id): Promise<OutboxRecord[]>;
+    lastForAlert(userId: Id, alertId: Id): Promise<OutboxRecord | null>;
+    getForUser(userId: Id, triggerId: Id): Promise<OutboxRecord | null>;
+    listForUser(userId: Id, limit: number, cursor?: string): Promise<{ items: OutboxRecord[]; cursor: string | null }>;
+  };
 }

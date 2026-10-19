@@ -1,4 +1,4 @@
-import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types';
+import type { DurableObjectState, ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import type { CloudflareBindings } from '../contracts/db.js';
 import { COORDINATOR_ID, ConfigurationError,loadConfig } from '../config.js';
 import { createDb } from '../db/cloudflare.js';
@@ -10,7 +10,7 @@ import { createRepositories } from '../db/repositories.js';
 import { createAuth } from '../auth/index.js';
 import { createApiNotifications } from './notifications.js';
 import { createApp } from '../api/index.js';
-import type { CatalogSnapshot,RuntimeSnapshot } from '../api/ports.js';
+import type { CatalogSnapshot,QuoteLookup,RuntimeSnapshot } from '../api/ports.js';
 import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
@@ -19,6 +19,7 @@ import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets } from '../api/markets.js';
 import type { Market } from '../contracts/domain.js';
 import { D1SqlDatabase } from '../db/d1.js';
+import { wakeWithRetry } from './wake.js';
 const configFor=(env:CloudflareBindings)=>{const config=loadConfig({...env,DEPLOYMENT:'cloudflare',DB_DRIVER:'d1'});if(!env.DB||!env.COORDINATOR)throw new ConfigurationError(['DB','COORDINATOR']);return config;};
 async function databaseServices(env: CloudflareBindings) {
   const config=configFor(env),db=await createDb(config,{deployment:'cloudflare',bindings:env});
@@ -37,7 +38,10 @@ async function workerApp(env:CloudflareBindings) {
       const response=await coordinator().fetch('https://coordinator.internal'+path);
       if(!response.ok)throw new Error('coordinator_unavailable');return await response.json() as T;
     }
-    return createApp({...services,auth,notifications,quotes:{get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument))},catalog:{
+    return createApp({...services,auth,notifications,quotes:{
+      get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument)),
+      lookup:instrument=>coordinatorJson<QuoteLookup>('/quote-lookup?instrument='+encodeURIComponent(instrument)),
+    },catalog:{
       get:()=>coordinatorJson<CatalogSnapshot>('/catalog'),
       response:async(query,requestId)=>{
         const params=new URLSearchParams();
@@ -49,11 +53,24 @@ async function workerApp(env:CloudflareBindings) {
         return response as unknown as Response;
       },
       resolve:instrument=>coordinatorJson('/market?instrument='+encodeURIComponent(instrument)),
-    },runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async()=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST'});if(!response.ok)throw new Error('coordinator_unavailable');}});
+    },runtime:{snapshot:()=>coordinatorJson<RuntimeSnapshot>('/snapshot')},wake:async(signal)=>{const response=await coordinator().fetch('https://coordinator.internal/wake',{method:'POST',signal:signal as never});if(!response.ok)throw new Error('coordinator_unavailable');}});
   })();workerCache.set(env,promise);promise.catch(()=>{workerCache.delete(env);});}
   return promise;
 }
 export default {
+  async scheduled(_controller:ScheduledController,env:CloudflareBindings,ctx:ExecutionContext):Promise<void> {
+    // Independent recovery of lost initial wakes, even with no open browser.
+    // Reconcile schedules active work without polling prices or sending while idle.
+    ctx.waitUntil((async()=>{
+      configFor(env);
+      const confirmed=await wakeWithRetry(async signal=>{
+        const coordinator=env.COORDINATOR.get(env.COORDINATOR.idFromName(COORDINATOR_ID));
+        const response=await coordinator.fetch('https://coordinator.internal/reconcile',{method:'POST',signal:signal as never});
+        if(!response.ok)throw new Error('coordinator_unavailable');
+      });
+      if(!confirmed)throw new Error('coordinator_recovery_failed');
+    })());
+  },
   async fetch(request:Request,env:CloudflareBindings,_ctx:ExecutionContext):Promise<Response> {
     const path=new URL(request.url).pathname;
     try {
@@ -64,7 +81,7 @@ export default {
     } catch {return path.startsWith('/api/')?unavailableApi(path):new Response(setupHtml,{status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});}
   },
 };
-/** One namespace instance. Alarm cadence has no resident timer or second watchdog. */
+/** One namespace instance; alarms drive work and an independent Cron repairs lost wakes. */
 export class Coordinator {
   private readonly initialized:Promise<ReturnType<typeof createScheduler>>;
   private running:Promise<void>|null=null;
@@ -72,6 +89,8 @@ export class Coordinator {
   private active=false;
   private quotes: ReturnType<typeof createMarketQuoteService> | null=null;
   private alarmWrites:Promise<unknown>=Promise.resolve();
+  private workCheck:{revision:number;promise:Promise<boolean>}|null=null;
+  private checkedWork:{revision:number;at:number;active:boolean}|null=null;
   private writeAlarm<T>(operation:()=>Promise<T>):Promise<T> {
     const result=this.alarmWrites.then(operation);
     this.alarmWrites=result.catch(()=>{});return result;
@@ -86,18 +105,27 @@ export class Coordinator {
           maxDemand:services.config.limits.globalInstruments,requestTimeoutMs:8000,pollBudgetMs:10000})});
     });
   }
-  private async reconcile():Promise<boolean> {
-    const revision=this.revision,engine=await this.initialized;
-    const work=await engine.hasWork();
-    return this.writeAlarm(async()=>{
-      // Serialize the revision check AND storage write with wake/cycle alarm writes.
-      // A wake arriving during deleteAlarm must persist its alarm after that deletion.
-      if(revision!==this.revision)return true;
-      this.active=work;
-      if(work){if(await this.state.storage.getAlarm()===null)await this.state.storage.setAlarm(Date.now()+5000);}
-      else await this.state.storage.deleteAlarm();
-      return work;
-    });
+  private async reconcile(allowCached=false):Promise<boolean> {
+    const revision=this.revision;
+    // Reuse only positive checks: an idle result must never hide a lost new wake.
+    if(allowCached&&this.checkedWork?.active&&this.checkedWork.revision===revision&&Date.now()-this.checkedWork.at<1000)return true;
+    if(this.workCheck?.revision===revision)return this.workCheck.promise;
+    const promise=(async()=>{
+      const engine=await this.initialized,work=await engine.hasWork();
+      return this.writeAlarm(async()=>{
+        // Serialize the revision check AND storage write with wake/cycle alarm writes.
+        // A wake arriving during deleteAlarm must persist its alarm after that deletion.
+        if(revision!==this.revision)return true;
+        this.active=work;
+        if(work){if(await this.state.storage.getAlarm()===null)await this.state.storage.setAlarm(Date.now()+5000);}
+        else await this.state.storage.deleteAlarm();
+        this.checkedWork={revision,at:Date.now(),active:work};
+        return work;
+      });
+    })();
+    this.workCheck={revision,promise};
+    try{return await promise;}
+    finally{if(this.workCheck?.promise===promise)this.workCheck=null;}
   }
   private cycle():Promise<void> {
     if(this.running)return this.running;
@@ -116,6 +144,10 @@ export class Coordinator {
   async alarm(){await this.cycle();}
   async fetch(request:Request):Promise<Response> {
     const engine=await this.initialized,path=new URL(request.url).pathname;
+    if(path==='/reconcile'&&request.method==='POST'){
+      this.revision++;engine.invalidate();
+      await this.reconcile();return new Response(null,{status:202});
+    }
     if(path==='/wake'&&request.method==='POST'){
       this.revision++;engine.invalidate();this.active=true;
       await this.writeAlarm(()=>this.state.storage.setAlarm(Date.now()+5000));
@@ -141,19 +173,20 @@ export class Coordinator {
     }
     if(path==='/snapshot'&&request.method==='GET'){
       // First read after eviction or a lost wake repairs active work, but never polls idle prices.
-      await this.reconcile();
+      await this.reconcile(true);
       const status=engine.getStatus();
       return Response.json({health:status.health,lastPollAt:status.lastPollAt,prices:engine.getPrices(),marketMode:'polling'});
     }
-    if(path==='/quote'&&request.method==='GET'){
+    if((path==='/quote'||path==='/quote-lookup')&&request.method==='GET'){
+      const reply=(result:QuoteLookup)=>path==='/quote-lookup'?Response.json(result):result.quote===null?new Response(null,{status:result.code==='invalid_request'?400:503}):Response.json(result.quote);
       try {
         await engine.refreshCatalog();
         const instrument=new URL(request.url).searchParams.get('instrument');
         const catalog=engine.getMarkets(),market=catalog.markets.find(m=>m.instrument===instrument);
-        if(!market || !this.quotes)return new Response(null,{status:400});
-        if(marketSourceStale(catalog,market)||!marketAvailable(catalog,market))return new Response(null,{status:503});
-        return Response.json(await this.quotes.get(market));
-      } catch {return new Response(null,{status:503});}
+        if(marketSourceStale(catalog,market??{instrument:instrument??''} as Market)||!this.quotes)return reply({quote:null,code:'service_unavailable'});
+        if(!market||!marketAvailable(catalog,market))return reply({quote:null,code:'invalid_request'});
+        return reply({quote:await this.quotes.get(market)});
+      } catch {return reply({quote:null,code:'service_unavailable'});}
     }
     return new Response('Not found',{status:404});
   }

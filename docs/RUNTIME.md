@@ -90,15 +90,19 @@ npm run admin:invite:d1 -- you@example.com --remote
 
 确认 `/api/auth-capabilities` 报告实际启用的邮箱 OTP 后登录。D1 invitation CLI 不发邮件也不授予角色。bootstrap 与 Node 相同。完成后可 `npx wrangler secret delete BOOTSTRAP_TOKEN`。
 
-会话查询 `/api/auth/get-session` 使用明确的每 IP 每分钟 60 次规则。原生限流器的默认一小时窗口用于保留共享表里的邮箱小时计数，不能作为会话查询的窗口；当前 Better Auth 通配符 `*` 不匹配带 `/` 的路径，因此此接口必须显式配置。真正达到每分钟上限时返回 429 和最多 60 秒的 `Retry-After`，冷却后可重试。验证码发送、验证码校验及邮箱独立冷却规则保持不变。
+会话查询 `/api/auth/get-session` 使用明确的每 IP 每分钟 60 次规则。原生限流器的默认一小时窗口仅用于保留共享表里的邮箱小时计数；使用安装版本实际支持的 `/**` 路径通配符，把未单独配置路径的小时默认值映射为 60 秒。该 fallback 保留库的更严格特殊规则，例如 Google 登录每 10 秒 3 次。显式的验证码发送、验证码校验及邮箱独立冷却规则保持不变。能力接口初始化失败返回可重试的 503，不伪装为登录未配置。
 
 本地 Worker 用 `.dev.vars` 配置本地 development、console 邮箱与 `APP_URL=http://localhost:8787`，迁移/邀请都使用 `--local`，构建前端后运行 `npm run cf:dev`。本地与远程 D1 独立，不能用一次本地初始化代替生产迁移。Worker import 链不包含本项目原生 SQLite/PG/SMTP 适配器。
 
 ## 调度、免费额度与容量
 
-DO 仅在可调度规则或 queued/sending outbox 存在时设置持久化目标五秒 alarm。无工作时移除 alarm，不轮询 ticker；无 resident timer 或 watchdog interval。写操作持久化 wake 后返回；status 会重新核对工作并修复缺少的 alarm。空闲对象没有定时 fallback，丢失唤醒依赖后续 status 请求修复。行情缺失/过期保留原时间戳和 unknown/unhealthy 状态。
+DO 仅在可调度规则或 queued/sending outbox 存在时设置持久化目标五秒 alarm。无工作时移除 alarm，不轮询 ticker；对象内没有 resident timer 或 watchdog interval。写操作提交后，对幂等 wake 最多尝试 3 次、每次最多等待 1.5 秒；仍失败时以 `effects.schedulerWake='pending'` 明确报告后台待确认，不自动重放已提交的写操作。status 成功核对工作后可修复缺少的 alarm。正向工作探测最多复用 1 秒，并合并同一 revision 的并发探测；空闲结果不缓存，以免遮蔽新工作。
 
-Cloudflare 默认每 tick 最多 100 条规则评估、一次 reservation；每 drain 最多读 32 条待发送记录、一次 claim 与一次发送。cursor 跨 cycle 延续，SQL commit 再检查身份、generation、限额和 fencing。若以后提高容量到超过 100 条可调度规则，会跨轮次轮流评估；一次 reservation 或 2.5 秒评估时间预算也可提前结束本轮，因此不能保证每条规则都在五秒内检查或通知。慢发送与 polling 独立，平台 eviction、网络及 alarm 延迟会拉长周期，大 backlog 需要多轮。内部 `/snapshot`、`/catalog`、`/catalog-response`、`/wake` 仅可通过 namespace 调用。
+独立 Worker Cron 每分钟调用内部 `/reconcile` 核对持久化工作并补设 alarm，不依赖网页打开；空闲时只做工作检查，不抓行情、不发送通知。这是尽力恢复机制，不是固定 60 秒的恢复 SLA。仓库 `wrangler.jsonc` 已声明 Cron；若使用自定义 API 上传代码，必须另行同步并验证 Cron 触发器，不能只上传新版本就认为补偿已启用。部署凭据和生产变更仍需正常操作验证。行情缺失/过期保留原时间戳和 unknown/unhealthy 状态。
+
+默认 SQL 调度租约统一使用 `RUNTIME_POLICY.leaseMs=40000`，保留网络与投递预算余量。工作台每 5 秒请求 `/api/status?include=alerts`，一次返回状态和警报，减少重复认证、限流写入和规则读取；旧服务缺少内嵌数组时才回退 `/api/alerts`。警报列表以一条 SQL 取每条规则的当前 pending 和最新完成结果，避免逐条历史查询；不读取完整历史日志。Cloudflare 展示报价通过内部 `/quote-lookup` 在一次协调器调用中校验市场与读取报价，认证、输入校验、400/503 错误和只读语义不变。
+
+Cloudflare 默认每 tick 最多 100 条规则评估、最多 4 次 reservation；每 drain 最多读 32 条待发送记录、4 次 claim 与 4 次串行发送。cursor 跨 cycle 延续，SQL commit 再检查身份、generation、限额和 fencing。若以后提高容量到超过 100 条可调度规则，会跨轮次轮流评估；4 次 reservation 或 2.5 秒评估时间预算也可提前结束本轮，因此不能保证每条规则都在五秒内检查或通知。慢发送与 polling 独立，平台 eviction、网络及 alarm 延迟会拉长周期，大 backlog 需要多轮。内部 `/snapshot`、`/catalog`、`/catalog-response`、`/quote-lookup`、`/wake`、`/reconcile` 仅可通过 namespace 调用。小批次仍受 25 秒 drain、单次 9 秒发送预算约束，结果不明时停止本批，不自动重发；人数、品种和每日配额不变。没有证明 500 个活跃监控用户的吞吐与通知时延。
 
 市场目录包含多个交易所的完整元数据。Cloudflare 的 `/api/markets` 在边缘完成会话、限流和查询参数校验后，由协调器生成目录或搜索结果的 API envelope，边缘仅转发响应流，避免重复解析和编码整个目录消耗 HTTP CPU 预算。浏览器首次进入工作台时读取目录，当前页面会话内复用；每五秒只读取状态与警报，恢复前台、切换页面或保存警报均不重新读取目录。用户可在市场选择器中手动重新读取，刷新网页或重新登录也会重新获取。已有目录在手动刷新遇到临时网络或 5xx 错误时保留元数据并明确标记过期，不自动重复请求，等待下次手动更新。后台交易所目录仍按约一小时 TTL 更新。目录失败不会阻止新的状态和警报显示；401、403 和 429 仍按原有登录、权限和全局冷却规则处理。保存警报始终由服务端重新确认所选市场可用性。
 

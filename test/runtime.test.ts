@@ -48,8 +48,8 @@ test('runtime overwrites internal IP and never trusts forwarded browser metadata
  const request=new Request('http://localhost:3000/api/status',{headers:{'x-open-alert-client-ip':'forged','x-forwarded-for':'fake'}});
  assert.equal(trustedRequest(request,'192.0.2.1').headers.get('x-open-alert-client-ip'),'192.0.2.1');assert.equal(trustedRequest(request,null).headers.has('x-open-alert-client-ip'),false);
 });
-test('unconfigured deployment capabilities disable auth and health is unavailable',async()=>{
- assert.throws(()=>loadConfig({}));const response=unavailableApi('/api/auth-capabilities');assert.equal((await response.json() as any).data.emailOtp,false);assert.equal((await unavailableApi('/api/health').json() as any).data.state,'unhealthy');assert.equal(unavailableApi('/api/status').status,503);assert.match(setupHtml,/Sign-in unavailable/);
+test('unconfigured deployment returns retryable capability errors instead of fabricated disabled methods',async()=>{
+ assert.throws(()=>loadConfig({}));const response=unavailableApi('/api/auth-capabilities');assert.equal(response.status,503);assert.equal(response.headers.get('Retry-After'),'5');const body=await response.json() as any;assert.equal(body.ok,false);assert.equal(body.error.code,'service_unavailable');assert.equal(body.data,undefined);assert.equal((await unavailableApi('/api/health').json() as any).data.state,'unhealthy');assert.equal(unavailableApi('/api/status').status,503);assert.match(setupHtml,/Sign-in unavailable/);
 });
 test('same-origin static HTTP serves built SPA fallback, strict missing assets and HEAD',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'open-alert-static-'));try{

@@ -5,15 +5,16 @@ import { z } from 'zod';
 import { consumeAuthLimit,privateLimitKey } from '../auth/limits.js';
 import { DisabledAccountError } from '../auth/index.js';
 import { RepositoryConflict } from '../contracts/db.js';
-import type { AlertRecord, ChannelRecord } from '../contracts/db.js';
+import type { AlertRecord, ChannelRecord, OutboxRecord } from '../contracts/db.js';
 import type { ApiErrorCode, InvitationResult, InvitationSummary, SessionPrincipal } from '../contracts/api.js';
 import { EmailDeliveryError } from '../auth/email.js';
+import { wakeWithRetry } from '../runtime/wake.js';
 import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
-type Env = { Variables: { requestId: string; principal: SessionPrincipal } };
+type Env = { Variables: { requestId: string; principal: SessionPrincipal; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
 const generation = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), dailyLimit: z.number().int().min(1).max(20).optional(), notification: notificationOptionsSchema.optional() }).refine(v=>Object.keys(v).length>1);
@@ -46,14 +47,28 @@ export function channelProfile(channel:ChannelRecord|null,shared:string|undefine
 }
 export function createApi(d:ApiDependencies) {
   const app=new Hono<Env>();
-  const ok=(c:Context<Env>,data:unknown,status:200|201=200)=>c.json({ok:true as const,data,requestId:c.get('requestId')},status);
+  const ok=(c:Context<Env>,data:unknown,status:200|201=200)=>c.json({ok:true as const,data,requestId:c.get('requestId'),...(c.get('schedulerWake')?{effects:{schedulerWake:c.get('schedulerWake')}}:{})},status);
   const uid=(c:Context<Env>)=>c.get('principal').userId;
-  const wake=async()=>{await d.wake().catch(()=>{});};
+  const wake=async(c:Context<Env>)=>{
+    const confirmed=await wakeWithRetry(signal=>d.wake(signal));
+    c.set('schedulerWake',confirmed?'confirmed':'pending');
+    if(!confirmed)console.warn('open_alert_scheduler_wake_pending',c.get('requestId'));
+  };
   async function identity(userId:string):Promise<UserIdentity> {const rows=await d.db.query<{id:string;email:string;name:string;role:'user'|'admin';disabled:number}>('SELECT u.id,u.email,u.name,u.role,COALESCE(s.disabled,0) AS disabled FROM "user" u LEFT JOIN user_settings s ON s.user_id=u.id WHERE u.id=?',[userId]);const r=rows[0];if(!r)throw new HttpError(401,'unauthenticated');return {...r,disabled:r.disabled===1};}
-  async function hydrate(userId:string,a:AlertRecord):Promise<Alert> {
-    const [event,last]=await Promise.all([a.pendingTriggerId?d.repositories.outbox.getForUser(userId,a.pendingTriggerId):null,d.repositories.outbox.lastForAlert(userId,a.id)]);
+  function present(a:AlertRecord,event:OutboxRecord|null,last:OutboxRecord|null):Alert {
     const pending=event&&(event.phase==='queued'||event.phase==='sending')?{triggerId:event.triggerId,generation:event.generation,phase:event.phase,attempts:event.attempts,nextAt:event.nextAt,createdAt:event.createdAt,price:event.price,timestamp:event.timestamp}:null;
     return {id:a.id,name:a.name,instrument:a.instrument,side:a.side,threshold:a.threshold,enabled:a.enabled,generation:a.generation,triggered:a.triggered,triggerId:a.triggerId,pending,last:last&&last.phase!=='queued'&&last.phase!=='sending'?{triggerId:last.triggerId,outcome:last.phase,at:last.updatedAt,attempts:last.attempts,code:last.code,receiptAvailable:!!last.receipt}:null,status:pending?pending.phase:!a.enabled?'disabled':a.triggered?'latched':'armed',createdAt:a.createdAt,updatedAt:a.updatedAt};
+  }
+  async function hydrate(userId:string,a:AlertRecord):Promise<Alert> {
+    const [event,last]=await Promise.all([a.pendingTriggerId?d.repositories.outbox.getForUser(userId,a.pendingTriggerId):null,d.repositories.outbox.lastForAlert(userId,a.id)]);
+    return present(a,event,last);
+  }
+  async function hydrateAll(userId:string,records:AlertRecord[]):Promise<Alert[]> {
+    if(!records.length)return [];
+    const summaries=await d.repositories.outbox.summariesForUser(userId);
+    const pending=new Map(summaries.map(event=>[event.triggerId,event]));
+    const last=new Map(summaries.filter(event=>event.phase!=='queued'&&event.phase!=='sending').map(event=>[event.alertId,event]));
+    return records.map(record=>present(record,record.pendingTriggerId?pending.get(record.pendingTriggerId)??null:null,last.get(record.id)??null));
   }
   async function market(instrument:string) {
     if(d.catalog.resolve){
@@ -127,10 +142,11 @@ export function createApi(d:ApiDependencies) {
     await next();
   });
   app.get('/api/status',async c=>{
-    const userId=uid(c);const [user,settings,daily,channel,runtime]=await Promise.all([identity(userId),d.repositories.settings.get(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot()]);if(!settings)throw new HttpError(503,'service_unavailable');
+    const include=c.req.query('include');if(include!==undefined&&(include!=='alerts'||c.req.queries('include')?.length!==1))throw new HttpError(400,'invalid_request');
+    const userId=uid(c);const [user,settings,daily,channel,runtime,records]=await Promise.all([identity(userId),d.repositories.settings.get(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot(),d.repositories.alerts.listForUser(userId)]);if(!settings)throw new HttpError(503,'service_unavailable');
     const health=await aggregateHealth(runtime);
-    const own=new Set((await d.repositories.alerts.listForUser(userId)).map(v=>v.instrument));
-    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'}});
+    const own=new Set(records.map(v=>v.instrument));
+    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});
   });
   app.get('/api/markets',async c=>{
     const raw=c.req.queries();
@@ -156,13 +172,18 @@ export function createApi(d:ApiDependencies) {
     const query=z.strictObject({instrument:instrumentSchema}).safeParse(c.req.query());
     if(!query.success)throw new HttpError(400,'invalid_request');
     if(!d.quotes)throw new HttpError(503,'service_unavailable');
+    if(d.quotes.lookup){
+      const result=await d.quotes.lookup(query.data.instrument);
+      if(result.quote===null)throw new HttpError(result.code==='invalid_request'?400:503,result.code,result.code==='invalid_request'?{instrument:'Unsupported live market'}:undefined);
+      return ok(c,result.quote);
+    }
     return ok(c,await d.quotes.get(await market(query.data.instrument)));
   });
-  app.get('/api/alerts',async c=>ok(c,{alerts:await Promise.all((await d.repositories.alerts.listForUser(uid(c))).map(a=>hydrate(uid(c),a)))}));
-  app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),alert)},201);});
-  app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),expectedGeneration);if(patch.instrument!==undefined||patch.enabled===true)await market(patch.instrument??current.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
-  app.delete('/api/alerts/:id',async c=>{const body=await json(c,rearmAlertSchema);await d.repositories.alerts.remove(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake();return ok(c,{deleted:true});});
-  app.post('/api/alerts/:id/rearm',async c=>{const body=await json(c,rearmAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),body.expectedGeneration);await market(current.instrument);const a=await d.repositories.alerts.rearm(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake();return ok(c,{alert:await hydrate(uid(c),a)});});
+  app.get('/api/alerts',async c=>ok(c,{alerts:await hydrateAll(uid(c),await d.repositories.alerts.listForUser(uid(c)))}));
+  app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),alert)},201);});
+  app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),expectedGeneration);if(patch.instrument!==undefined||patch.enabled===true)await market(patch.instrument??current.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),a)});});
+  app.delete('/api/alerts/:id',async c=>{const body=await json(c,rearmAlertSchema);await d.repositories.alerts.remove(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake(c);return ok(c,{deleted:true});});
+  app.post('/api/alerts/:id/rearm',async c=>{const body=await json(c,rearmAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),body.expectedGeneration);await market(current.instrument);const a=await d.repositories.alerts.rearm(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),a)});});
   app.get('/api/channels',async c=>ok(c,channelProfile(await d.repositories.channels.get(uid(c)),d.config.sharedPushoverAppToken)));
   app.put('/api/channels',async c=>{
     const body=await json(c,channelSchema),userId=uid(c),old=await d.repositories.channels.get(userId);if(!body.userKey&&!old)throw new HttpError(400,'invalid_request',{userKey:'Required for a new channel'});
@@ -171,10 +192,10 @@ export function createApi(d:ApiDependencies) {
     const proposed:ChannelRecord={userId,generation:old?.generation??0,userKey,privateAppToken:token===undefined?old?.privateAppToken??null:token,updatedAt:Date.now()};
     if(!channelProfile(proposed,d.config.sharedPushoverAppToken).configured)throw new HttpError(400,'channel_unconfigured');
     try {await d.notifications.validate(userId,proposed);}catch {throw new HttpError(502,'notification_failed');}
-    const channel=await d.repositories.channels.put(userId,old?.generation??null,userKey,token,Date.now());await wake();return ok(c,channelProfile(channel,d.config.sharedPushoverAppToken));
+    const channel=await d.repositories.channels.put(userId,old?.generation??null,userKey,token,Date.now());await wake(c);return ok(c,channelProfile(channel,d.config.sharedPushoverAppToken));
   });
-  app.delete('/api/channels',async c=>{const old=await d.repositories.channels.get(uid(c));if(old)await d.repositories.channels.remove(uid(c),old.generation,Date.now());await wake();return ok(c,channelProfile(null,d.config.sharedPushoverAppToken));});
-  app.patch('/api/settings',async c=>{const {expectedGeneration,...patch}=await json(c,settingsSchema);if(patch.dailyLimit&&patch.dailyLimit>d.config.limits.dailyNotificationAttempts)throw new HttpError(400,'invalid_request');const settings=await d.repositories.settings.patch(uid(c),expectedGeneration,patch as Partial<UserSettings>,Date.now());await wake();return ok(c,{settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},generation:settings.generation});});
+  app.delete('/api/channels',async c=>{const old=await d.repositories.channels.get(uid(c));if(old)await d.repositories.channels.remove(uid(c),old.generation,Date.now());await wake(c);return ok(c,channelProfile(null,d.config.sharedPushoverAppToken));});
+  app.patch('/api/settings',async c=>{const {expectedGeneration,...patch}=await json(c,settingsSchema);if(patch.dailyLimit&&patch.dailyLimit>d.config.limits.dailyNotificationAttempts)throw new HttpError(400,'invalid_request');const settings=await d.repositories.settings.patch(uid(c),expectedGeneration,patch as Partial<UserSettings>,Date.now());await wake(c);return ok(c,{settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},generation:settings.generation});});
   app.post('/api/test-notification',async c=>{
     await json(c,testNotificationSchema);const userId=uid(c);const [channel,settings]=await Promise.all([d.repositories.channels.get(userId),d.repositories.settings.get(userId)]);
     if(!channel||!settings||!channelProfile(channel,d.config.sharedPushoverAppToken).configured)throw new HttpError(409,'channel_unconfigured');
@@ -185,7 +206,7 @@ export function createApi(d:ApiDependencies) {
   app.post('/api/admin/bootstrap',async c=>{const configured=d.config.bootstrapToken;const bearer=c.req.header('authorization')?.match(/^Bearer ([^\s]+)$/)?.[1]??'';if(!configured||!await equalToken(bearer,configured))throw new HttpError(403,'forbidden');if(!await d.repositories.admin.bootstrap(uid(c),Date.now()))throw new HttpError(409,'generation_conflict');return ok(c,{bootstrapped:true});});
   app.use('/api/admin/*',async(c,next)=>{if(c.get('principal').role!=='admin')throw new HttpError(403,'forbidden');await next();});
   app.get('/api/admin/users',async c=>{const query=pageSchema.safeParse(c.req.query());if(!query.success)throw new HttpError(400,'invalid_request');return ok(c,await d.repositories.admin.listUsers(query.data.limit,query.data.cursor));});
-  app.patch('/api/admin/users/:id',async c=>{const body=await json(c,z.strictObject({disabled:z.boolean()}));const target=c.req.param('id');const exists=await d.db.query('SELECT id FROM "user" WHERE id=?',[target]);if(!exists[0])throw new HttpError(404,'not_found');const user=await d.repositories.admin.setDisabled(target,body.disabled,Date.now());await wake();return ok(c,user);});
+  app.patch('/api/admin/users/:id',async c=>{const body=await json(c,z.strictObject({disabled:z.boolean()}));const target=c.req.param('id');const exists=await d.db.query('SELECT id FROM "user" WHERE id=?',[target]);if(!exists[0])throw new HttpError(404,'not_found');const user=await d.repositories.admin.setDisabled(target,body.disabled,Date.now());await wake(c);return ok(c,user);});
   app.post('/api/admin/invites',async c=>{
     const body=await json(c,z.strictObject({email:z.string().trim().toLowerCase().pipe(z.email().max(254))}));
     if((await d.db.query('SELECT id FROM "user" WHERE LOWER(email)=?',[body.email])).length)throw new HttpError(409,'account_exists');

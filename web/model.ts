@@ -1,7 +1,7 @@
 import { t } from './i18n.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Alert, Market, SystemStatus } from '../src/contracts/domain.js';
-import { AppError, assertBusinessReady, errorText, getBusinessCooldown, request, subscribeBusinessCooldown } from './api.js';
+import { AppError, assertBusinessReady, errorText, getBusinessCooldown, request, subscribeBusinessCooldown, subscribeSchedulerWake } from './api.js';
 export interface WorkspaceData {
     status: SystemStatus;
     alerts: Alert[];
@@ -12,6 +12,7 @@ interface CatalogData { markets: Market[]; stale: boolean }
 export function useWorkspace(onUnauthorized: () => void) {
     const [data, setData] = useState<WorkspaceData | null>(null);
     const [failure, setFailure] = useState<unknown>(null);
+    const [wakePending, setWakePending] = useState(false);
     const [busy, setBusy] = useState(false);
     const [loadedAt, setLoadedAt] = useState<number | null>(null);
     const [now, setNow] = useState(Date.now());
@@ -54,11 +55,13 @@ export function useWorkspace(onUnauthorized: () => void) {
                 // Keep the flight until all siblings settle, including a delayed 429 header.
                 // Status and alerts form one snapshot. Directory metadata may be
                 // retained, explicitly stale, when only its transport fails.
+                const statusRead = request<SystemStatus & { alerts?: Alert[] }>('/api/status?include=alerts', 'GET', undefined, { signal: controller.signal });
+                const alertsRead = statusRead.then(status => Array.isArray(status.alerts)
+                    ? { alerts: status.alerts }
+                    : request<{ alerts: Alert[] }>('/api/alerts', 'GET', undefined, { signal: controller.signal }));
                 const results = await Promise.allSettled([
-                    request<SystemStatus>('/api/status', 'GET', undefined, { signal: controller.signal }),
-                    request<{
-                        alerts: Alert[];
-                    }>('/api/alerts', 'GET', undefined, { signal: controller.signal }),
+                    statusRead,
+                    alertsRead,
                     fetchCatalog ? request<CatalogData>('/api/markets', 'GET', undefined, { signal: controller.signal })
                         : Promise.resolve(cachedCatalog!),
                 ]);
@@ -87,6 +90,8 @@ export function useWorkspace(onUnauthorized: () => void) {
                     catalog.current = directory;
                 }
                 setData({ status: status.value, alerts: alerts.value.alerts, markets: directory.markets, marketStale: directory.stale });
+                // A successful runtime snapshot reconciles the durable alarm after a lost wake.
+                setWakePending(false);
                 // A separate business request may have received 429 while this snapshot ran.
                 const cooldown = getBusinessCooldown();
                 if (!cooldown || cooldown.retryAt <= Date.now())
@@ -115,6 +120,7 @@ export function useWorkspace(onUnauthorized: () => void) {
         mounted.current = true;
         const onCooldown = (cause: AppError) => { recoveryAt.current = cause.retryAt; setFailure(cause); };
         const unsubscribe = subscribeBusinessCooldown(onCooldown);
+        const unsubscribeWake = subscribeSchedulerWake(state => setWakePending(state === 'pending'));
         const existing = getBusinessCooldown();
         if (existing && existing.retryAt > Date.now())
             onCooldown(existing);
@@ -132,7 +138,7 @@ export function useWorkspace(onUnauthorized: () => void) {
         const onVisible = () => { if (!document.hidden && !lock.current)
             void read(); };
         document.addEventListener('visibilitychange', onVisible);
-        return () => { mounted.current = false; unsubscribe(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
+        return () => { mounted.current = false; unsubscribe(); unsubscribeWake(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
     }, [read]);
     const mutate = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
         if (!mounted.current)
@@ -171,6 +177,6 @@ export function useWorkspace(onUnauthorized: () => void) {
         }
     }, [read]);
     const error = failure ? errorText(failure, now) : '';
-    return { data, error, busy, loadedAt, now, refresh, mutate };
+    return { data, error, wakePending, busy, loadedAt, now, refresh, mutate };
 }
 export type WorkspaceModel = ReturnType<typeof useWorkspace>;
