@@ -410,9 +410,9 @@
     color: var(--muted-foreground);
   }
   .public-shell .login-signal-field {
-    inset: 32px -12px auto;
-    height: 200px;
-    opacity: .12;
+    inset: 220px -12px auto;
+    height: 170px;
+    opacity: .35;
   }
   .public-shell .login-trace-guide { display: none; }
   .public-shell .login-access {
@@ -465,4 +465,10 @@
     text-align: left;
   }
   .public-shell .login-access.is-code-step .setup-note { grid-row: 3; }
+}
+
+@media (max-width: 900px) {
+  .public-shell .login-panel label[for="login-email"],
+  .public-shell .login-panel .form-divider,
+  .public-shell .login-panel .auth-method-note { position: absolute; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip-path: inset(50%); }
 }

@@ -95,8 +95,7 @@ export function Invitations({ model, notify }: { model: WorkspaceModel; notify: 
     }
     const busy = !!action || model.busy;
     return <Panel className="settings-panel invitation-panel" aria-labelledby="invitations-heading">
-      <h2 id="invitations-heading">{t('邀请邮箱')}</h2>
-      <p className="small muted">{t('邀请有效期为 7 天，仅限指定邮箱。已注册用户可直接登录，无需再次邀请。')}</p>
+      <div className="invitation-panel-heading"><h2 id="invitations-heading">{t('邀请邮箱')}</h2><details className="invitation-instructions"><summary>{t('邀请规则')}</summary><p className="small muted">{t('邀请有效期为 7 天，仅限指定邮箱。已注册用户可直接登录，无需再次邀请。')}</p></details></div>
       <form onSubmit={event => void create(event)}>
         <Label htmlFor="invite-email">{t('受邀邮箱')}</Label><Input id="invite-email" name="inviteEmail" type="email" maxLength={254} required autoComplete="off" autoCapitalize="none" spellCheck={false} value={email} onChange={event => setEmail(event.target.value)} disabled={busy} placeholder={t('受邀者的邮箱地址')}/>
         <Button variant="default" className="primary" disabled={busy || !!model.error}>{action === 'create' ? t('正在创建…') : t('创建邮箱邀请')}</Button>

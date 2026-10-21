@@ -1,4 +1,6 @@
 export const english: Record<string, string> = {
+  "剩余 {0}": "{0} remaining",
+  "邀请规则": "Invitation rules",
   "静默提醒": "Silent",
   "运行详情": "Runtime details",
   "管理 · 邀请与账户": "Administration \u00b7 Invites & accounts",

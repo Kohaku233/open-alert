@@ -265,7 +265,8 @@ export function useSwitchMotion(ref: RefObject<HTMLButtonElement | null>, checke
     const old = previous.current;
     previous.current = checked;
     if (!root || !thumb || old === checked || checked === undefined) return;
-    const travel = root.clientWidth - thumb.offsetWidth - 6;
+    const inset = parseFloat(getComputedStyle(thumb).marginLeft) || 0;
+    const travel = root.clientWidth - thumb.offsetWidth - inset * 2;
     const media = gsap.matchMedia();
     media.add({ all: 'all', reduced: reduceQuery }, context => {
       if (!context.conditions?.reduced) gsap.fromTo(thumb, { x: old ? travel : 0 }, { x: checked ? travel : 0, duration: .18, ease: 'power3.out', clearProps: 'transform' });

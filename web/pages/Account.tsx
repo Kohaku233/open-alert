@@ -14,7 +14,7 @@ import { useState, useRef } from "react";
 import type { FormEvent } from "react";
 import type { WorkspaceModel } from "../model.js";
 import { errorText, request } from "../api.js";
-import { formatTime, healthLabels } from "../utils.js";
+import { formatTime, formatStatusTime, healthLabels } from "../utils.js";
 import { FormError } from "../components/Dialog.js";
 export function Account({
   model,
@@ -85,9 +85,12 @@ export function Account({
               </span>
               <div>
                 <strong>{data.status.user.email}</strong>
-                <small>
+                <small className="desktop-identity-subtitle">
                   {data.status.user.role === "admin" ? "ADMIN" : "MEMBER"} ·{" "}
                   {data.status.user.name || t("尚未设置")}
+                </small>
+                <small className="mobile-identity-subtitle">
+                  {data.status.user.role === "admin" ? t("管理员") : t("普通用户")} · {t("监控")} {data.status.settings.enabled ? t("已启用") : t("已暂停")}
                 </small>
               </div>
             </div>
@@ -190,9 +193,9 @@ export function Account({
               return (
                 <div className="health-row" key={key}>
                   <span>{label}</span>
-                  <small>
+                  <small title={formatTime(health.lastSuccessAt)}>
                     {t("最近成功：")}
-                    {formatTime(health.lastSuccessAt)}
+                    {formatStatusTime(health.lastSuccessAt)}
                   </small>
                   <span
                     className={
@@ -209,7 +212,7 @@ export function Account({
           <div className="desktop-runtime-notes">
             <p className="small muted">
               {t("最近行情轮询：")}
-              {formatTime(data.status.scheduler.lastPollAt)}
+              {formatStatusTime(data.status.scheduler.lastPollAt)}
               {t("。目标间隔约 5 秒，网络与调度延迟可能影响实际周期。")}
             </p>
             <p className="small muted">

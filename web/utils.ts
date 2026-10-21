@@ -47,3 +47,11 @@ export function alertState(alert: Alert): string {
         return alert.last ? outcomeLabels[alert.last.outcome] : t("已触发");
     return alert.enabled ? t("已武装") : t("已暂停");
 }
+
+/** Compact status timestamps retain the complete value in each element's title. */
+export function formatStatusTime(value: number | null) {
+  if (value === null) return t("尚无记录");
+  const now = new Date(), date = new Date(value);
+  const today = now.toDateString() === date.toDateString();
+  return new Intl.DateTimeFormat(getLanguage(), { ...(today ? {second:'2-digit' as const} : {month:'2-digit' as const,day:'2-digit' as const}), hour:'2-digit',minute:'2-digit',hour12:false }).format(date);
+}

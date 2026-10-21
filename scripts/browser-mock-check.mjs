@@ -295,7 +295,7 @@ try {
     await check('name escaped', () => expect(page.locator('.alert-name img')).toHaveCount(0));
     const created = row(page,'<img src=x onerror=alert(1)> MOCK'); await created.getByRole('button', { name:'编辑', exact:true }).click();
     await page.getByRole('dialog').getByLabel('警报名称').fill('MOCK 已编辑'); await page.getByRole('button', { name:'保存警报', exact:true }).click();
-    await check('edit generation sent', async () => assert.equal(requests(state,'PATCH','/api/alerts/mock-created-1').at(-1).expectedGeneration,0));
+    await check('edit generation sent', async () => await expect.poll(() => requests(state,'PATCH','/api/alerts/mock-created-1').at(-1)?.expectedGeneration).toBe(0));
     await row(page,'MOCK 已编辑').getByRole('button', {name:'删除',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
     await check('cancel delete no request', async () => assert.equal(requests(state,'DELETE','/api/alerts/mock-created-1').length,0));
     await row(page,'MOCK 已编辑').getByRole('button',{name:'删除',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'删除警报',exact:true}).click();
@@ -662,7 +662,10 @@ try {
     await check('delayed 429 never dispatches POST',async()=>assert.equal(requests(s,'POST','/api/alerts').length,0));
     // Recovery clears the banner on the 1s recovery interval, whose phase is not
     // aligned with a paused clock; keep advancing virtual time until that tick lands.
-    await p.keyboard.press('Escape');
+    // Wait for the admitted save attempt to release its busy lock before dismissal.
+    await expect(p.getByRole('button',{name:'关闭对话框',exact:true})).toBeEnabled();
+    await p.getByRole('button',{name:'关闭对话框',exact:true}).click();
+    await expect(p.getByRole('dialog')).toHaveCount(0);
     // Each step has to stay small enough that the whole recovery finishes before the
     // next 5s poll, but the real budget must cover a loaded machine's virtual ticks.
     let virtualSteps = 0;
@@ -1070,12 +1073,12 @@ try {
       });
       await check('theme stays coherent in the first changed frame ('+theme+')',async()=>{
         const sample=await p.evaluate(()=>window.__themeFrames.at(-1));
-        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),popover:s.getPropertyValue('--popover').trim(),field:s.getPropertyValue('--field').trim()};});
+        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),card:s.getPropertyValue('--card').trim(),field:s.getPropertyValue('--field').trim()};});
         const expected=await p.evaluate(values=>{const probe=document.createElement('span');probe.style.color=values.background;document.body.append(probe);const result=Object.fromEntries(Object.entries(values).map(([key,value])=>{probe.style.color=value;return[key,getComputedStyle(probe).color];}));probe.remove();return result;},tokens);
         assert.equal(sample.theme,theme);
         assert.equal(sample.body.bg,expected.background);
         assert.equal(sample.body.text,expected.foreground);
-        assert.equal(sample.dialog.bg,expected.popover);
+        assert.equal(sample.dialog.bg,expected.card);
         assert.equal(sample.input.bg,expected.field);
         assert.equal(sample.select.bg,sample.input.bg);assert.equal(sample.select.text,sample.input.text);
         assert.equal(sample.primary.bg,sample.body.text);assert.equal(sample.primary.text,sample.body.bg);

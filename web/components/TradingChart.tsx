@@ -57,13 +57,13 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
     }, [symbol, retry, language, theme]);
     const chartURL = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
     return <>
-    <div className="chart-caption"><span role="status">{state === 'loading' ? t("正在连接 TradingView 图表…") : state === 'failed' ? t("图表连接不可用") : t("图表由 TradingView 提供")}</span><Button variant="ghost" className="text-button" onClick={() => setRetry(value => value + 1)}>{t("重连图表")}</Button></div>
+
     <div className="chart-shell">
       <ChartLoading open={state === 'loading'}/>
       <div ref={host} className="tradingview-widget-container"/>
       {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t("图表暂时无法连接")}</strong><p>{t("后台警报使用 ")}{source}{t(" 最新成交价。可以重试参考图表，或打开 TradingView 查看。")}</p><Button variant="default" className="primary" onClick={() => setRetry(value => value + 1)}>{t("重试图表")}</Button>{safeChartSymbol(symbol) && <a href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 打开")}</a>}</EmptyState>}
     </div>
-    <div className="chart-bottom"><span>{t("TradingView 仅供参考；警报按 ")}{source}{t(" 后台最新成交价判断。")}</span>{safeChartSymbol(symbol) && <a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 追踪所有市场")}</a>}</div>
+    <div className="chart-bottom"><div className="chart-caption"><span role="status">{state === 'loading' ? t("正在连接 TradingView 图表…") : state === 'failed' ? t("图表连接不可用") : t("图表由 TradingView 提供")}</span><Button variant="ghost" className="text-button" onClick={() => setRetry(value => value + 1)}>{t("重连图表")}</Button></div><span className="chart-disclaimer">{t("TradingView 仅供参考；警报按 ")}{source}{t(" 后台最新成交价判断。")}</span>{safeChartSymbol(symbol) && <a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 追踪所有市场")}</a>}</div>
   </>;
 });
 

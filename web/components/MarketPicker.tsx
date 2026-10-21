@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../i18n.js';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { Button } from './ui/button.js';
 import { Label } from './ui/label.js';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover.js';
@@ -11,9 +11,10 @@ import { FieldSelect } from './FieldSelect.js';
 import type { DirectoryMarket, MarketType, Venue } from '../markets.js';
 import { findMarket, marketIdentity, marketKey, marketLabel, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 export const MARKET_RESULT_LIMIT = 40;
-export function MarketPicker({ compact = false, label, markets, value, onChange, disabled = false, stale = false, error = '', onRetry }: {
+export function MarketPicker({ compact = false, labelOutside = false, label, markets, value, onChange, disabled = false, stale = false, error = '', onRetry }: {
     label: string;
     compact?: boolean;
+    labelOutside?: boolean;
     markets: readonly DirectoryMarket[];
     value: string;
     onChange: (instrument: string) => void;
@@ -56,12 +57,13 @@ export function MarketPicker({ compact = false, label, markets, value, onChange,
         return { results: matching.slice(0, MARKET_RESULT_LIMIT), count: matching.length };
     }, [markets, term, venue, type, language]);
     const unavailable = !!value && !available;
-    return <div className="market-search">
+    return <div className={`market-search ${labelOutside ? 'market-search-external-label' : ''}`}>
+    {labelOutside && <Label htmlFor={`${id}-trigger`}>{label}</Label>}
     <Popover open={open && !disabled} onOpenChange={next => { if (!disabled || !next) setOpen(next); }}>
-      <PopoverTrigger asChild><Button type="button" className="market-search-trigger" role="combobox" aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
-        <span className="market-search-label">{label}</span>
+      <PopoverTrigger asChild><Button id={`${id}-trigger`} type="button" className="market-search-trigger" role="combobox" aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
+        {!labelOutside && <span className="market-search-label">{label}</span>}
         <span className={`market-search-selection ${compact ? 'compact-market-identity' : ''}`}>{value ? compact ? <><strong>{identity.base || identity.nativeId}<em> / {identity.quote || '—'}</em></strong><small>{identity.venue ? venueLabels[identity.venue!] : ''} · {identity.type ? typeLabels[identity.type!] : ''}</small></> : marketLabel(value, selected) : t("请选择市场")}{unavailable && <span className="amber-text">{t(" · 不可用，已保留")}</span>}</span>
-        <ChevronsUpDown className="market-trigger-chevron" aria-hidden="true" />
+        <ChevronDown className="market-trigger-chevron" aria-hidden="true" />
       </Button></PopoverTrigger>
       <PopoverContent className="ui-market-popover" align="start" aria-label={t("搜索市场")} onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }}>
         <Command shouldFilter={false} label={t("搜索市场")}>

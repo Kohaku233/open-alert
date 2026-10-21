@@ -132,7 +132,8 @@ export function SignalTrace({
           >
             <span title={`${alert.name} · ${formatPrice(alert.threshold)}`}>
               {alert.side === "upper" ? "↑" : "↓"}{" "}
-              {formatPrice(alert.threshold)}
+              <span className="trace-threshold-full">{formatPrice(alert.threshold)}</span>
+              <span className="trace-threshold-compact">{new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(alert.threshold)}</span>
             </span>
           </div>
         ))}

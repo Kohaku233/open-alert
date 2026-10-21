@@ -66,15 +66,15 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
             setError(errorText(cause));
         }
     }
-    return <Dialog title={alert ? t("编辑价格警报") : t("创建价格警报")} onClose={onClose} busy={busy}>
-    <form onSubmit={event => void save(event)}><fieldset disabled={busy || pending || !!model.error}>
-      <MarketPicker label={t("警报市场")} markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()}/>
-      <p className="small muted">{t("始终按这里保存的交易所和市场判断，与当前参考图表选择无关。")}</p>
+    return <Dialog className="alert-editor-dialog" eyebrow={alert ? 'EDIT RULE' : 'NEW RULE'} title={alert ? t("编辑价格警报") : t("创建价格警报")} onClose={onClose} busy={busy}>
+    <form className="alert-editor-form" onSubmit={event => void save(event)}><fieldset className="alert-editor-fields" disabled={busy || pending || !!model.error}>
+      <MarketPicker labelOutside compact label={t("警报市场")} markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()}/>
+      <p className="small muted rule-market-note">{t("始终按这里保存的交易所和市场判断，与当前参考图表选择无关。")}</p>
       <Label>{t("警报名称")}<Input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：突破前高")} autoFocus/></Label>
       <div className="alert-condition"><span className="field-label">{t("触发条件")}</span><div className="direction-segments" role="group" aria-label={t("触发条件")}>{(['upper', 'lower'] as const).map(value => <Button key={value} type="button" aria-pressed={side === value} onClick={() => setSide(value)} className={value}>{value === 'upper' ? '↑ ' : '↓ '}{value === 'upper' ? t("达到或高于") : t("达到或低于")}</Button>)}</div></div>
-      <Label className="threshold-label">{t("价格 · ")}{quote}<Input className="threshold-input" type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} placeholder={tick ? formatQuotePrice(tick.price) : '0.00'}/></Label>
-      <div className="price-shortcuts">{[-1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}<span>{t('按当前成交价计算')}</span></div>
-      {distance !== null && <div className="threshold-distance"><div><span>{t('现价')} {tick && formatQuotePrice(tick.price)}</span><strong>{distance >= 0 ? '+' : ''}{distance.toFixed(2)}%</strong></div><div className="distance-track"><i style={{left: `${Math.max(2, Math.min(98, 50 + distance * 5))}%`}}/></div></div>}
+      <div className="threshold-field"><Label className="threshold-label">{t("价格 · ")}{quote}<span className="threshold-control"><Input className="threshold-input" type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} placeholder={tick ? formatQuotePrice(tick.price) : '0.00'}/><span className="mobile-threshold-unit">{quote}</span></span></Label><div className="price-shortcuts desktop-price-shortcuts">{[-1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div></div>
+      {distance !== null && <div className="threshold-distance"><div className="distance-track"><i style={{left: `${Math.max(10, Math.min(94, 69 + distance * 6))}%`}}/></div><div className="distance-labels"><span>{t('现价')} {tick && formatQuotePrice(tick.price)}</span><strong>{distance >= 0 ? '↑ +' : '↓ '}{distance.toFixed(2)}%</strong></div></div>}
+      <div className="price-shortcuts mobile-price-shortcuts">{[-5, -1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div>
       <Label className="check-label enable-rule"><span>{t("启用这条警报")}</span><Switch checked={enabled} onCheckedChange={setEnabled} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/></Label>
 
     </fieldset>

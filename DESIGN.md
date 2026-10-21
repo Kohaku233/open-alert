@@ -151,7 +151,7 @@ components:
 
 Open Alert is an operating instrument for exchange-price alerts. Its approved world is the final Breakout HTML handoff: a split-circle SVG mark, charcoal fields, a thin trade trace, compact operational labels and calm, very light headings. The quote, monitoring state and rule actions carry the hierarchy. The English page indexes and dotted signal field are deliberate parts of this user-approved world.
 
-This replaces the previous Signal Almanac identity. Design authority is the README and final HTML/SVG files in F:/code/design_handoff_openalert_final/. The implemented source of truth is the final cascade in web/breakout.css, web/boot.css and web/fonts.css, together with the shipped React components. web/redesign.css supplies inherited primitives and light appearance; it is no longer the visual authority by itself. Dark appearance follows the supplied reference. Light and system appearance remain supported through semantic tokens; the light edition is a functional adaptation, not a claim of a second supplied reference.
+This replaces the previous Signal Almanac identity. Design authority is the README and final HTML/SVG files in F:/code/design_handoff_openalert_final/. The implemented source of truth is the final cascade in web/breakout.css, web/alignment.css, web/login.css, web/boot.css and web/fonts.css, together with the shipped React components. web/redesign.css supplies inherited primitives and light appearance; it is no longer the visual authority by itself. Dark appearance follows the supplied reference. Light and system appearance remain supported through semantic tokens; the light edition is a functional adaptation, not a claim of a second supplied reference.
 
 **Key Characteristics:**
 
@@ -255,7 +255,7 @@ Primary actions are ivory pills in dark appearance and invert in light appearanc
 
 ### Inputs / Fields
 
-Inputs and market selectors use the field surface, a control hairline and the control radius. Inputs are at least 44px high; the target-price input grows to 60px and uses larger mono text. Focus changes the border to signal and adds the restrained ring. Keep visible labels, validation text, exact market identity and keyboard access. Market selection leads with the pair, then venue and product; search and venue/type filters remain available.
+Inputs and market selectors use the field surface, a control hairline and the control radius. Inputs are at least 44px high; the target-price input grows to 56px and uses 26px display numerals. Focus changes the border to signal and adds the restrained ring. Keep desktop labels, validation text, exact market identity and keyboard access. Compact mobile fields retain accessible labels while the selected value and placeholder carry the visible context. Market selection leads with the pair, then venue and product; search and venue/type filters remain available.
 
 ### Navigation
 
@@ -310,3 +310,13 @@ TradingView remains the display-only official embed, with native controls and at
 - Don't clear latches on edit, bypass queued/sending restrictions, or describe uncertain delivery as confirmed success.
 - Don't let a mobile summary hide the route or form needed to complete an operation.
 - Don't replace or obscure the official TradingView controls and attribution.
+
+## Final handoff alignment
+
+At 1440×900, the desktop rail is 232px wide; the workspace starts at x264. The chart and alerts form 748px / 16px / 380px columns and finish at y876. Chart status and reconnect share the attribution footer. Settings panels fill the same bottom edge. Admin uses equal columns, an inline invitation field and a diagnostic disclosure anchored in the account-list area.
+
+Mobile uses 12px page and dock insets, a 52px market header and a 64px dock. Settings and full-alert routes lead with their own heading. The mobile monitor switch has a 36×20px track and a 16px thumb inside a 44px touch target. Mobile trace labels compact the threshold, while exact thresholds remain visible in the rule list and editable form; the desktop trace retains the full current-price guide.
+
+The alert editor has a full-width market selector, compact desktop shortcuts inside the price field, four mobile shortcuts and an unboxed distance gauge. The current-price mark is fixed at 69%; positive target distances map to its right and negative distances to its left. Numeric values are never rounded to fit the reference.
+
+Desktop login keeps its 920px / 520px split and 407×484px access card at x977/y174. Mobile moves the schematic trace below the venue line and removes redundant visual label/divider space while preserving email, OTP, error, help and reduced-motion flows.
