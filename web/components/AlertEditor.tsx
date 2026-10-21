@@ -1,6 +1,7 @@
+import { Spinner } from './ui/spinner.js';
 import { Notice } from './Surface.js';
-import { FieldSelect } from './FieldSelect.js';
-import { Checkbox } from './ui/checkbox.js';
+import { Switch } from './ui/switch.js';
+import { useMarketQuote } from '../useMarketQuote.js';
 import { Button } from './ui/button.js';
 import { Input } from './ui/input.js';
 import { Label } from './ui/label.js';
@@ -9,7 +10,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import { api, errorText } from '../api.js';
-import { breached, formatPrice, freshTick } from '../utils.js';
+import { breached, formatPrice, formatQuotePrice, freshTick } from '../utils.js';
 import { findMarket, marketLabel, marketQuote, sameMarket, selectableMarket, useRetainedMarket } from '../markets.js';
 import type { WorkspaceModel } from '../model.js';
 import { Dialog, FormError } from './Dialog.js';
@@ -33,7 +34,10 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
     const unchangedMarket = !!alert && sameMarket(alert.instrument, selected);
     const canSaveMarket = available || (unchangedMarket && (!enabled || alert?.enabled === enabled));
     const quote = marketQuote(selected, market);
-    const tick = data?.status.prices.find(price => sameMarket(price.instrument, selected));
+    const quoteState = useMarketQuote(selected, available);
+    const viewed = quoteState.quote;
+    const tick = viewed?.timestamp ? { instrument: selected, price: viewed.price, timestamp: viewed.timestamp, receivedAt: viewed.observedAt } : data?.status.prices.find(price => sameMarket(price.instrument, selected));
+    const distance = tick && parsedValue(threshold) ? (Number(threshold) / tick.price - 1) * 100 : null;
     const current = alert ? data?.alerts.find(item => item.id === alert.id) : null;
     const pending = !!current?.pending;
     const parsedThreshold = Number(threshold);
@@ -67,16 +71,22 @@ export function AlertEditor({ model, alert, instrument, onClose, notify }: {
       <MarketPicker label={t("警报市场")} markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()}/>
       <p className="small muted">{t("始终按这里保存的交易所和市场判断，与当前参考图表选择无关。")}</p>
       <Label>{t("警报名称")}<Input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：突破前高")} autoFocus/></Label>
-      <div className="form-row"><Label>{t("触发条件")}<FieldSelect label={t("触发条件")} value={side} onValueChange={value => setSide(value as 'upper' | 'lower')} disabled={busy || pending || !!model.error} options={[{value:'upper',label:t("达到或高于")},{value:'lower',label:t("达到或低于")}]} /></Label><Label>{t("价格 · ")}{quote}<Input type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)}/></Label></div>
-      <Label className="check-label"><Checkbox checked={enabled} onCheckedChange={checked => setEnabled(checked === true)} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/>{t("启用这条警报")}</Label>
+      <div className="alert-condition"><span className="field-label">{t("触发条件")}</span><div className="direction-segments" role="group" aria-label={t("触发条件")}>{(['upper', 'lower'] as const).map(value => <Button key={value} type="button" aria-pressed={side === value} onClick={() => setSide(value)} className={value}>{value === 'upper' ? '↑ ' : '↓ '}{value === 'upper' ? t("达到或高于") : t("达到或低于")}</Button>)}</div></div>
+      <Label className="threshold-label">{t("价格 · ")}{quote}<Input className="threshold-input" type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} placeholder={tick ? formatQuotePrice(tick.price) : '0.00'}/></Label>
+      <div className="price-shortcuts">{[-1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}<span>{t('按当前成交价计算')}</span></div>
+      {distance !== null && <div className="threshold-distance"><div><span>{t('现价')} {tick && formatQuotePrice(tick.price)}</span><strong>{distance >= 0 ? '+' : ''}{distance.toFixed(2)}%</strong></div><div className="distance-track"><i style={{left: `${Math.max(2, Math.min(98, 50 + distance * 5))}%`}}/></div></div>}
+      <Label className="check-label enable-rule"><span>{t("启用这条警报")}</span><Switch checked={enabled} onCheckedChange={setEnabled} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/></Label>
+
     </fieldset>
     {!available && unchangedMarket && <Notice as="p" className="warning">{t("原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。")}</Notice>}
     {pending && <Notice as="p" className="warning">{t("该警报的通知正在排队或发送，请等待完成后再修改。")}</Notice>}
-    {hit && enabled && <Notice as="p" className="warning">{marketLabel(selected, market)}{t(" 当前新鲜成交价 ")}{tick ? formatPrice(tick.price) : ''} {quote}{t(" 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。")}</Notice>}
+    {hit && enabled && <Notice as="p" className="warning">{marketLabel(selected, market)}{t(" 当前新鲜成交价 ")}{tick ? formatQuotePrice(tick.price) : ''} {quote}{t(" 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。")}</Notice>}
     {!freshTick(tick) && <p className="small muted">{t("当前没有可用的新鲜后台价格。恢复行情后，首次满足条件的价格也会触发。")}</p>}
     {alert?.triggered && <Notice as="p" className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</Notice>}
     {!data?.status.settings.enabled && <p className="small muted">{t("你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。")}</p>}
     <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")}</p>
-    <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>
+    <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy && <Spinner/>}{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>
   </Dialog>;
 }
+
+function parsedValue(value: string) { return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) > 0; }

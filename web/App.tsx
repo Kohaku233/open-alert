@@ -1,3 +1,4 @@
+import { AccountMenu } from './components/AccountMenu.js';
 import { Appearance } from './components/Appearance.js';
 import { Notice, EmptyState } from './components/Surface.js';
 import { BootStageProvider, useBootClaim, useBootVisible } from './components/BootStage.js';
@@ -20,9 +21,9 @@ import { Account } from './pages/Account.js';
 import { Admin } from './pages/Admin.js';
 import { FormError } from './components/Dialog.js';
 import { useIndicatorMotion } from './motion.js';
-import { Activity, BellRing, ShieldCheck, UserRound } from 'lucide-react';
+import { Activity, BellRing, ShieldCheck, UserRound, List }  from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-const routes = ['/dashboard', '/notifications', '/account', '/admin'];
+const routes = ['/dashboard', '/alerts', '/notifications', '/account', '/admin'];
 function LanguageSwitch() {
     const language = useLanguage();
     const root = useRef<HTMLDivElement>(null), indicator = useRef<HTMLSpanElement>(null);
@@ -32,7 +33,7 @@ function LanguageSwitch() {
 function Brand({ navigate }: {
     navigate: (path: string) => void;
 }) {
-    return <a className="brand" href="/dashboard" aria-label={t("价格哨站")} onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><Icon name="brand" className="brand-mark"/><span>{t("价格哨站")}<small>OPEN ALERT</small></span></a>;
+    return <a className="brand" href="/dashboard" aria-label={t("价格哨站")} onClick={event => { event.preventDefault(); navigate('/dashboard'); }}><Icon name="brand" className="brand-mark"/><span>{t("价格哨站")}<small>openalert</small></span></a>;
 }
 export function App() {
     return <BootStageProvider><AppRoutes/></BootStageProvider>;
@@ -49,7 +50,7 @@ function AppRoutes() {
     const [path, setPath] = useState(window.location.pathname);
     // The entrance covers the session handshake and the sign-in redirect, so the
     // first paint is never a half-built layout.
-    useBootClaim(t("正在确认登录状态…"), session.isPending && !sessionKnown);
+    useBootClaim(t("正在确认登录状态…"), session.isPending && !sessionKnown, 'session');
     useBootClaim(t("正在打开登录页面…"), !session.isPending && sessionKnown && !session.data && path !== '/login');
     const navigate = useCallback((next: string) => { window.history.pushState({}, '', next); setPath(next); window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
     useEffect(() => { const pop = () => setPath(window.location.pathname); window.addEventListener('popstate', pop); return () => window.removeEventListener('popstate', pop); }, []);
@@ -114,26 +115,26 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     useIndicatorMotion(navRef, navIndicator, '[aria-current="page"]', path + tabs.map(tab => tab[1]).join());
     const monitoring = model.data?.status.settings.enabled;
     const overall = model.data?.status.health.overall;
-    return <div className="workspace-shell">
+    return <div className="workspace-shell" data-route={path}>
     <header className="masthead app-rail">
       <Brand navigate={navigate}/>
-      <p className="rail-kicker">{t("价格信号工作台")}</p>
-      <nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label, NavIcon]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}><NavIcon className="nav-icon" aria-hidden="true"/><span>{label}</span></a>)}</nav>
+
+      <nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label, NavIcon]) => <a key={href} href={href} aria-current={(path === href || path === '/alerts' && href === '/dashboard') ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}><NavIcon className="nav-icon" aria-hidden="true"/><span>{label}</span></a>)}</nav>
       <div className="rail-footer">
-        <div className="rail-status">
-          <span className={`rail-status-dot ${monitoring ? 'is-live' : ''} ${overall && overall !== 'healthy' ? 'is-warn' : ''}`} aria-hidden="true"/>
-          <div><strong>{model.wakePending ? t("后台同步待确认") : monitoring ? t("后台监控运行中") : t("后台监控已暂停")}</strong><small>{overall ? healthLabel(overall) : t("正在读取运行状态")}</small></div>
-        </div>
-        <div className="header-actions"><LanguageSwitch /><span className="session-email">{model.data?.status.user.email ?? t("已登录")}</span><Button className="rail-signout" aria-label={logoutBusy ? t("正在退出…") : t("退出登录")} disabled={logoutBusy} onClick={() => void logout()}>{logoutBusy ? t("正在退出…") : t("退出登录")}</Button></div>
+        <div className="rail-status"><span className={`rail-status-dot ${monitoring ? 'is-live' : ''} ${overall && overall !== 'healthy' ? 'is-warn' : ''}`} aria-hidden="true"/><span>SYS · {model.wakePending ? t("后台同步待确认") : overall ? healthLabel(overall) : t("正在读取运行状态")} · 5s</span></div>
+        <AccountMenu name={model.data?.status.user.name || model.data?.status.user.email.split('@')[0] || t('已登录')} email={model.data?.status.user.email || ''} navigate={navigate} logout={() => void logout()} busy={logoutBusy}/>
+
       </div>
     </header>
     <main className="app-main" id="main-content"><FormError message={logoutError}/>{model.wakePending && <Notice className="warning scheduler-wake-warning" role="status"><p>{t("修改已保存，但后台同步尚未确认。系统会自动补偿检查；可重新读取状态确认，请勿重复提交。")}</p></Notice>}{model.error && <Notice className="connection-error" role="alert"><p>{model.error}</p><Button disabled={model.busy} onClick={() => void model.refresh()}>{t("重新读取状态")}</Button></Notice>}
       {/* Keep the dashboard mounted across settings pages; polling never remounts the chart. */}
-      <Dashboard model={model} active={path === '/dashboard' || !routes.includes(path)} notify={notify} navigate={navigate}/>
+      <Dashboard model={model} active={path === '/dashboard' || path === '/alerts' || !routes.includes(path)} alertsOnly={path === '/alerts'} notify={notify} navigate={navigate}/>
       {path === '/notifications' && <Notifications model={model} notify={notify}/>}
-      {path === '/account' && <Account model={model} notify={notify}/>}
+      {path === '/account' && <Account model={model} notify={notify} navigate={navigate} logout={() => void logout()} logoutBusy={logoutBusy}/>}
       {path === '/admin' && <Admin model={model} notify={notify}/>}
-    </main><footer className="app-footer"><span>{t("价格哨站 · Open Alert")}</span><span>{t("后台判断价格，手机接收提醒。")}</span><span className="footer-signal" aria-hidden="true">{t("SIGNAL / 24H")}</span></footer>
+    </main><nav className="mobile-dock" aria-label={t('移动导航')}>
+      {([['/dashboard', '行情', Activity], ['/alerts', '警报', List], ['/notifications', '通知', BellRing], ['/account', '账户', UserRound]] as const).map(([href, label, Glyph]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href); }}><Glyph aria-hidden="true"/><span>{t(label)}</span></a>)}
+    </nav><footer className="app-footer"><span>{t("价格哨站 · Open Alert")}</span><span>{t("后台判断价格，手机接收提醒。")}</span><span className="footer-signal" aria-hidden="true">{t("SIGNAL / 24H")}</span></footer>
   </div>;
 }
 

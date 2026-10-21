@@ -1,3 +1,4 @@
+import { Spinner } from '../components/ui/spinner.js';
 import { usePageMotion, useFormStepMotion } from '../motion.js';
 import { Panel, Notice, LoadingStatus } from '../components/Surface.js';
 import { useBootClaim } from '../components/BootStage.js';
@@ -14,6 +15,9 @@ import type { AuthCapabilities } from '../api.js';
 import { FormError } from '../components/Dialog.js';
 import { clearEmailLoginFlow, emailAddress, OTP_LIFETIME_MS, readEmailLoginFlow, saveEmailLoginFlow, withAttempt } from '../email-login-flow.js';
 import type { EmailLoginFlow } from '../email-login-flow.js';
+
+// A static schematic follows the handoff; no unauthenticated prices are invented.
+const loginTrace = Array.from({length:90}, (_, index) => `${index ? 'L' : 'M'}${(index / 89 * 600).toFixed(2)} ${(111 + Math.sin(index * .23) * 5 + Math.sin(index * .71) * 2 + Math.sin(index * 1.7) * .8).toFixed(2)}`).join(' ');
 
 function initialFlow(): EmailLoginFlow {
     const saved = readEmailLoginFlow();
@@ -157,7 +161,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     const formRef = useRef<HTMLElement>(null);
     useFormStepMotion(formRef, flow.step);
     return <main ref={pageRef} className="login-layout" id="main-content">
-      <section className="login-intro"><div className="login-visual" aria-hidden="true"><div className="login-orbit orbit-a"/><div className="login-orbit orbit-b"/><div className="login-orbit orbit-c"/><span className="orbit-node node-a"/><span className="orbit-node node-b"/><span className="orbit-node node-c"/><div className="signal-mark"><span/><span/><span/></div><span className="orbit-caption">SERVER-SIDE / LATCHED / PUSHOVER</span></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p>{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><div className="intro-detail"><strong>{t('达到或高于 / 达到或低于')}</strong><p>{t('以后台最新成交价判断。触发后保持锁定，直到你明确重新武装。')}</p></div><div className="login-proof-row"><span>BINANCE</span><span>OKX</span><span>MEXC</span><span>{t('后台守夜')}</span></div><p className="small muted">{t('后台运行时无需保持页面打开。')}</p></section>
+      <section className="login-intro"><div className="login-signal-field" aria-hidden="true"><svg viewBox="0 0 600 200" preserveAspectRatio="none"><defs><linearGradient id="login-trace-area" x1="0" y1="0" x2="0" y2="1"><stop stopColor="var(--signal)" stopOpacity=".18"/><stop offset="1" stopColor="var(--signal)" stopOpacity="0"/></linearGradient></defs><path d={`${loginTrace} L600 200L0 200Z`} fill="url(#login-trace-area)"/><path d={loginTrace} fill="none" stroke="currentColor" strokeWidth="1.4" vectorEffect="non-scaling-stroke"/><path d="M0 30H600" stroke="var(--signal)" strokeDasharray="4 5" opacity=".5" vectorEffect="non-scaling-stroke"/><path d="M0 170H600" stroke="var(--amber)" strokeDasharray="4 5" opacity=".5" vectorEffect="non-scaling-stroke"/></svg></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p>{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><div className="login-proof-row">{['BINANCE', 'OKX', 'MEXC'].map(venue => <div key={venue}><span>{venue}<small>BTC / USDT</small></span><strong>—,———.——</strong><small>{t('登录后读取行情')}</small></div>)}</div><p className="small muted">{t('后台运行时无需保持页面打开。')}</p></section>
       <Panel ref={formRef} className="login-panel" aria-labelledby="login-heading" aria-busy={busy}>
         <div className="login-panel-status"><span className="live-pip"/><span>SECURE ACCESS</span><span>{t('会话由 Cookie 保护')}</span></div>
         <h2 id="login-heading">{codeStep ? t('验证邮箱') : t('登录或注册')}</h2>
@@ -166,7 +170,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
         {!codeStep ? <>
           <form onSubmit={event => void sendOtp(event)}>
             <Label htmlFor="login-email">{t('邮箱地址')}</Label><Input ref={emailField} id="login-email" name="email" type="email" maxLength={254} autoComplete="email" autoCapitalize="none" spellCheck={false} required value={flow.email} disabled={busy || !capabilities?.emailOtp} onChange={event => { updateFlow({ ...flowRef.current, email: event.target.value }); setNow(Date.now()); setError(''); }} placeholder={t('你的邮箱地址')} aria-describedby="login-error"/>
-            <Button variant="default" type="submit" className="primary wide" disabled={busy || !capabilities?.emailOtp || cooldown > 0}>{action === 'send' ? t('正在发送…') : cooldown > 0 ? t('{0} 秒后可重新发送', cooldown) : t('发送验证码')}</Button>
+            <Button variant="default" type="submit" className="primary wide" disabled={busy || !capabilities?.emailOtp || cooldown > 0}>{action === 'send' && <Spinner/>}{action === 'send' ? t('正在发送…') : cooldown > 0 ? t('{0} 秒后可重新发送', cooldown) : t('发送验证码')}</Button>
             {attempt && attempt.delivery !== 'failed' && <Button variant="ghost" type="button" disabled={busy} onClick={() => { updateFlow({ ...flowRef.current, email: normalized, step: 'code' }); setError(''); }}>{t('已有验证码？继续验证')}</Button>}
           </form>
           {capabilities?.google && <><div className="form-divider"><span>{t('或')}</span></div><Button type="button" className="google-button" disabled={busy} onClick={() => void google()}><Icon name="google"/>{action === 'google' ? t('正在前往 Google…') : t('使用 Google 登录')}</Button><p className="auth-method-note">{t('使用与账户或邀请一致的 Google 邮箱。')}</p></>}
@@ -175,8 +179,8 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
           {action === 'send' ? <p className="auth-delivery-note" role="status">{t('正在发送验证码，请稍候…')}</p> : uncertain ? <p className="auth-delivery-note warning" role="status">{t('尚未确认邮件是否送达。请先检查邮箱；收到验证码后可直接输入，无需再次发送。')}</p> : <p className="auth-delivery-note" role="status">{t('验证码邮件已发送，请检查收件箱或垃圾邮件。')}</p>}
           <Label htmlFor="login-otp">{t('邮件中的验证码')}</Label><Input ref={codeField} id="login-otp" className="otp-input" name="otp" type="text" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={event => { setOtp(event.target.value.replace(/\D/g, '')); setError(''); }} disabled={busy || expired || !capabilities?.emailOtp} aria-describedby="otp-hint login-error"/>
           <p id="otp-hint" className={expired ? 'auth-code-hint expired' : 'auth-code-hint'}>{expired ? t('验证码已过期，请重新发送。') : t('验证码 5 分钟内有效，重发后请使用最新一封邮件中的验证码。')}</p>
-          <Button variant="default" type="submit" className="primary wide" disabled={busy || expired || !capabilities?.emailOtp || otp.length !== 6}>{action === 'verify' ? t('正在验证…') : t('验证并继续')}</Button>
-          <div className="auth-resend"><span>{t('没有收到邮件？')}</span><Button variant="ghost" type="button" disabled={busy || !capabilities?.emailOtp || cooldown > 0} onClick={() => void sendOtp()}>{action === 'send' ? t('正在发送…') : cooldown > 0 ? t('{0} 秒后重发', cooldown) : t('重新发送')}</Button></div>
+          <Button variant="default" type="submit" className="primary wide" disabled={busy || expired || !capabilities?.emailOtp || otp.length !== 6}>{action === 'verify' && <Spinner/>}{action === 'verify' ? t('正在验证…') : t('验证并继续')}</Button>
+          <div className="auth-resend"><span>{t('没有收到邮件？')}</span><Button variant="ghost" type="button" disabled={busy || !capabilities?.emailOtp || cooldown > 0} onClick={() => void sendOtp()}>{action === 'send' && <Spinner/>}{action === 'send' ? t('正在发送…') : cooldown > 0 ? t('{0} 秒后重发', cooldown) : t('重新发送')}</Button></div>
         </form>}
         <div id="login-error"><FormError message={error}/></div>
         {capabilities?.emailOtp && capabilities.emailSenderMode === 'resend_sandbox' && <Notice as="p" className="warning">{t('邮件服务目前为测试模式，仅支持预设的测试收件人。其他获邀邮箱可使用 Google 登录；邮箱验证码需管理员配置并验证发件域名。')}</Notice>}

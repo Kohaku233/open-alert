@@ -108,7 +108,7 @@ async function login(profile,email,rejectWrong=false) {
   await check('server-issued HttpOnly SameSite cookie',async()=>{const cookies=await context.cookies(origin);assert(cookies.some(c=>c.name==='better-auth.session_token'&&c.httpOnly&&c.sameSite==='Lax'&&c.value.length>40));});
   return mail.otp;
 }
-const nav=(page,name)=>page.getByRole('navigation',{name:'主导航'}).getByRole('link',{name,exact:true}).click();
+const nav=(page,name)=>page.locator('nav:visible a[href="'+({'行情与警报':'/dashboard','手机通知':'/notifications','我的账户':'/account','管理':'/admin'})[name]+'"]') .click();
 const row=(page,name)=>page.locator('.alert-row').filter({has:page.getByText(name,{exact:true})});
 async function selectMarket(picker,instrument,venue='okx',type='swap') {
   const page=picker.page();
@@ -121,8 +121,8 @@ async function selectMarket(picker,instrument,venue='okx',type='swap') {
 async function createAlert(profile,name,instrument,threshold,enabled=true) {
   const {page,context}=profile;await page.getByRole('button',{name:'创建警报',exact:true}).click();const dialog=page.getByRole('dialog');
   await selectMarket(dialog.locator('.market-search'),instrument);await dialog.getByLabel('警报名称').fill(name);await dialog.getByLabel('价格 · USDT').fill(String(threshold));
-  await dialog.getByLabel('启用这条警报').setChecked(enabled);await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
-  await page.getByRole('tab',{name:'全部警报',exact:true}).click();
+  if ((await dialog.getByRole('switch',{name:'启用这条警报'}).getAttribute('aria-checked') === 'true') !== enabled) await dialog.getByRole('switch',{name:'启用这条警报'}).click();await dialog.getByRole('button',{name:'创建警报',exact:true}).click();
+  if (await page.locator('.mobile-dock').isVisible()) await page.locator('.mobile-dock a[href="/alerts"]').click();else await page.getByRole('tab',{name:'全部警报',exact:true}).click();
   await expect(row(page,name)).toBeVisible();return (await ok(context,'/api/alerts')).alerts.find(a=>a.name===name);
 }
 const watchdog=setTimeout(()=>{timedOut=true;for(const r of children)if(!r.exit)r.child.kill('SIGTERM');void browser?.close();},55000);
@@ -159,7 +159,7 @@ try {
     await check('invited normalized verified user starts without admin privilege',async()=>{assert.equal(status.user.email,'alice@example.test');assert.equal(status.user.role,'user');assert.equal(status.settings.enabled,false);});
     await check('real OTP replay rejected',async()=>assert.equal((await api(alice.context,'/api/auth/sign-in/email-otp','POST',{email:'alice@example.test',otp})).status,400));
     await check('cookie unavailable to JS and no token storage',async()=>assert.deepEqual(await alice.page.evaluate(()=>({cookie:document.cookie,local:Object.keys(localStorage),session:Object.keys(sessionStorage)})),{cookie:'',local:[],session:[]}));
-    await alice.page.reload();await check('reload retains authenticated UI',()=>expect(alice.page.getByRole('button',{name:'退出登录'})).toBeVisible());
+    await alice.page.reload();await check('reload retains authenticated UI',()=>expect(alice.page.getByRole('switch',{name:'监控总开关'})).toBeVisible());
     const tampered=await browser.newContext();try{await tampered.addCookies([{name:'better-auth.session_token',value:sessionCookie.slice(0,-1)+(sessionCookie.endsWith('A')?'B':'A'),url:origin}]);await check('modified signature cannot authenticate',async()=>assert.equal((await api(tampered,'/api/status')).status,401));}finally{await tampered.close();}
   });
   await journey('03 authenticated one-use bootstrap and real admin invitation',async()=>{
@@ -228,7 +228,7 @@ try {
       assert.equal(transport.filter(e=>e.operation==='trades').length,tradeCallsBeforeRestart);
       assert.deepEqual((await ok(alice.context,'/api/status')).prices,[]);assert.deepEqual((await ok(bob.context,'/api/status')).prices,[]);
     });
-    await alice.page.reload();await bob.page.reload();await expect(alice.page.getByRole('button',{name:'退出登录'})).toBeVisible();await expect(row(bob.page,'LOCAL Bob alert')).toBeVisible();
+    await alice.page.reload();await bob.page.reload();await expect(alice.page.getByRole('switch',{name:'监控总开关'})).toBeVisible();await expect(row(bob.page,'LOCAL Bob alert')).toBeVisible();
     await check('restart retains same genuine cookie and identities',async()=>{assert.equal((await alice.context.cookies(origin)).find(c=>c.name==='better-auth.session_token').value,sessionCookie);assert.equal((await ok(alice.context,'/api/status')).user.id,aliceId);assert.equal((await ok(bob.context,'/api/status')).user.id,bobId);});
     await check('restart retains admin role, settings, channel and daily count',async()=>{const status=await ok(alice.context,'/api/status');assert.equal(status.user.role,'admin');assert.equal(status.settings.dailyLimit,7);assert.equal(status.channel.privateTokenPresent,true);assert.equal(status.daily.attempts,2);});
     await check('restart retains alert generation and isolated tenant lists',async()=>{assert.deepEqual((await ok(alice.context,'/api/alerts')).alerts.map(a=>[a.id,a.name,a.generation]),[[aliceAlert.id,'LOCAL Alice persisted',2]]);assert.deepEqual((await ok(bob.context,'/api/alerts')).alerts.map(a=>a.id),[bobAlert.id]);});
@@ -240,7 +240,7 @@ try {
   });
   await journey('07 real UI delete and server-side logout revocation',async()=>{
     await nav(alice.page,'行情与警报');await row(alice.page,'LOCAL Alice persisted').getByRole('button',{name:'删除',exact:true}).click();await alice.page.getByRole('dialog').getByRole('button',{name:'删除警报',exact:true}).click();await check('UI deletion persisted in actual database',async()=>{await expect(row(alice.page,'LOCAL Alice persisted')).toHaveCount(0);assert.equal((await ok(alice.context,'/api/alerts')).alerts.length,0);assert.equal((await ok(bob.context,'/api/alerts')).alerts.length,1);});
-    await alice.page.getByRole('button',{name:'退出登录'}).click();await expect(alice.page.getByRole('heading',{name:'登录或注册'})).toBeVisible();
+    await alice.page.getByRole('button',{name:'账户菜单',exact:true}).click();await alice.page.getByRole('button',{name:'退出登录'}).click();await expect(alice.page.getByRole('heading',{name:'登录或注册'})).toBeVisible();
     await check('logout removes real cookie',async()=>assert(!(await alice.context.cookies(origin)).some(c=>c.name==='better-auth.session_token')));
     const replay=await browser.newContext();try{await replay.addCookies([{name:'better-auth.session_token',value:sessionCookie,url:origin}]);await check('copied pre-logout cookie revoked in database',async()=>assert.equal((await api(replay,'/api/status')).status,401));}finally{await replay.close();}
     await check('other tenant remains authenticated after Alice logout',async()=>assert.equal((await ok(bob.context,'/api/status')).user.id,bobId));

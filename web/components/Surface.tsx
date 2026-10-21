@@ -30,7 +30,6 @@ export function Disclosure({ title, children, className = '' }: { title: string;
 export function LoadingStatus({ children }: { children: ReactNode }) { return <div className="loading-status" role="status"><Spinner/>{children}</div>; }
 export function ListSkeleton({ label }: { label: string }) {
   const root = useRef<HTMLDivElement>(null);
-  useLoadingMotion(root);
   return <div ref={root} className="list-skeleton" aria-busy="true"><LoadingStatus>{label}</LoadingStatus><div aria-hidden="true">{[0, 1, 2].map(row => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-line short"/></div>)}</div></div>;
 }
 /** Retained failure surface for a first load that came back with an error: the

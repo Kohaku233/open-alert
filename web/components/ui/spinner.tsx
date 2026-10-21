@@ -1,22 +1,16 @@
-import { Loader2Icon } from "lucide-react"
-import { useRef } from 'react'
-import { mergeRefs, useLoadingMotion } from '../../motion.js'
+import { useEffect, useState } from 'react';
+import type { ComponentProps } from 'react';
+import { cn } from '../../lib/utils.js';
 
-import { cn } from "../../lib/utils.js"
-
-function Spinner({ className, ref, ...props }: React.ComponentProps<"svg">) {
-  const local = useRef<SVGSVGElement>(null);
-  useLoadingMotion(local, 'spinner');
-  return (
-    <Loader2Icon
-      ref={mergeRefs(local, ref)}
-      
-      aria-hidden="true"
-      data-slot="spinner"
-      className={cn("size-4", className)}
-      {...props}
-    />
-  )
+const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+function Spinner({ className, ...props }: ComponentProps<'span'>) {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const media = matchMedia('(prefers-reduced-motion: reduce)');
+    const timer = window.setInterval(() => { if (!document.hidden && !media.matches) setFrame(value => (value + 1) % frames.length); }, 100);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span aria-hidden="true" data-slot="spinner" className={cn('braille-spinner', className)} {...props}>{frames[frame]}</span>;
 }
 
 export { Spinner }

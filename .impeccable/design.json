@@ -1,459 +1,677 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T14:08:54.009139+00:00",
-  "title": "Design System: Open Alert",
+  "generatedAt": "2026-10-21T13:25:04.405Z",
+  "title": "Design System: Open Alert — Breakout 3a",
   "extensions": {
     "colorMeta": {
-      "bg": {
+      "charcoal": {
         "role": "neutral",
-        "displayName": "Canvas Black",
+        "displayName": "Charcoal canvas",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.00883 253.66)",
+          "oklch(26.4% 0.00883 253.66)",
+          "oklch(37.9% 0.00883 253.66)",
+          "oklch(49.3% 0.00883 253.66)",
+          "oklch(60.7% 0.00883 253.66)",
+          "oklch(72.1% 0.00883 253.66)",
+          "oklch(83.6% 0.00883 253.66)",
+          "oklch(95.0% 0.00883 253.66)"
         ]
       },
-      "surface": {
+      "rail": {
         "role": "neutral",
-        "displayName": "Panel Charcoal",
+        "displayName": "Rail black",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.00773 255.50)",
+          "oklch(26.4% 0.00773 255.50)",
+          "oklch(37.9% 0.00773 255.50)",
+          "oklch(49.3% 0.00773 255.50)",
+          "oklch(60.7% 0.00773 255.50)",
+          "oklch(72.1% 0.00773 255.50)",
+          "oklch(83.6% 0.00773 255.50)",
+          "oklch(95.0% 0.00773 255.50)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel charcoal",
+        "tonalRamp": [
+          "oklch(15.0% 0.00772 229.50)",
+          "oklch(26.4% 0.00772 229.50)",
+          "oklch(37.9% 0.00772 229.50)",
+          "oklch(49.3% 0.00772 229.50)",
+          "oklch(60.7% 0.00772 229.50)",
+          "oklch(72.1% 0.00772 229.50)",
+          "oklch(83.6% 0.00772 229.50)",
+          "oklch(95.0% 0.00772 229.50)"
+        ]
+      },
+      "instrument": {
+        "role": "neutral",
+        "displayName": "Instrument field",
+        "tonalRamp": [
+          "oklch(15.0% 0.00687 178.65)",
+          "oklch(26.4% 0.00687 178.65)",
+          "oklch(37.9% 0.00687 178.65)",
+          "oklch(49.3% 0.00687 178.65)",
+          "oklch(60.7% 0.00687 178.65)",
+          "oklch(72.1% 0.00687 178.65)",
+          "oklch(83.6% 0.00687 178.65)",
+          "oklch(95.0% 0.00687 178.65)"
         ]
       },
       "field": {
         "role": "neutral",
-        "displayName": "Field Graphite",
+        "displayName": "Input field",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.00592 245.02)",
+          "oklch(26.4% 0.00592 245.02)",
+          "oklch(37.9% 0.00592 245.02)",
+          "oklch(49.3% 0.00592 245.02)",
+          "oklch(60.7% 0.00592 245.02)",
+          "oklch(72.1% 0.00592 245.02)",
+          "oklch(83.6% 0.00592 245.02)",
+          "oklch(95.0% 0.00592 245.02)"
+        ]
+      },
+      "popover": {
+        "role": "neutral",
+        "displayName": "Floating surface",
+        "tonalRamp": [
+          "oklch(15.0% 0.00894 224.11)",
+          "oklch(26.4% 0.00894 224.11)",
+          "oklch(37.9% 0.00894 224.11)",
+          "oklch(49.3% 0.00894 224.11)",
+          "oklch(60.7% 0.00894 224.11)",
+          "oklch(72.1% 0.00894 224.11)",
+          "oklch(83.6% 0.00894 224.11)",
+          "oklch(95.0% 0.00894 224.11)"
         ]
       },
       "line": {
         "role": "neutral",
-        "displayName": "Hairline Gray",
+        "displayName": "Structural hairline",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01085 216.92)",
+          "oklch(26.4% 0.01085 216.92)",
+          "oklch(37.9% 0.01085 216.92)",
+          "oklch(49.3% 0.01085 216.92)",
+          "oklch(60.7% 0.01085 216.92)",
+          "oklch(72.1% 0.01085 216.92)",
+          "oklch(83.6% 0.01085 216.92)",
+          "oklch(95.0% 0.01085 216.92)"
         ]
       },
-      "text": {
-        "role": "primary",
-        "displayName": "Workbench White",
+      "line-emphasis": {
+        "role": "neutral",
+        "displayName": "Control hairline",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01416 181.83)",
+          "oklch(26.4% 0.01416 181.83)",
+          "oklch(37.9% 0.01416 181.83)",
+          "oklch(49.3% 0.01416 181.83)",
+          "oklch(60.7% 0.01416 181.83)",
+          "oklch(72.1% 0.01416 181.83)",
+          "oklch(83.6% 0.01416 181.83)",
+          "oklch(95.0% 0.01416 181.83)"
+        ]
+      },
+      "ivory": {
+        "role": "neutral",
+        "displayName": "Ivory text and action",
+        "tonalRamp": [
+          "oklch(15.0% 0.01493 94.20)",
+          "oklch(26.4% 0.01493 94.20)",
+          "oklch(37.9% 0.01493 94.20)",
+          "oklch(49.3% 0.01493 94.20)",
+          "oklch(60.7% 0.01493 94.20)",
+          "oklch(72.1% 0.01493 94.20)",
+          "oklch(83.6% 0.01493 94.20)",
+          "oklch(95.0% 0.01493 94.20)"
         ]
       },
       "muted": {
         "role": "neutral",
-        "displayName": "Quiet Gray",
+        "displayName": "Secondary operational text",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01404 141.79)",
+          "oklch(26.4% 0.01404 141.79)",
+          "oklch(37.9% 0.01404 141.79)",
+          "oklch(49.3% 0.01404 141.79)",
+          "oklch(60.7% 0.01404 141.79)",
+          "oklch(72.1% 0.01404 141.79)",
+          "oklch(83.6% 0.01404 141.79)",
+          "oklch(95.0% 0.01404 141.79)"
         ]
       },
-      "accent": {
+      "signal": {
+        "role": "primary",
+        "displayName": "Signal lime",
+        "tonalRamp": [
+          "oklch(15.0% 0.19920 121.79)",
+          "oklch(26.4% 0.19920 121.79)",
+          "oklch(37.9% 0.19920 121.79)",
+          "oklch(49.3% 0.19920 121.79)",
+          "oklch(60.7% 0.19920 121.79)",
+          "oklch(72.1% 0.19920 121.79)",
+          "oklch(83.6% 0.19920 121.79)",
+          "oklch(95.0% 0.19920 121.79)"
+        ]
+      },
+      "trace-head": {
+        "role": "primary",
+        "displayName": "Bright trace head",
+        "tonalRamp": [
+          "oklch(15.0% 0.05948 118.66)",
+          "oklch(26.4% 0.05948 118.66)",
+          "oklch(37.9% 0.05948 118.66)",
+          "oklch(49.3% 0.05948 118.66)",
+          "oklch(60.7% 0.05948 118.66)",
+          "oklch(72.1% 0.05948 118.66)",
+          "oklch(83.6% 0.05948 118.66)",
+          "oklch(95.0% 0.05948 118.66)"
+        ]
+      },
+      "copper": {
         "role": "secondary",
-        "displayName": "Armed Lime",
+        "displayName": "Copper latch",
         "tonalRamp": [
-          "oklch(15% 0.1 125)",
-          "oklch(26.4% 0.1 125)",
-          "oklch(37.9% 0.1 125)",
-          "oklch(49.3% 0.1 125)",
-          "oklch(60.7% 0.1 125)",
-          "oklch(72.1% 0.1 125)",
-          "oklch(83.6% 0.1 125)",
-          "oklch(95% 0.1 125)"
+          "oklch(15.0% 0.11650 56.09)",
+          "oklch(26.4% 0.11650 56.09)",
+          "oklch(37.9% 0.11650 56.09)",
+          "oklch(49.3% 0.11650 56.09)",
+          "oklch(60.7% 0.11650 56.09)",
+          "oklch(72.1% 0.11650 56.09)",
+          "oklch(83.6% 0.11650 56.09)",
+          "oklch(95.0% 0.11650 56.09)"
         ]
       },
-      "amber": {
-        "role": "tertiary",
-        "displayName": "Uncertainty Amber",
+      "latch-field": {
+        "role": "secondary",
+        "displayName": "Latched notice field",
         "tonalRamp": [
-          "oklch(15% 0.07 75)",
-          "oklch(26.4% 0.07 75)",
-          "oklch(37.9% 0.07 75)",
-          "oklch(49.3% 0.07 75)",
-          "oklch(60.7% 0.07 75)",
-          "oklch(72.1% 0.07 75)",
-          "oklch(83.6% 0.07 75)",
-          "oklch(95% 0.07 75)"
+          "oklch(15.0% 0.01961 73.61)",
+          "oklch(26.4% 0.01961 73.61)",
+          "oklch(37.9% 0.01961 73.61)",
+          "oklch(49.3% 0.01961 73.61)",
+          "oklch(60.7% 0.01961 73.61)",
+          "oklch(72.1% 0.01961 73.61)",
+          "oklch(83.6% 0.01961 73.61)",
+          "oklch(95.0% 0.01961 73.61)"
+        ]
+      },
+      "latch-line": {
+        "role": "secondary",
+        "displayName": "Latched notice line",
+        "tonalRamp": [
+          "oklch(15.0% 0.06764 70.57)",
+          "oklch(26.4% 0.06764 70.57)",
+          "oklch(37.9% 0.06764 70.57)",
+          "oklch(49.3% 0.06764 70.57)",
+          "oklch(60.7% 0.06764 70.57)",
+          "oklch(72.1% 0.06764 70.57)",
+          "oklch(83.6% 0.06764 70.57)",
+          "oklch(95.0% 0.06764 70.57)"
+        ]
+      },
+      "latch-text": {
+        "role": "secondary",
+        "displayName": "Latched notice text",
+        "tonalRamp": [
+          "oklch(15.0% 0.07689 76.15)",
+          "oklch(26.4% 0.07689 76.15)",
+          "oklch(37.9% 0.07689 76.15)",
+          "oklch(49.3% 0.07689 76.15)",
+          "oklch(60.7% 0.07689 76.15)",
+          "oklch(72.1% 0.07689 76.15)",
+          "oklch(83.6% 0.07689 76.15)",
+          "oklch(95.0% 0.07689 76.15)"
+        ]
+      },
+      "selected": {
+        "role": "neutral",
+        "displayName": "Selected field",
+        "tonalRamp": [
+          "oklch(15.0% 0.02409 139.96)",
+          "oklch(26.4% 0.02409 139.96)",
+          "oklch(37.9% 0.02409 139.96)",
+          "oklch(49.3% 0.02409 139.96)",
+          "oklch(60.7% 0.02409 139.96)",
+          "oklch(72.1% 0.02409 139.96)",
+          "oklch(83.6% 0.02409 139.96)",
+          "oklch(95.0% 0.02409 139.96)"
         ]
       },
       "danger": {
-        "role": "tertiary",
-        "displayName": "Error Rose",
+        "role": "secondary",
+        "displayName": "Error rose",
         "tonalRamp": [
-          "oklch(15% 0.04 20)",
-          "oklch(26.4% 0.04 20)",
-          "oklch(37.9% 0.04 20)",
-          "oklch(49.3% 0.04 20)",
-          "oklch(60.7% 0.04 20)",
-          "oklch(72.1% 0.04 20)",
-          "oklch(83.6% 0.04 20)",
-          "oklch(95% 0.04 20)"
+          "oklch(15.0% 0.14082 20.89)",
+          "oklch(26.4% 0.14082 20.89)",
+          "oklch(37.9% 0.14082 20.89)",
+          "oklch(49.3% 0.14082 20.89)",
+          "oklch(60.7% 0.14082 20.89)",
+          "oklch(72.1% 0.14082 20.89)",
+          "oklch(83.6% 0.14082 20.89)",
+          "oklch(95.0% 0.14082 20.89)"
         ]
       },
-      "control-border": {
+      "light-canvas": {
         "role": "neutral",
-        "displayName": "Control Gray",
+        "displayName": "Light canvas",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01112 89.72)",
+          "oklch(26.4% 0.01112 89.72)",
+          "oklch(37.9% 0.01112 89.72)",
+          "oklch(49.3% 0.01112 89.72)",
+          "oklch(60.7% 0.01112 89.72)",
+          "oklch(72.1% 0.01112 89.72)",
+          "oklch(83.6% 0.01112 89.72)",
+          "oklch(95.0% 0.01112 89.72)"
         ]
       },
-      "secondary-hover": {
+      "light-panel": {
         "role": "neutral",
-        "displayName": "Hover Charcoal",
+        "displayName": "Light panel",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.00798 98.88)",
+          "oklch(26.4% 0.00798 98.88)",
+          "oklch(37.9% 0.00798 98.88)",
+          "oklch(49.3% 0.00798 98.88)",
+          "oklch(60.7% 0.00798 98.88)",
+          "oklch(72.1% 0.00798 98.88)",
+          "oklch(83.6% 0.00798 98.88)",
+          "oklch(95.0% 0.00798 98.88)"
         ]
       },
-      "primary-hover": {
+      "light-rail": {
         "role": "neutral",
-        "displayName": "Hover White",
+        "displayName": "Light rail",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01535 90.24)",
+          "oklch(26.4% 0.01535 90.24)",
+          "oklch(37.9% 0.01535 90.24)",
+          "oklch(49.3% 0.01535 90.24)",
+          "oklch(60.7% 0.01535 90.24)",
+          "oklch(72.1% 0.01535 90.24)",
+          "oklch(83.6% 0.01535 90.24)",
+          "oklch(95.0% 0.01535 90.24)"
         ]
       },
-      "selected-language": {
+      "light-field": {
         "role": "neutral",
-        "displayName": "Selected Charcoal",
+        "displayName": "Light input field",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01211 96.42)",
+          "oklch(26.4% 0.01211 96.42)",
+          "oklch(37.9% 0.01211 96.42)",
+          "oklch(49.3% 0.01211 96.42)",
+          "oklch(60.7% 0.01211 96.42)",
+          "oklch(72.1% 0.01211 96.42)",
+          "oklch(83.6% 0.01211 96.42)",
+          "oklch(95.0% 0.01211 96.42)"
         ]
       },
-      "dialog": {
+      "light-instrument": {
         "role": "neutral",
-        "displayName": "Dialog Charcoal",
+        "displayName": "Light instrument",
         "tonalRamp": [
-          "oklch(15% 0 0)",
-          "oklch(26.4% 0 0)",
-          "oklch(37.9% 0 0)",
-          "oklch(49.3% 0 0)",
-          "oklch(60.7% 0 0)",
-          "oklch(72.1% 0 0)",
-          "oklch(83.6% 0 0)",
-          "oklch(95% 0 0)"
+          "oklch(15.0% 0.01327 102.02)",
+          "oklch(26.4% 0.01327 102.02)",
+          "oklch(37.9% 0.01327 102.02)",
+          "oklch(49.3% 0.01327 102.02)",
+          "oklch(60.7% 0.01327 102.02)",
+          "oklch(72.1% 0.01327 102.02)",
+          "oklch(83.6% 0.01327 102.02)",
+          "oklch(95.0% 0.01327 102.02)"
         ]
       },
-      "warning-bg": {
+      "light-ink": {
         "role": "neutral",
-        "displayName": "Warning Charcoal",
+        "displayName": "Light primary ink",
         "tonalRamp": [
-          "oklch(15% 0.01 75)",
-          "oklch(26.4% 0.01 75)",
-          "oklch(37.9% 0.01 75)",
-          "oklch(49.3% 0.01 75)",
-          "oklch(60.7% 0.01 75)",
-          "oklch(72.1% 0.01 75)",
-          "oklch(83.6% 0.01 75)",
-          "oklch(95% 0.01 75)"
+          "oklch(15.0% 0.00624 236.93)",
+          "oklch(26.4% 0.00624 236.93)",
+          "oklch(37.9% 0.00624 236.93)",
+          "oklch(49.3% 0.00624 236.93)",
+          "oklch(60.7% 0.00624 236.93)",
+          "oklch(72.1% 0.00624 236.93)",
+          "oklch(83.6% 0.00624 236.93)",
+          "oklch(95.0% 0.00624 236.93)"
         ]
       },
-      "warning-border": {
+      "light-muted": {
         "role": "neutral",
-        "displayName": "Warning Edge",
+        "displayName": "Light secondary ink",
         "tonalRamp": [
-          "oklch(15% 0.03 75)",
-          "oklch(26.4% 0.03 75)",
-          "oklch(37.9% 0.03 75)",
-          "oklch(49.3% 0.03 75)",
-          "oklch(60.7% 0.03 75)",
-          "oklch(72.1% 0.03 75)",
-          "oklch(83.6% 0.03 75)",
-          "oklch(95% 0.03 75)"
+          "oklch(15.0% 0.01347 141.22)",
+          "oklch(26.4% 0.01347 141.22)",
+          "oklch(37.9% 0.01347 141.22)",
+          "oklch(49.3% 0.01347 141.22)",
+          "oklch(60.7% 0.01347 141.22)",
+          "oklch(72.1% 0.01347 141.22)",
+          "oklch(83.6% 0.01347 141.22)",
+          "oklch(95.0% 0.01347 141.22)"
+        ]
+      },
+      "light-line": {
+        "role": "neutral",
+        "displayName": "Light hairline",
+        "tonalRamp": [
+          "oklch(15.0% 0.01980 90.56)",
+          "oklch(26.4% 0.01980 90.56)",
+          "oklch(37.9% 0.01980 90.56)",
+          "oklch(49.3% 0.01980 90.56)",
+          "oklch(60.7% 0.01980 90.56)",
+          "oklch(72.1% 0.01980 90.56)",
+          "oklch(83.6% 0.01980 90.56)",
+          "oklch(95.0% 0.01980 90.56)"
+        ]
+      },
+      "light-signal": {
+        "role": "primary",
+        "displayName": "Light signal green",
+        "tonalRamp": [
+          "oklch(15.0% 0.13666 124.64)",
+          "oklch(26.4% 0.13666 124.64)",
+          "oklch(37.9% 0.13666 124.64)",
+          "oklch(49.3% 0.13666 124.64)",
+          "oklch(60.7% 0.13666 124.64)",
+          "oklch(72.1% 0.13666 124.64)",
+          "oklch(83.6% 0.13666 124.64)",
+          "oklch(95.0% 0.13666 124.64)"
+        ]
+      },
+      "light-copper": {
+        "role": "secondary",
+        "displayName": "Light warning copper",
+        "tonalRamp": [
+          "oklch(15.0% 0.12277 53.11)",
+          "oklch(26.4% 0.12277 53.11)",
+          "oklch(37.9% 0.12277 53.11)",
+          "oklch(49.3% 0.12277 53.11)",
+          "oklch(60.7% 0.12277 53.11)",
+          "oklch(72.1% 0.12277 53.11)",
+          "oklch(83.6% 0.12277 53.11)",
+          "oklch(95.0% 0.12277 53.11)"
+        ]
+      },
+      "light-danger": {
+        "role": "secondary",
+        "displayName": "Light error rose",
+        "tonalRamp": [
+          "oklch(15.0% 0.15565 21.23)",
+          "oklch(26.4% 0.15565 21.23)",
+          "oklch(37.9% 0.15565 21.23)",
+          "oklch(49.3% 0.15565 21.23)",
+          "oklch(60.7% 0.15565 21.23)",
+          "oklch(72.1% 0.15565 21.23)",
+          "oklch(83.6% 0.15565 21.23)",
+          "oklch(95.0% 0.15565 21.23)"
         ]
       }
     },
     "typographyMeta": {
       "display": {
-        "displayName": "Login Display",
-        "purpose": "Login headline; inherits the current interface language font."
+        "displayName": "Login statement",
+        "purpose": "Broad desktop login headline; compact layout becomes 34px."
       },
       "headline": {
-        "displayName": "Page Headline",
-        "purpose": "Page titles; inherits current language font."
+        "displayName": "Page heading",
+        "purpose": "Light 32px heading; compact layout becomes 28px."
       },
       "title": {
-        "displayName": "Section Title",
-        "purpose": "Panel and settings headings."
+        "displayName": "Panel title",
+        "purpose": "Operational grouping and panel headings."
       },
       "body": {
-        "displayName": "Chinese Interface",
-        "purpose": "Default interface stack."
-      },
-      "english-interface": {
-        "displayName": "Sora Interface",
-        "purpose": "Self-hosted English UI via html:lang(en)."
+        "displayName": "Bilingual interface",
+        "purpose": "Geist with Noto Sans SC for equal Chinese and English functionality."
       },
       "label": {
-        "displayName": "Form Label",
-        "purpose": "Field labels and settings details."
+        "displayName": "Operational measurement",
+        "purpose": "Quotes, timestamps, quota and exact market metadata."
       },
-      "small": {
-        "displayName": "Supporting Copy",
-        "purpose": "Compact explanations."
+      "index": {
+        "displayName": "Approved English page index",
+        "purpose": "Short explicit indexes in Unbounded, as pinned by the final handoff."
       },
-      "quote": {
-        "displayName": "Tabular Quote",
-        "purpose": "Current market price."
+      "live-quote": {
+        "displayName": "Live quote",
+        "purpose": "Tabular current price with bounded display precision and adaptive fitting."
       },
       "threshold": {
-        "displayName": "Alert Threshold",
-        "purpose": "Prominent saved rule price."
+        "displayName": "Rule threshold",
+        "purpose": "Saved alert threshold; display treatment never changes its stored value."
       }
     },
     "shadows": [
       {
-        "name": "toast",
-        "value": "0 6px 32px #0006",
-        "purpose": "Temporary action feedback."
+        "name": "account-menu",
+        "value": "0 24px 60px #0009",
+        "purpose": "Upward account popover."
       },
       {
         "name": "dialog",
-        "value": "0 20px 80px #0007",
-        "purpose": "Native modal above the workbench."
+        "value": "0 32px 100px #0008",
+        "purpose": "Centered modal or mobile bottom sheet."
+      },
+      {
+        "name": "mobile-dock",
+        "value": "0 12px 40px #0004",
+        "purpose": "Floating mobile navigation."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px color-mix(in srgb, var(--signal) 12%, transparent)",
+        "purpose": "Input focus treatment, paired with the signal border."
       }
     ],
     "motion": [
       {
-        "name": "button-transition",
-        "value": "background .16s, border-color .16s",
-        "purpose": "Button hover states."
+        "name": "control-state",
+        "value": "160ms ease",
+        "purpose": "Shared reversible color and border feedback."
       },
       {
-        "name": "workspace-enter",
-        "value": "workbench-enter .32s cubic-bezier(.16,1,.3,1)",
-        "purpose": "8px vertical workspace entry."
+        "name": "quote-digit",
+        "value": "0.9s ease-out",
+        "purpose": "Flash changed digits only; no intermediate fabricated prices."
       },
       {
-        "name": "reduced-motion",
-        "value": "animation:none!important; transition:none!important",
-        "purpose": "Respect prefers-reduced-motion."
+        "name": "price-guide",
+        "value": "top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Follow a distinct current-session trade sample."
+      },
+      {
+        "name": "tick-ripple",
+        "value": "1.4s ease-out both",
+        "purpose": "One ring per accepted fresh trade; never an idle loop."
+      },
+      {
+        "name": "panel-pending",
+        "value": "1.6s ease-in-out infinite",
+        "purpose": "One-pixel indeterminate loading segment only while loading."
+      },
+      {
+        "name": "boot-mark",
+        "value": "0.7s power3.out",
+        "purpose": "GSAP assembles the two supplied mark halves."
+      },
+      {
+        "name": "boot-word",
+        "value": "0.85s power3.out",
+        "purpose": "Focus the wordmark and settle tracking."
+      },
+      {
+        "name": "boot-assembled-hold",
+        "value": "0.24s",
+        "purpose": "Readable hold after the entrance timeline."
+      },
+      {
+        "name": "boot-exit-line",
+        "value": "0.4s power3.inOut",
+        "purpose": "Expand the fine line before curtain fade."
+      },
+      {
+        "name": "boot-curtain-fade",
+        "value": "0.5s; reduced motion 0.1s",
+        "purpose": "Release route output after actual boot claims settle."
       }
     ],
     "breakpoints": [
       {
-        "name": "footer-gutter",
-        "value": "1599px"
+        "name": "compact-desktop",
+        "value": "1250px"
       },
       {
-        "name": "workspace-compact",
-        "value": "1200px"
-      },
-      {
-        "name": "settings-padding-inherited",
+        "name": "narrow-desktop",
         "value": "1100px"
       },
       {
-        "name": "workspace-stack",
+        "name": "mobile-shell",
         "value": "900px"
       },
       {
-        "name": "inherited-narrow-layout",
-        "value": "760px"
-      },
-      {
-        "name": "mobile-actions",
+        "name": "compact-boot",
         "value": "600px"
-      },
-      {
-        "name": "single-column-form",
-        "value": "380px"
       }
-    ],
-    "focus": {
-      "outline": "2px solid var(--accent)",
-      "offset": "3px"
-    },
-    "provenance": {
-      "mode": "source-extracted production design record",
-      "sources": [
-        "web/main.tsx",
-        "web/styles.css",
-        "web/workbench.css",
-        "web/App.tsx",
-        "web/i18n.ts",
-        "web/components/Icon.tsx",
-        "web/components/TradingChart.tsx",
-        "web/components/Dialog.tsx",
-        "web/pages/Dashboard.tsx",
-        "web/pages/Login.tsx",
-        "web/pages/Notifications.tsx",
-        "web/pages/Account.tsx",
-        "web/pages/Admin.tsx",
-        "public/icon.svg",
-        "public/fonts/OFL.txt"
-      ],
-      "rasterAssetsShipped": false,
-      "fontLicense": "SIL Open Font License 1.1; public/fonts/OFL.txt",
-      "tonalRamps": "Synthesized display metadata; not extracted application tokens.",
-      "notCanonized": "Inherited Google button blue fill and enabled switch cream thumb are retained component details, not expanded into the reusable palette."
-    }
+    ]
   },
   "components": [
     {
-      "name": "Primary Button",
+      "name": "Primary action",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "White action with the shipped inline plus icon.",
-      "html": "<button type=\"button\" class=\"ds-primary\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M12 4v16M4 12h16\"/></svg>Create alert</button>",
-      "css": ".ds-primary{font:inherit;border:1px solid var(--border,#333333);border-radius:6px;padding:8px 12px;min-height:38px;cursor:pointer;transition:background .16s,border-color .16s;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--text,#ededed);color:var(--bg,#111111);border-color:var(--text,#ededed);font-weight:500}.ds-primary svg{width:18px;height:18px}.ds-primary:hover{background:#ccc;border-color:#ccc}.ds-primary:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-primary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-primary{min-width:44px;min-height:44px}}"
+      "description": "Ivory action in dark appearance; follows the semantic text/canvas pair in light appearance.",
+      "html": "<button class=\"ds-primary\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" width=\"15\" height=\"15\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg>创建警报</button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:999px;font:600 13px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);cursor:pointer;transition:background-color 160ms ease,border-color 160ms ease,color 160ms ease;background:var(--text,#f3f0e5);color:var(--bg,#05070a);border:1px solid var(--text,#f3f0e5)}.ds-primary:hover{background:var(--primary-hover,#dad8cf);border-color:var(--primary-hover,#dad8cf)}.ds-primary:focus-visible{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-primary:active{transform:translateY(1px)}.ds-primary:disabled{opacity:.5;pointer-events:none}"
     },
     {
-      "name": "Secondary Button",
+      "name": "Secondary action",
       "kind": "button",
-      "refersTo": "button-secondary",
-      "description": "Quiet outlined action.",
-      "html": "<button type=\"button\" class=\"ds-secondary\">Refresh status</button>",
-      "css": ".ds-secondary{font:inherit;border:1px solid var(--border,#333333);border-radius:6px;padding:8px 12px;min-height:38px;cursor:pointer;transition:background .16s,border-color .16s;background:transparent;color:var(--text,#ededed)}.ds-secondary:hover{background:#292929}.ds-secondary:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-secondary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-secondary{min-width:44px;min-height:44px}}"
+      "refersTo": "button-outline",
+      "description": "Quiet outlined action for refresh, test and other secondary operations.",
+      "html": "<button class=\"ds-outline\">重新读取状态</button>",
+      "css": ".ds-outline{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:999px;font:600 13px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);cursor:pointer;transition:background-color 160ms ease,border-color 160ms ease,color 160ms ease;font-weight:400;background:transparent;color:var(--text,#f3f0e5);border:1px solid var(--control-border,#26302e)}.ds-outline:hover{background:var(--secondary-hover,#121a1c);border-color:var(--control-hover,#53654b)}.ds-outline:focus-visible{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-outline:active{transform:translateY(1px)}.ds-outline:disabled{opacity:.5;pointer-events:none}"
     },
     {
-      "name": "Text Action",
+      "name": "Inline text action",
       "kind": "button",
       "refersTo": "button-text",
-      "description": "Muted chart and supporting action.",
-      "html": "<button type=\"button\" class=\"ds-text\">Reconnect chart</button>",
-      "css": ".ds-text{font:inherit;font-size:11px;border:0;padding:6px 0;min-height:32px;background:transparent;color:var(--muted,#a3a3a3);text-align:left;cursor:pointer}.ds-text:hover{color:var(--text,#ededed);text-decoration:underline}.ds-text:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-text{min-width:44px;min-height:44px}}"
+      "description": "Low-emphasis alert-row edit action; mobile increases its target to 44px.",
+      "html": "<button class=\"ds-text\">编辑</button>",
+      "css": ".ds-text{border:0;border-radius:0;background:none;color:var(--muted-foreground,#959c94);font:400 12px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);min-height:24px;padding:0;cursor:pointer}.ds-text:hover{color:var(--text,#f3f0e5)}.ds-text:focus-visible{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-text:active{transform:translateY(1px)}.ds-text:disabled{opacity:.5;pointer-events:none}@media(max-width:900px){.ds-text{min-height:44px}}"
     },
     {
-      "name": "Labeled Input",
+      "name": "Labelled field",
       "kind": "input",
       "refersTo": "input",
-      "description": "Filled form field with explicit label.",
-      "html": "<label class=\"ds-label\">Alert name<input class=\"ds-input\" placeholder=\"For example: previous high\" /></label>",
-      "css": ".ds-label{display:flex;flex-direction:column;gap:8px;margin:18px 0;font-size:12px;color:var(--text,#ededed)}.ds-input{font:inherit;width:100%;min-width:0;min-height:43px;color:var(--text,#ededed);background:var(--field,#202020);border:1px solid #555555;border-radius:6px;padding:10px 12px;caret-color:var(--accent,#b6f36a)}.ds-input::placeholder{color:#a3a3a3}.ds-input:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-input{min-height:44px}}"
+      "description": "Visible label, quiet dark field and a precise signal focus ring.",
+      "html": "<label class=\"ds-field-label\" for=\"ds-alert-name\">警报名称</label><input class=\"ds-field\" id=\"ds-alert-name\" placeholder=\"警报名称\" />",
+      "css": ".ds-field-label{display:block;margin-bottom:8px;font:400 12px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);color:var(--muted-foreground,#959c94)}.ds-field{width:100%;min-height:44px;padding:10px 12px;background:var(--field,#07090b);color:var(--text,#f3f0e5);border:1px solid var(--control-border,#26302e);border-radius:12px;font:400 14px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);transition:border-color 160ms ease,box-shadow 160ms ease}.ds-field::placeholder{color:var(--muted-foreground,#959c94)}.ds-field:hover{border-color:var(--control-hover,#53654b)}.ds-field:focus-visible{border-color:var(--signal,#d6ff4f);outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--signal,#d6ff4f) 12%,transparent)}.ds-field:disabled{opacity:.5}"
     },
     {
-      "name": "Workbench Navigation",
+      "name": "Desktop route navigation",
       "kind": "nav",
       "refersTo": "nav-active",
-      "description": "Neutral links with a lime current-page underline.",
-      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"#dashboard\" aria-current=\"page\">Markets &amp; alerts</a><a href=\"#notifications\">Phone notifications</a></nav>",
-      "css": ".ds-nav{display:flex;align-items:stretch;gap:26px;height:46px}.ds-nav a{display:flex;align-items:center;font-size:13px;white-space:nowrap;text-decoration:none;color:var(--muted,#a3a3a3);border-bottom:2px solid transparent}.ds-nav a:hover{color:var(--text,#ededed)}.ds-nav a[aria-current=page]{color:var(--text,#ededed);border-color:var(--accent,#b6f36a)}.ds-nav a:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}@media(max-width:600px){.ds-nav{gap:24px;overflow-x:auto}.ds-nav a{font-size:12px;flex-shrink:0}}"
+      "description": "Measured selected fill and a three-pixel signal stripe; the preview shows its settled state.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"主导航\"><a href=\"#dashboard\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"M3 12h4l3-8 4 16 3-8h4\"/></svg>行情与警报</a><a href=\"#notifications\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4\"/></svg>手机通知</a></nav>",
+      "css": ".ds-nav{display:grid;gap:4px;max-width:200px}.ds-nav a{display:flex;align-items:center;gap:12px;min-height:46px;padding:0 13px;border-radius:12px;color:var(--muted-foreground,#959c94);font:400 14px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);text-decoration:none}.ds-nav a[aria-current]{color:var(--text,#f3f0e5);background:linear-gradient(90deg,var(--signal,#d6ff4f) 0 3px,var(--selected,#1b2419) 3px)}.ds-nav a:hover{color:var(--text,#f3f0e5);background-color:var(--secondary-hover,#121a1c)}.ds-nav a:focus-visible{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-nav a:active{opacity:.8}"
     },
     {
-      "name": "Configuration Pill",
+      "name": "Armed state chip",
       "kind": "chip",
-      "refersTo": "status-pill",
-      "description": "Compact outlined configuration status.",
-      "html": "<span class=\"ds-pill\">Not configured</span><span class=\"ds-pill ds-pill-success\">Configured</span>",
-      "css": ".ds-pill{display:inline-block;border:1px solid var(--line,#333333);background:none;color:var(--amber,#f1bd72);border-radius:4px;padding:5px 9px;font-size:11px;white-space:nowrap}.ds-pill-success{color:var(--accent,#b6f36a)}"
+      "refersTo": "state-chip",
+      "description": "A static labelled state, never an idle breathing status light.",
+      "html": "<span class=\"ds-state\">武装中</span>",
+      "css": ".ds-state{display:inline-block;padding:3px 7px;border-radius:999px;background:var(--signal-bg,#d6ff4f12);color:var(--signal,#d6ff4f);font:400 11px/1.4 var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace);white-space:nowrap}"
     },
     {
-      "name": "Settings Panel",
+      "name": "Settings panel",
       "kind": "card",
-      "refersTo": "settings-panel",
-      "description": "Flat charcoal panel used for account and delivery settings.",
-      "html": "<section class=\"ds-panel\"><h2>Account information</h2><p>Only your own alerts, prices and settings are shown.</p></section>",
-      "css": ".ds-panel{background:var(--surface,#171717);color:var(--text,#ededed);border:1px solid var(--border,#333333);border-radius:6px;padding:25px;min-width:0}.ds-panel h2{font-size:18px;font-weight:600;line-height:1.4;margin:0 0 16px}.ds-panel p{max-width:65ch;font-size:12px;line-height:1.7;color:var(--muted,#a3a3a3);margin:0}@media(max-width:1100px){.ds-panel{padding:22px}}@media(max-width:600px){.ds-panel{padding:22px 18px}}"
+      "refersTo": "panel",
+      "description": "Flat tonal grouping, hairline boundary and a restrained operational heading.",
+      "html": "<section class=\"ds-panel\"><span class=\"ds-section-index\">01 — CHANNEL</span><h2>Pushover 连接</h2><p>把价格警报发到自己的 Pushover 账户。</p></section>",
+      "css": ".ds-panel{padding:24px;border:1px solid var(--line,#1a2123);border-radius:20px;background:var(--card,#0a0e10);color:var(--text,#f3f0e5)}.ds-section-index{font:400 11px/1.5 var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace);letter-spacing:.12em;color:var(--muted-foreground,#959c94)}.ds-panel h2{margin:6px 0 8px;font:400 18px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif)}.ds-panel p{margin:0;font:400 12px/1.7 var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);color:var(--muted-foreground,#959c94)}@media(max-width:900px){.ds-panel{padding:20px;border-radius:18px}}"
     },
     {
-      "name": "Monitoring Switch",
+      "name": "Pair-first market selector",
+      "kind": "button",
+      "refersTo": "input",
+      "description": "Pair leads; exact venue and product remain visible beside it.",
+      "html": "<button class=\"ds-market\"><strong>BTC <em>/ USDT</em></strong><small>Binance · 现货</small><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" width=\"15\" height=\"15\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button>",
+      "css": ".ds-market{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:44px;padding:6px 10px;border:1px solid var(--control-border,#26302e);border-radius:12px;background:var(--field,#07090b);color:var(--text,#f3f0e5);cursor:pointer}.ds-market strong{font:400 16px var(--body-font,\"Geist\",\"Noto Sans SC\",sans-serif);letter-spacing:-.04em}.ds-market em{font-style:normal;color:var(--muted-foreground,#959c94)}.ds-market small{font:400 11px/1.4 var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace);color:var(--muted-foreground,#959c94)}.ds-market:hover{border-color:var(--control-hover,#53654b)}.ds-market:focus-visible{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-market:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Monitoring switch",
       "kind": "custom",
-      "refersTo": "switch",
-      "description": "Actual enabled switch; mobile hit area wraps the visible track.",
-      "html": "<button class=\"ds-switch\" type=\"button\" role=\"switch\" aria-checked=\"true\" aria-label=\"Monitoring enabled\"></button>",
-      "css": ".ds-switch{width:44px;height:28px;min-height:28px;border-radius:14px;background:#555;border:0;padding:2px;position:relative;cursor:pointer;transition:background .16s,border-color .16s}.ds-switch:hover{background:#292929}.ds-switch:after{content:\"\";position:absolute;width:18px;height:18px;border-radius:50%;top:5px;left:5px;background:var(--bg,#111111)}.ds-switch[aria-checked=true]{background:var(--accent,#b6f36a)}.ds-switch[aria-checked=true]:after{left:21px;background:#fff2d5}.ds-switch:focus-visible{outline:2px solid var(--accent,#b6f36a);outline-offset:3px}.ds-switch:disabled{opacity:.45;cursor:not-allowed}@media(max-width:600px){.ds-switch{width:44px;height:44px;min-height:44px;background:transparent;padding:0}.ds-switch:before{content:\"\";position:absolute;left:0;top:10px;width:44px;height:24px;border-radius:20px;background:#555}.ds-switch:after{left:3px;top:13px}.ds-switch[aria-checked=true],.ds-switch:hover,.ds-switch[aria-checked=true]:hover{background:transparent}.ds-switch[aria-checked=true]:before{background:var(--accent,#b6f36a)}.ds-switch[aria-checked=true]:after{left:3px;transform:translateX(20px)}}"
+      "description": "One native switch target inside a labelled monitoring cell; preview starts paused.",
+      "html": "<label class=\"ds-monitor\"><span>监控总开关</span><input class=\"ds-monitor-input\" type=\"checkbox\" role=\"switch\" aria-label=\"监控总开关\"/><span class=\"ds-switch\" aria-hidden=\"true\"></span></label>",
+      "css": ".ds-monitor{display:flex;align-items:center;justify-content:space-between;position:relative;gap:24px;min-height:44px;color:var(--muted-foreground,#959c94);font:400 11px/1.4 var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace);cursor:pointer}.ds-monitor-input{position:absolute;right:0;width:44px;height:44px;opacity:0;cursor:pointer}.ds-switch{position:relative;width:44px;height:24px;border-radius:999px;background:var(--control-border,#26302e);pointer-events:none}.ds-switch:before{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--bg,#05070a);transition:transform 160ms ease}.ds-monitor-input:checked+.ds-switch{background:var(--signal,#d6ff4f)}.ds-monitor-input:checked+.ds-switch:before{transform:translateX(20px)}.ds-monitor-input:focus-visible+.ds-switch{outline:2px solid var(--signal,#d6ff4f);outline-offset:3px;}.ds-monitor:hover .ds-switch{outline:1px solid var(--control-hover,#53654b)}.ds-monitor-input:active+.ds-switch{opacity:.8}@media(prefers-reduced-motion:reduce){.ds-switch:before{transition:none}}"
+    },
+    {
+      "name": "Session trace — acquiring signal",
+      "kind": "custom",
+      "refersTo": "signal-instrument",
+      "description": "The actual empty trace state. The live mobile plot reserves an 84px right gutter and a 78px maximum price label. This preview supplies no invented history or price.",
+      "html": "<section class=\"ds-trace\" aria-label=\"成交价格迹线\"><div class=\"ds-trace-caption\"><span>本页成交采样 · 最近 90 次</span><span>TICK #0 · +0</span></div><span class=\"ds-trace-empty\">ACQUIRING SIGNAL</span></section>",
+      "css": ".ds-trace{position:relative;min-height:248px;border:1px solid var(--hero-line,#26302e);border-radius:24px;overflow:hidden;background-color:var(--hero-bg,#090d0c);background-image:radial-gradient(var(--hero-grid,#d6ff4f2e) 1px,transparent 1.4px);background-size:14px 14px}.ds-trace:before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--signal,#d6ff4f) 62%,transparent) 30%,color-mix(in srgb,var(--text,#f3f0e5) 25%,transparent) 60%,transparent 85%)}.ds-trace-caption{position:absolute;top:16px;left:16px;right:14px;display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--hero-muted,#959c94);font:400 11px/1.5 var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace)}.ds-trace-empty{display:grid;place-items:center;min-height:248px;color:var(--hero-muted,#959c94);font:400 11px var(--mono-font,\"Geist Mono\",\"Noto Sans SC\",monospace);letter-spacing:.1em}@media(max-width:900px){.ds-trace{min-height:120px;background-size:12px 12px;border-radius:20px}.ds-trace-empty{min-height:120px}.ds-trace-caption>span:first-child{display:none}}"
     }
   ],
   "narrative": {
-    "northStar": "The Black-White Workbench",
-    "overview": "A familiar, compact developer workbench puts precise prices and rule actions ahead of decoration. The user selected the black-white direction and Vercel as its sole visual reference. Near-black canvas, flat charcoal panels, quiet separators and white primary actions define the implemented system.\n\nThe original threshold-pulse SVG supplies identity. Restrained lime communicates activity and focus; amber communicates locked states, uncertainty and warnings. Chinese uses the system sans-serif stack, English uses self-hosted Sora, and tabular monospace keeps numeric values stable.",
+    "northStar": "Breakout 3a — the signal instrument",
+    "overview": "Open Alert is an operating instrument for exchange-price alerts. Its approved world is the final Breakout HTML handoff: a split-circle SVG mark, charcoal fields, a thin trade trace, compact operational labels and calm, very light headings. The quote, monitoring state and rule actions carry the hierarchy. The English page indexes and dotted signal field are deliberate parts of this user-approved world.\n\nThis replaces the previous Signal Almanac identity. Design authority is the README and final HTML/SVG files in F:/code/design_handoff_openalert_final/. The implemented source of truth is the final cascade in web/breakout.css, web/boot.css and web/fonts.css, together with the shipped React components. web/redesign.css supplies inherited primitives and light appearance; it is no longer the visual authority by itself. Dark appearance follows the supplied reference. Light and system appearance remain supported through semantic tokens; the light edition is a functional adaptation, not a claim of a second supplied reference.",
     "keyCharacteristics": [
-      "Compact dark surfaces with clear separators.",
-      "White primary actions with restrained semantic accents.",
-      "Self-hosted English type, readable Chinese copy and tabular prices.",
-      "Equal Chinese and English functionality and mobile actions."
+      "Split-circle Breakout SVG identity with displaced upper and lower halves.",
+      "Charcoal and ivory structure; lime signals state and copper signals a lower threshold, pause, latch or warning.",
+      "Geist and Noto Sans SC interface, Geist Mono telemetry, and restrained Unbounded page indexes.",
+      "Fixed desktop rail, a three-column signal instrument, and a separate mobile alerts route.",
+      "Real trade sampling moves the trace; boot and loading motion report actual lifecycle state.",
+      "Existing alert, authentication, accessibility and notification constraints remain visible."
     ],
     "rules": [
       {
-        "name": "The State Has Words Rule",
-        "body": "Pair monitoring and delivery colors with readable status labels.",
+        "name": "The Signal Is State Rule",
+        "body": "Lime is not the primary-button fill. Use it for signal, focus and the approved identity/field treatments; keep primary actions on the semantic text/canvas pair.",
         "section": "colors"
       },
       {
+        "name": "The State Has Words Rule",
+        "body": "Armed, paused, stale, latched, pending and uncertain states require text. Color does not substitute for a state label or delivery outcome.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measurement Type Rule",
+        "body": "Prices, timestamps, quotas and market metadata remain legible and stable. Display formatting bounds quote precision without changing saved thresholds or backend evaluation values. User-authored names and account identities wrap rather than disappear.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tick Owns Motion Rule",
+        "body": "A distinct exchange trade advances the trace, updates its current-price guide and releases one endpoint ripple. Repeated polling snapshots do not invent a new trade. Changed quote digits flash toward lime or copper for 0.9s. The guide follows over 0.6s and the ripple completes once over 1.4s. Resting status pips are static; no decorative sweep or orbit loop belongs to this world.",
+        "section": "elevation"
+      },
+      {
         "name": "The Native Chart Rule",
-        "body": "Preserve TradingView controls and attribution when adapting the surrounding workbench.",
+        "body": "Do not hide attribution, restyle inside the iframe, or imply that chart drawings create server-side alerts.",
         "section": "components"
       }
     ],
     "dos": [
-      "Do use neutral surfaces and white primary actions.",
-      "Do pair state colors with explicit Chinese and English labels.",
-      "Do preserve prominent tabular prices and readable supporting copy.",
-      "Do retain visible keyboard focus and the implemented mobile touch targets.",
-      "Do retain the original SVG identity and native chart affordances."
+      "Do use the supplied Breakout split-circle SVG, final font roles, explicit English indexes and dotted signal field.",
+      "Do keep primary actions on the semantic text/canvas pair and reserve signal/copper for their established meanings.",
+      "Do show actual market identity, freshness, monitoring state and delivery uncertainty in words.",
+      "Do drive the trace from distinct observed trades and label its current-session scope.",
+      "Do retain complete mobile, keyboard and reduced-motion paths, including /alerts and notification edit forms.",
+      "Do use semantic CSS variables so retained light/system appearances remain coherent."
     ],
     "donts": [
-      "Don't reintroduce the discarded plum or circuit palettes.",
-      "Don't use color as the only explanation of monitoring or delivery state.",
-      "Don't load raster replacements for the shipped SVG identity.",
-      "Don't apply the app font or custom controls inside the external TradingView iframe."
+      "Don't restore Sora headings, the angular mark, lime primary-button fills or orbit decoration from Signal Almanac.",
+      "Don't add idle signal loops, timed fake ticks, invented login prices or prefilled historical trace data.",
+      "Don't round or alter saved thresholds and backend prices to fit a display.",
+      "Don't clear latches on edit, bypass queued/sending restrictions, or describe uncertain delivery as confirmed success.",
+      "Don't let a mobile summary hide the route or form needed to complete an operation.",
+      "Don't replace or obscure the official TradingView controls and attribution."
     ]
   }
 }

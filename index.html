@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#090c0e" />
+    <meta name="theme-color" content="#05070a" />
     <meta name="description" content="价格哨站：个人多交易所价格警报与 Pushover 手机通知。" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <script>
@@ -13,7 +13,7 @@
         theme = theme === 'light' || theme === 'dark' ? theme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         const root = document.documentElement;
         root.dataset.theme = theme; root.classList.toggle('dark', theme === 'dark'); root.style.colorScheme = theme;
-        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#090c0e' : '#f2efe7';
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#05070a' : '#f2efe7';
         root.lang = language === 'en' || language === 'zh-CN' ? language : (navigator.languages || [navigator.language]).map(value => /^zh(?:-|$)/i.test(value) ? 'zh-CN' : /^en(?:-|$)/i.test(value) ? 'en' : null).find(Boolean) || 'en';
       })();
     </script>

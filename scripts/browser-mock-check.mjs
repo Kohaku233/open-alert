@@ -31,9 +31,10 @@ const results = [], violations = [], runtimeErrors = [], externalAttempts = [];
 let assertions = 0, apiRequests = 0, authRequests = 0, chartScripts = 0;
 const check = async (name, fn) => { assertions++; await fn(); };
 const journey = async (name, fn) => { const start = Date.now(); try { await fn(); results.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`); } catch (error) { results.push({ name, passed: false, error: error.stack }); throw error; } };
-const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
+const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
 assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
 assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
+for (const name of await readdir(join(root, 'dist/web/fonts/breakout'))) if (name.endsWith('.woff2')) assets.set('/fonts/breakout/'+name, ['fonts/breakout/'+name,'font/woff2']);
 for (const name of await readdir(join(root, 'dist/web/assets'))) assets.set(`/assets/${name}`, [`assets/${name}`, name.endsWith('.css') ? 'text/css' : 'application/javascript']);
 const server = createServer(async (req, res) => {
   try { const item = assets.get(new URL(req.url, 'http://localhost').pathname); if (!item) { res.writeHead(404); return res.end('Not found'); } const body = await readFile(join(root, 'dist/web', item[0])); res.writeHead(200, { 'Content-Type': item[1], 'Cache-Control': 'no-store' }); res.end(body); }
@@ -200,7 +201,30 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
   });
   return { page, context, state };
 }
-const nav = (page, name) => page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click();
+const nav = async (page, name) => {
+ const href = ({'行情与警报':'/dashboard','Markets & alerts':'/dashboard','Markets':'/dashboard','手机通知':'/notifications','Notifications':'/notifications','我的账户':'/account','Account':'/account','管理':'/admin','Alerts':'/alerts'})[name];
+ const link=page.locator('nav:visible a[href="'+href+'"]');
+ if (await link.count()) return link.click();
+ await page.locator('nav:visible a[href="/account"]').click();
+ await page.locator('.mobile-admin-link').click();
+};
+async function accountControls(page) {
+ if (await page.locator('.account-preferences:visible').count()) return;
+ const chip=page.locator('.account-chip:visible');
+ if (await chip.count()) { await chip.click(); return; }
+ await nav(page, 'Account');
+}
+async function languageChoice(page,language) {
+ const previous = new URL(page.url()).pathname;
+ if (!await page.getByRole('button',{name:language,exact:true}).isVisible()) await accountControls(page);
+ await page.getByRole('button',{name:language,exact:true}).click();
+ if (await page.locator('.account-menu:visible').count()) { await page.keyboard.press('Escape'); await expect(page.locator('.account-menu')).toHaveCount(0); }
+ const names={'/dashboard':'Markets & alerts','/notifications':'Notifications','/account':'Account','/admin':'管理','/alerts':'Alerts'};
+ if (new URL(page.url()).pathname !== previous && names[previous]) await nav(page,names[previous]);
+}
+
+async function signOut(page) { await accountControls(page); await page.getByRole('button',{name:'退出登录',exact:true}).click(); }
+
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
@@ -213,6 +237,8 @@ async function settleBootClock(page) {
 }
 async function noOverflow(page) { await check('mobile horizontal overflow', async () => { const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth })); assert(size.scroll <= size.width+1, JSON.stringify(size)); }); }
 async function refreshNavigation(page) { await page.reload(); await expect(page.getByRole('switch', { name: '监控总开关' })).toBeVisible(); }
+export { setup, server, origin, runtimeErrors, violations, nav, accountControls };
+if (process.env.OPEN_ALERT_FIXTURE_SERVER_ONLY !== '1') {
 let browser, timedOut = false;
 // Every fresh document boots behind the entrance curtain until its logo is fully
 // formed and any view-handshake claims settle. The guard only needs to catch hangs.
@@ -236,7 +262,7 @@ try {
     await check('signed in dashboard', () => expect(page.getByRole('switch')).toHaveAttribute('aria-checked','false'));
     await check('HttpOnly fixture cookie', async () => assert((await context.cookies(origin)).some(c => c.name === cookieName && c.httpOnly)));
     await refreshNavigation(page);
-    await check('reload session persists', () => expect(page.getByRole('button', { name: '退出登录' })).toBeVisible());
+    await check('reload session persists', () => expect(page.getByRole('heading', { name: '行情与警报',exact:true })).toBeVisible());
     await check('no browser token storage', async () => assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[],[]]));
   });
   let chart;
@@ -296,15 +322,15 @@ try {
     await check('canonical futures result isolated',()=>expect(page.locator('[cmdk-item]')).toHaveCount(1));
     await check('filters preserve selection',()=>expect(trigger).toHaveText(originalSelection));
     await search.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
-    await check('keyboard selects Binance futures',()=>expect(trigger).toContainText('Binance · USDT 永续 · BTC / USDT'));
+    await check('keyboard selects Binance futures',()=>expect(trigger).toContainText('BTC / USDTBinance · USDT 永续'));
     await check('selection closes popover and returns focus',()=>expect(trigger).toBeFocused());
     await trigger.click();await chooseSelect(page,'市场类型','spot');
     await page.locator('[cmdk-item][data-instrument="binance:spot:BTCUSDT"]').click();
-    await check('spot retains distinct identity',()=>expect(trigger).toContainText('Binance · 现货 · BTC / USDT'));
+    await check('spot retains distinct identity',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
     await trigger.click();await chooseSelect(page,'交易所','mexc');await chooseSelect(page,'市场类型','swap');
     await check('unavailable result disabled',()=>expect(page.locator('[cmdk-item][data-instrument="mexc:swap:BTC_USDT"]')).toHaveAttribute('aria-disabled','true'));
     await search.focus();await page.keyboard.press('Enter');
-    await check('disabled option cannot replace selected spot',()=>expect(trigger).toContainText('Binance · 现货 · BTC / USDT'));
+    await check('disabled option cannot replace selected spot',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
     await search.fill('NO_MATCH_123');await check('empty results provide recovery',()=>expect(page.getByText('没有匹配的市场。试试币种名称，或清除交易所和类型筛选。')).toBeVisible());
     await page.keyboard.press('Escape');await check('Escape returns market trigger focus',()=>expect(trigger).toBeFocused());
     state.markets=originalMarkets;await refreshNavigation(page);
@@ -340,7 +366,7 @@ try {
     await check('uncertain warning', () => expect(page.getByRole('dialog')).toContainText('上次投递结果不确定，可能已经送达'));
     await check('already breached warning', () => expect(page.getByRole('dialog')).toContainText('当前新鲜成交价已经满足条件'));
     await page.getByRole('dialog').getByRole('button',{name:'重新武装',exact:true}).click();
-    await check('explicit rearm clears latch', () => expect(row(page,'MOCK 投递不确定')).toContainText('已武装'));
+    await check('explicit rearm clears latch while monitoring stays paused', async () => { await expect(row(page,'MOCK 投递不确定')).toContainText('总开关关闭'); assert.equal(state.alerts.find(a=>a.id==='mock-uncertain').triggered,false); await expect(row(page,'MOCK 投递不确定').getByRole('button',{name:'重新武装',exact:true})).toHaveCount(0); });
     await check('rearm generation sent', async () => assert.equal(requests(state,'POST','/api/alerts/mock-uncertain/rearm').at(-1).expectedGeneration,2));
     await check('CRUD preserves chart', async () => assert(await chart.evaluate(node => node.isConnected)));
   });
@@ -521,7 +547,7 @@ try {
       await p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true}).click();
       await check(`${profile} saved effect has an honest persistent warning`,()=>expect(p.locator('.scheduler-wake-warning')).toContainText('修改已保存'));
       if(profile==='mobile'){
-        await p.getByRole('button',{name:'EN',exact:true}).click();
+        await languageChoice(p,'EN');
         await expect(p.locator('.scheduler-wake-warning')).toContainText('Changes are saved');
       }
       await p.screenshot({path:join(outputs,`wake-pending-${profile}-MOCK.png`),fullPage:true});
@@ -536,7 +562,7 @@ try {
     let release; const held={wait:new Promise(r=>{release=r;})}; state.holdStatus=held;
     const start=requests(state,'GET','/api/status').length;
     await expect.poll(()=>requests(state,'GET','/api/status').length,{timeout:7000}).toBeGreaterThan(start);
-    await page.getByRole('button',{name:'退出登录'}).click(); await expect(page.getByRole('heading',{name:'登录或注册'})).toBeVisible(); release();
+    await signOut(page); await expect(page.getByRole('heading',{name:'登录或注册'})).toBeVisible(); release();
     await check('logout cookie removed', async () => assert(!(await context.cookies(origin)).some(c=>c.name===cookieName)));
     await check('late workspace cannot show user', () => expect(page.locator('.session-email')).toHaveCount(0));
     await page.reload(); await check('reload remains logged out', () => expect(page.getByRole('heading',{name:'登录或注册'})).toBeVisible());
@@ -544,7 +570,7 @@ try {
   });
   const mobile=await setup(browser,'mobile',true), m=mobile.page;
   await journey('09 390×844 mobile layout, modal focus, navigation and MOCK capture', async () => {
-    await m.goto(origin+'/dashboard'); await expect(m.getByRole('switch')).toBeVisible(); await expect(m.locator('iframe')).toBeVisible();
+    await m.goto(origin+'/dashboard'); await expect(m.getByRole('switch')).toBeVisible(); await m.getByRole('button',{name:'参考图表 · TradingView'}).click(); await expect(m.locator('iframe')).toBeVisible();
     await noOverflow(m); await m.screenshot({path:join(outputs,'open-alert-ui-mobile-MOCK.png'),fullPage:true,animations:'disabled'});
     const frame=await m.locator('iframe').elementHandle(); await m.getByRole('button',{name:'创建警报',exact:true}).click();
     await check('mobile native modal focus', async () => assert(await m.getByRole('dialog').evaluate(d=>d.contains(document.activeElement)&&d.getAttribute('aria-modal') === 'true')));
@@ -574,7 +600,7 @@ try {
   await journey('10b operator diagnostics distinguish idle, incidents, stale reads and recovery on desktop/mobile',async()=>{
     for(const profile of ['desktop','mobile']){
       const f=await setup(browser,profile,true),p=f.page,s=f.state;s.status.user.role='admin';s.status.capabilities.canAdmin=true;
-      await p.goto(origin+'/admin');const panel=p.locator('.ops-panel');
+      await p.goto(origin+'/admin');await p.getByRole('button',{name:'服务运行诊断',exact:true}).click();const panel=p.locator('.ops-panel');
       await check('idle monitor is explained without claiming a delivery test',async()=>{await expect(panel.locator('.ops-state strong')).toHaveText('空闲待命');await expect(panel).toContainText('通知提供方未验证');await expect(panel).toContainText('自动异常推送未启用');});
       s.observability={...s.observability,state:'critical',observedAt:Date.now(),issues:[{component:'queue',code:'delivery_stuck',severity:'critical'}],events:[{component:'queue',code:'delivery_stuck',severity:'critical',openedAt:Date.now()-70000,lastSeenAt:Date.now(),resolvedAt:null}]};
       await panel.getByRole('button',{name:'刷新诊断',exact:true}).click();await expect(panel.locator('.ops-state strong')).toHaveText('发现异常');
@@ -584,7 +610,7 @@ try {
       s.observability={...F.makeObservabilityFixture(),events:[{...s.observability.events[0],resolvedAt:Date.now()}]};await panel.getByRole('button',{name:'刷新诊断',exact:true}).click();
       await check('healthy observation displays a recovered event',async()=>{await expect(panel.locator('.ops-state strong')).toHaveText('空闲待命');await expect(panel).toContainText('已恢复');});
       await noOverflow(p);await p.screenshot({path:join(outputs,`observability-${profile}-zh-MOCK.png`),fullPage:true});
-      await p.getByRole('button',{name:'EN',exact:true}).click();await expect(panel.getByRole('heading',{name:'Service diagnostics'})).toBeVisible();await noOverflow(p);
+      await languageChoice(p,'EN');if (!await panel.isVisible()) await p.getByRole('button',{name:'Service diagnostics',exact:true}).click();await expect(panel.getByRole('heading',{name:'Service diagnostics'})).toBeVisible();await noOverflow(p);
       await p.screenshot({path:join(outputs,`observability-${profile}-en-MOCK.png`),fullPage:true});await f.context.close();
     }
   });
@@ -649,7 +675,7 @@ try {
     const unmountBefore = requests(s,'GET','/api/status').length;
     await p.clock.runFor(5000); await expect.poll(()=>requests(s,'GET','/api/status').length).toBe(unmountBefore+1);
     const aborted = []; p.on('requestfailed',r=>{if(new URL(r.url()).pathname==='/api/status')aborted.push(r.failure().errorText);});
-    await p.getByRole('button',{name:'退出登录'}).click();
+    await signOut(p);
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
     await check('workspace unmount aborts pending fetch',async()=>await expect.poll(()=>aborted.some(text=>/ABORTED/.test(text))).toBe(true));
     releaseUnmount(); await fixture.context.close();
@@ -674,7 +700,7 @@ try {
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':'120'}};
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');
     const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
-    await p.getByRole('button',{name:'退出登录'}).click();
+    await signOut(p);
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
     await settleBootClock(p);
     await check('login discovery bypasses business cooldown',()=>expect(p.getByRole('button',{name:'发送验证码'})).toBeEnabled());
@@ -810,7 +836,7 @@ try {
       await p.getByRole('combobox',{name:'查看市场',exact:true}).click();
       await chooseSelect(p,'交易所',market.venue);await chooseSelect(p,'市场类型',market.type);
       await p.locator(`[cmdk-item][data-instrument="${market.instrument}"]`).click();
-      await check(`${market.instrument} independent quote without monitored tick`,()=>expect(p.locator('.price-block')).toContainText('最新报价'));
+      await check(`${market.instrument} independent quote without monitored tick`,()=>expect(p.locator('.price-block')).toContainText('后台参考成交'));
       await check(`${market.instrument} exact widget mapping`,async()=>assert.equal(JSON.parse(await p.locator('.tradingview-widget-container script').textContent()).symbol,market.tradingViewSymbol));
       await check(`${market.instrument} panel scope`,()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.filter(a=>a.instrument===market.instrument).length));
       await p.getByRole('button',{name:'创建警报',exact:true}).click();
@@ -851,7 +877,7 @@ try {
     await check('revocation appears in persistent history',()=>expect(revokedRow).toContainText('已撤销'));
     await revokedRow.getByRole('button',{name:'再次邀请'}).click();await p.getByRole('button',{name:'创建邮箱邀请',exact:true}).click();
     await check('revoked email can be invited again deliberately',()=>expect(revokedRow).toContainText('待加入'));
-    await p.getByRole('button',{name:'退出登录'}).click();await expect(p.getByLabel('邮箱地址')).toBeEnabled();
+    await signOut(p);await expect(p.getByLabel('邮箱地址')).toBeEnabled();
     await check('sandbox disclosure replaces misleading disabled-login warning',async()=>{await expect(p.getByText(/邮件服务目前为测试模式/)).toBeVisible();await expect(p.getByText(/邮箱登录尚未启用/)).toHaveCount(0);});
     s.otpError='EMAIL_RECIPIENT_RESTRICTED';await p.getByLabel('邮箱地址').fill('other@example.test');await p.getByRole('button',{name:'发送验证码'}).click();
     await check('specific recipient error never disables email or Google controls',async()=>{await expect(p.getByRole('alert')).toContainText('不能向此邮箱发送验证码');await expect(p.getByLabel('邮箱地址')).toBeEnabled();await expect(p.getByRole('button',{name:'使用 Google 登录'})).toBeEnabled();});
@@ -945,9 +971,9 @@ try {
     // Match the event-delivery allowance used by the atomic-theme journey below.
     await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark',{timeout:20000});
     await check('system follows media without saving an override',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-theme')),null));
-    await p.getByRole('navigation').getByRole('link',{name:'Account',exact:true}).click();
+    await nav(p,'Account');
     await expect(p.getByRole('heading',{name:'Account details',exact:true})).toBeVisible();
-    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
+    await nav(p,'Markets & alerts');
     await expect(p.locator('iframe')).toHaveCount(1);
     await check('official chart config follows dark mode and remains 4h',async()=>{
       const config=await p.evaluate(()=>window.__mockChartConfigs.at(-1));assert.equal(config.theme,'dark');assert.equal(config.interval,'240');assert.equal(config.locale,'en');
@@ -963,13 +989,13 @@ try {
     await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     const scriptsBefore=await p.evaluate(()=>window.__mockChartConfigs.length);
-    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();
     await expect(p.locator('.disclosure-content')).toBeVisible();
-    await p.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
-    await expect(p.getByRole('heading',{name:'Pushover connection',exact:true})).toBeVisible();
+    await nav(p,'Notifications');
+    await expect(p.getByRole('heading',{name:/^Pushover connection/})).toBeVisible();
     await noOverflow(p);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-notifications-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
-    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
+    await nav(p,'Markets & alerts');
     await check('navigation preserves widget instance',async()=>assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),scriptsBefore));
     await p.emulateMedia({reducedMotion:'reduce'});
     await p.getByRole('button',{name:'Create alert',exact:true}).click();
@@ -979,7 +1005,7 @@ try {
       assert.equal(await p.getByLabel('Alert name').getAttribute('data-slot'),'input');
     });
     await p.keyboard.press('Escape');
-    await p.getByRole('button',{name:'中文',exact:true}).click();await p.reload();
+    await languageChoice(p,'中文');await p.reload();
     await expect(p.locator('html')).toHaveAttribute('lang','zh-CN');await expect(p.locator('html')).toHaveAttribute('data-theme','light');
     await fixture.context.close();
   });
@@ -1026,7 +1052,7 @@ try {
       window.__themeFrames=[];
       const observe=()=>{
         const colors=selector=>{const n=document.querySelector(selector);if(!n)return null;const c=getComputedStyle(n);return{bg:c.backgroundColor,text:c.color,border:c.borderColor};};
-        window.__themeFrames.push({theme:document.documentElement.dataset.theme,body:colors('body'),dialog:colors('[data-slot="dialog-content"]'),input:colors('[data-slot="dialog-content"] [data-slot="input"]'),select:colors('[data-slot="dialog-content"] [data-slot="select-trigger"]'),primary:colors('[data-slot="dialog-content"] [data-variant="default"]')});
+        window.__themeFrames.push({theme:document.documentElement.dataset.theme,body:colors('body'),dialog:colors('[data-slot="dialog-content"]'),input:colors('[data-slot="dialog-content"] [data-slot="input"]'),select:colors('[data-slot="dialog-content"] .market-search-trigger'),primary:colors('[data-slot="dialog-content"] [data-variant="default"]')});
       };
       window.__themeObserver=new MutationObserver(observe);
       window.__themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
@@ -1044,7 +1070,7 @@ try {
       });
       await check('theme stays coherent in the first changed frame ('+theme+')',async()=>{
         const sample=await p.evaluate(()=>window.__themeFrames.at(-1));
-        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),popover:s.getPropertyValue('--popover').trim(),field:s.getPropertyValue('--muted').trim()};});
+        const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--background').trim(),foreground:s.getPropertyValue('--foreground').trim(),popover:s.getPropertyValue('--popover').trim(),field:s.getPropertyValue('--field').trim()};});
         const expected=await p.evaluate(values=>{const probe=document.createElement('span');probe.style.color=values.background;document.body.append(probe);const result=Object.fromEntries(Object.entries(values).map(([key,value])=>{probe.style.color=value;return[key,getComputedStyle(probe).color];}));probe.remove();return result;},tokens);
         assert.equal(sample.theme,theme);
         assert.equal(sample.body.bg,expected.background);
@@ -1055,17 +1081,17 @@ try {
         assert.equal(sample.primary.bg,sample.body.text);assert.equal(sample.primary.text,sample.body.bg);
         await expect(p.getByLabel('Alert name')).toHaveValue('Unsent draft');
       });
-      await p.getByRole('combobox',{name:'Trigger condition',exact:true}).click();
-      await expect(p.locator('[data-slot="select-content"]')).toHaveAttribute('data-motion-state','settled');
+      await p.getByRole('combobox',{name:'Alert market',exact:true}).click();
+      await expect(p.locator('[data-slot="popover-content"]')).toHaveAttribute('data-motion-state','settled');
       await check('portalled select follows the same palette',async()=>{
-        const c=await p.locator('[data-slot="select-content"]').evaluate(n=>({bg:getComputedStyle(n).backgroundColor,color:getComputedStyle(n).color}));
+        const c=await p.locator('[data-slot="popover-content"]').evaluate(n=>({bg:getComputedStyle(n).backgroundColor,color:getComputedStyle(n).color}));
         const tokens=await p.evaluate(()=>{const s=getComputedStyle(document.documentElement);return{background:s.getPropertyValue('--popover').trim(),foreground:s.getPropertyValue('--foreground').trim()};});
         const expected=await p.evaluate(values=>{const probe=document.createElement('span');probe.style.color=values.background;document.body.append(probe);const result=Object.fromEntries(Object.entries(values).map(([key,value])=>{probe.style.color=value;return[key,getComputedStyle(probe).color];}));probe.remove();return result;},tokens);
         assert.equal(c.bg,expected.background);
         assert.equal(c.color,expected.foreground);
       });
-      await p.keyboard.press('Escape');await expect(p.locator('[data-slot="select-content"]')).toHaveCount(0);
-      await expect(p.getByRole('combobox',{name:'Trigger condition',exact:true})).toContainText('At or above');
+      await p.keyboard.press('Escape');await expect(p.locator('[data-slot="popover-content"]')).toHaveCount(0);
+      await expect(p.getByRole('combobox',{name:'Alert market',exact:true})).toContainText('BTC');
     }
     await p.evaluate(()=>window.__themeObserver.disconnect());
     await p.keyboard.press('Escape');await expect(p.locator('[data-slot="dialog-content"]')).toHaveCount(0);
@@ -1090,15 +1116,21 @@ try {
     await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(()=>requests(s,'GET','/api/status').length).toBeGreaterThan(readsBefore);
     await check('background refresh does not replay entrances or reset the chart',async()=>{assert.equal(await p.locator('.route-surface').getAttribute('data-motion-runs'),runsBefore);assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),chartBefore);});
-    await p.getByRole('navigation').getByRole('link',{name:'Notifications',exact:true}).click();
-    await expect(p.getByRole('heading',{name:'Pushover connection',exact:true})).toBeVisible();
+    await nav(p,'Notifications');
+    await expect(p.getByRole('heading',{name:/^Pushover connection/})).toBeVisible();
     await expect(p.locator('.settings-page')).toHaveAttribute('data-motion-state','settled');
     await check('navigation underline tracks the actual active link',async()=>{
-      const bounds=await p.locator('.app-nav').evaluate(n=>{const a=n.querySelector('[aria-current="page"]').getBoundingClientRect(),i=n.querySelector('.nav-indicator').getBoundingClientRect();return{left:Math.abs(a.left-i.left),width:Math.abs(a.width-i.width)};});assert(bounds.left<1&&bounds.width<1,JSON.stringify(bounds));
+      if (await p.locator('.mobile-dock').isVisible()) {
+        const selected=p.locator('.mobile-dock a[aria-current="page"]');
+        await expect(selected).toHaveAttribute('href','/notifications');
+        assert.notEqual(await selected.evaluate(n=>getComputedStyle(n).backgroundColor),'rgba(0, 0, 0, 0)');
+      } else {
+        const bounds=await p.locator('.app-nav').evaluate(n=>{const a=n.querySelector('[aria-current="page"]').getBoundingClientRect(),i=n.querySelector('.nav-indicator').getBoundingClientRect();return{left:Math.abs(a.left-i.left),top:Math.abs(a.top-i.top),width:Math.abs(a.width-i.width),height:Math.abs(a.height-i.height)};});assert(Object.values(bounds).every(v=>v<1),JSON.stringify(bounds));
+      }
     });
-    await p.getByRole('navigation').getByRole('link',{name:'Markets & alerts',exact:true}).click();
-    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toHaveAttribute('data-motion-state','settled');
-    await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toBeHidden();
+    await nav(p,'Markets & alerts');
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toHaveAttribute('data-motion-state','settled');
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toBeHidden();
     await p.emulateMedia({reducedMotion:'reduce'});
     await p.getByRole('button',{name:'Create alert',exact:true}).click();
     await check('reduced motion keeps the form visible and immediately usable',async()=>{await expect(p.locator('[data-slot="dialog-content"]')).toHaveAttribute('data-motion-state','settled');await p.getByLabel('Alert name').fill('Reduced-motion draft');await expect(p.getByLabel('Alert name')).toHaveValue('Reduced-motion draft');});
@@ -1121,7 +1153,16 @@ finally {
   console.log(`MOCK result: ${results.filter(r=>r.passed).length}/30 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
 }
 
+}
+
 async function chooseSelect(page,label,value) {
+  if (label === 'Appearance') {
+    await accountControls(page);
+    await page.getByRole('group',{name:'Appearance'}).getByRole('button',{name:({light:'Light',dark:'Dark',system:'System'})[value],exact:true}).click();
+    if (await page.locator('.account-menu:visible').count()) { await page.keyboard.press('Escape'); await expect(page.locator('.account-menu')).toHaveCount(0); }
+    else if (page.url().endsWith('/account')) await nav(page,'Markets & alerts');
+    return;
+  }
   await page.getByRole('combobox',{name:label,exact:true}).click();
   await page.locator('[role="option"][data-value="'+value+'"]').click();
 }

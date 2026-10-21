@@ -2,6 +2,9 @@ import { t } from './i18n.js';
 import { getLanguage } from './i18n.js';
 import type { Alert, PriceTick } from '../src/contracts/domain.js';
 export const formatPrice = (value: number) => new Intl.NumberFormat(getLanguage(), { maximumFractionDigits: 12 }).format(value);
+/** Human-readable quotes; this never changes saved thresholds or evaluated prices. */
+export const formatQuotePrice = (value: number) => new Intl.NumberFormat(getLanguage(), { maximumFractionDigits: Math.abs(value) >= 1000 ? 2 : Math.abs(value) >= 1 ? 4 : 12 }).format(value);
+export const formatQuoteDelta = (value: number) => formatQuotePrice(Number(value.toPrecision(8)));
 export const formatTime = (value: number | null) => value === null ? t("尚无记录") : new Date(value).toLocaleString(getLanguage(), { hour12: false });
 export function freshTick(tick: PriceTick | undefined, now = Date.now()): tick is PriceTick {
     return !!tick && Number.isFinite(tick.price) && tick.price > 0 && tick.price <= 1e12
