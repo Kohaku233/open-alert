@@ -27,6 +27,7 @@ export const english: Record<string, string> = {
   "现价": "Current",
   "按当前成交价计算": "From the current trade price",
   "登录后读取行情": "Sign in to load quotes",
+  "此页面不会保存登录令牌。": "This page does not store sign-in tokens.",
   "会话确认": "Session handshake",
   "工作台数据": "Workspace data",
   "正在读取交易所行情…": "Loading exchange quotes…",

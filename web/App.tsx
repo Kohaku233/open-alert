@@ -73,7 +73,7 @@ function AppRoutes() {
     {session.isPending && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"/></>
             : session.error && !sessionKnown ? <><header className="masthead public-masthead"><Brand navigate={navigate}/><LanguageSwitch /></header><main className="app-main" id="main-content"><EmptyState className="session-error"><h1>{t("无法确认登录状态")}</h1><p>{session.error.status === 429 ? t("请求过于频繁，请稍后重试。") : t("请检查网络和服务连接，再重试。")}</p><Button onClick={() => void session.refetch()}>{t("重试连接")}</Button></EmptyState></main></>
                 : session.data ? <Workspace key={session.data.user.id} path={path} navigate={navigate} notify={message => toast(message)} onUnauthorized={() => { void session.refetch(); }}/>
-                    : <><header className="masthead public-masthead"><Brand navigate={navigate}/><span className="login-header-note">{t("个人价格警报与手机通知")}</span><LanguageSwitch /></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"/>}</>}
+                    : <div className="public-shell"><header className="masthead public-masthead"><Brand navigate={navigate}/><span className="login-header-note">{t("个人价格警报与手机通知")}</span><LanguageSwitch /></header>{path === '/login' ? <Login onSignedIn={onSignedIn}/> : <main className="app-main" id="main-content"/>}</div>}
     <Toaster customAriaLabel={t("通知")} position="bottom-center" duration={6500} offset={24} mobileOffset={16} toastOptions={{ className: 'ui-toast' }} />
   </TooltipProvider>;
 }

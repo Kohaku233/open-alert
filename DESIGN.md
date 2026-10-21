@@ -203,7 +203,7 @@ Very light, positively tracked headings contrast with stable monospaced measurem
 
 ### Hierarchy
 
-- **Display:** The desktop login statement uses the display role. It becomes 34px with 1.2 line-height on compact screens.
+- **Display:** The desktop login statement uses the display role. It becomes 34px with 1.15 line-height on compact screens.
 - **Headline:** Page headings use the headline role, reducing to 28px at the mobile breakpoint. Dialog headings use 28px on desktop and 24px on mobile.
 - **Title:** Panel titles use the title role. Notification-card titles use 18px and account/runtime titles use 16px in their final variants.
 - **Body:** Interface reading is generally 13–14px; supporting instructions use 12px with comfortable line-height. Small operational labels use the mono label role.
@@ -227,7 +227,7 @@ At 900px and below, the fixed rail becomes a 64px top bar. A 64px floating dock,
 
 Settings use two-column desktop panels and a single mobile column. Account puts identity and textual preferences beside runtime health; mobile leads directly with identity, hides the branded top rail, starts content at 24px and reserves 128px bottom clearance. All account panels stretch to the full available width. The runtime heading is the mobile details toggle above five compact status rows; it does not add a separate disclosure row. Notifications uses separate channel and delivery cards on desktop, with summary-first mobile cards and reachable edit forms. Admin begins with three summary cells plus five health indicators; secondary diagnostics are expandable.
 
-Desktop login has a broad introductory signal field and a 520px form region, reducing the latter to 460px on compact desktop. Mobile stacks the statement and form. Dialogs are centered at 560px maximum on desktop and become bottom sheets with safe-area padding on mobile.
+Desktop login uses a full-height split with a 520px form region, reducing it to 460px on compact desktop. At 1440px, its 56px gutters place the statement at y160 and the 407px form card at x977/y174. The form uses 30px/28px padding, 16px spacing, 48px controls, and a 20px radius; help and privacy sit below the card. Dots cover the introductory column while the trace has an independent 260px band at y420. Mobile stacks the 34px statement, compact exchange caption and full-width form, with scrolling for OTP, errors and expanded help. Dialogs are centered at 560px maximum on desktop and become bottom sheets with safe-area padding on mobile.
 
 ## Elevation & Depth
 

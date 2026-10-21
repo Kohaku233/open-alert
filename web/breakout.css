@@ -1313,49 +1313,6 @@ input::placeholder {
   min-height: 36px;
   font-size: 12px;
 }
-.login-layout {
-  grid-template-columns: minmax(0, 1fr) 520px;
-  gap: 0;
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  min-height: calc(100dvh - 80px);
-  align-items: stretch;
-  overflow: hidden;
-}
-.login-layout::before {
-  display: none;
-}
-.login-intro {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  position: relative;
-  max-width: none;
-  padding: 60px 56px 40px;
-  overflow: hidden;
-}
-.login-intro h1 {
-  font-size: clamp(42px, 4.45vw, 64px);
-  font-weight: 200;
-  letter-spacing: 0.04em;
-  line-height: 1.12;
-  max-width: none;
-  margin: 0 0 24px;
-  z-index: 1;
-}
-.login-intro > p {
-  font-size: 15px;
-  max-width: 520px;
-  z-index: 1;
-  color: var(--muted-foreground);
-}
-.login-intro .intro-detail {
-  border: 0;
-  padding: 0;
-  margin: 30px 0;
-  z-index: 1;
-}
 .intro-detail strong {
   color: var(--text);
   font-size: 13px;
@@ -1363,126 +1320,11 @@ input::placeholder {
 .intro-detail p {
   font-size: 12px;
 }
-.login-signal-field {
-  position: absolute;
-  inset: 22% -10% 12% -8%;
-  background-image: radial-gradient(var(--hero-grid) 1px, transparent 1.4px);
-  background-size: 14px 14px;
-  mask-image: linear-gradient(
-    180deg,
-    transparent,
-    #0009 35%,
-    #000 60%,
-    transparent
-  );
-  color: var(--signal);
-  opacity: 0.4;
-}
-.login-signal-field svg {
-  position: absolute;
-  inset: 20% 0 0;
-  width: 100%;
-  height: 60%;
-  opacity: 0.6;
-}
-.login-proof-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 40px 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--rail-bg);
-  z-index: 1;
-  overflow: hidden;
-  gap: 0;
-}
-.login-proof-row > div {
-  display: grid;
-  gap: 7px;
-  padding: 16px;
-  border-right: 1px solid var(--line);
-}
-.login-proof-row > div:last-child {
-  border: 0;
-}
-.login-proof-row span {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  border: 0;
-  padding: 0;
-  font: 11px var(--mono-font);
-  color: var(--muted-foreground);
-  border-radius: 0;
-  letter-spacing: 0.02em;
-}
-.login-proof-row strong {
-  font: 200 20px var(--mono-font);
-}
-.login-proof-row small {
-  font-size: 11px;
-  color: var(--muted-foreground);
-  letter-spacing: 0;
-}
-.login-panel {
-  align-self: center;
-  margin: 36px 48px;
-  padding: 32px;
-  background: var(--card);
-  border: 1px solid var(--control-border);
-  border-radius: 24px;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-.login-panel::before,
-.login-panel::after {
-  content: "";
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-color: var(--signal);
-  border-style: solid;
-  pointer-events: none;
-}
-.login-panel::before {
-  top: -1px;
-  left: -1px;
-  border-width: 2px 0 0 2px;
-  border-top-left-radius: 24px;
-}
-.login-panel::after {
-  right: -1px;
-  bottom: -1px;
-  border-width: 0 2px 2px 0;
-  border-bottom-right-radius: 24px;
-}
-.login-panel h2 {
-  font-size: 28px;
-  font-weight: 200;
-  letter-spacing: 0.04em;
-}
-.login-panel-status {
-  font: 11px/1.5 var(--mono-font);
-  gap: 8px;
-  letter-spacing: 0.1em;
-}
-.login-panel-status span:last-child {
-  font-family: var(--body-font);
-  font-size: 11px;
-  letter-spacing: 0;
-}
 .live-pip,
 .dot.live,
 .monitor-state-dot {
   animation: none;
   box-shadow: none;
-}
-.login-panel .auth-description {
-  font-size: 12px;
-}
-.login-footnote {
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
 }
 .skeleton-row:nth-child(2) {
   opacity: 0.6;
@@ -1542,15 +1384,6 @@ input::placeholder {
   .trace-caption {
     left: 12px;
     right: 8px;
-  }
-  .login-layout {
-    grid-template-columns: minmax(0, 1fr) 460px;
-  }
-  .login-intro {
-    padding: 48px 32px;
-  }
-  .login-panel {
-    margin: 28px;
   }
 }
 @media (max-width: 1100px) and (min-width: 901px) {
@@ -1993,54 +1826,6 @@ input::placeholder {
   .public-masthead .languages button {
     min-width: 35px;
     padding: 0 7px;
-  }
-  .login-layout {
-    display: flex;
-    flex-direction: column;
-    padding: 0 24px 36px;
-    min-height: calc(100dvh - 72px);
-    gap: 24px;
-  }
-  .login-intro {
-    padding: 18px 0 0;
-    overflow: visible;
-  }
-  .login-intro h1 {
-    font-size: 34px;
-    line-height: 1.2;
-    letter-spacing: 0.04em;
-    margin-bottom: 16px;
-  }
-  .login-intro > p {
-    font-size: 12px;
-    line-height: 1.8;
-  }
-  .login-intro .intro-detail,
-  .login-proof-row,
-  .login-intro > .small {
-    display: none;
-  }
-  .login-signal-field {
-    inset: -18px -24px -40px;
-    opacity: 0.2;
-    z-index: 0;
-  }
-  .login-panel {
-    width: 100%;
-    margin: 0;
-    padding: 24px;
-    align-self: stretch;
-    border-radius: 20px;
-  }
-  .login-panel h2 {
-    font-size: 25px;
-  }
-  .login-panel-status {
-    display: none;
-  }
-  .login-panel .setup-link,
-  .login-panel .google-button {
-    min-height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2664,45 +2449,6 @@ body {
   background: var(--signal-bg);
   color: var(--signal);
 }
-.login-intro {
-  justify-content: flex-start;
-  padding-top: 110px;
-}
-.login-intro h1 {
-  line-height: 1.06;
-}
-.login-proof-row {
-  margin-top: auto;
-}
-.login-intro > p.small {
-  margin-top: 12px;
-}
-.login-signal-field {
-  inset: 30% 0 10%;
-  opacity: 0.6;
-  mask-image: linear-gradient(
-    180deg,
-    transparent,
-    #0009 25%,
-    #000 70%,
-    transparent
-  );
-}
-.login-signal-field svg {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.85;
-}
-.login-layout::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(100% - 520px);
-  border-left: 1px solid var(--line);
-  pointer-events: none;
-}
 .public-masthead .brand small {
   letter-spacing: -0.02em;
 }
@@ -2782,9 +2528,6 @@ body {
   justify-self: end;
 }
 @media (min-width: 901px) and (max-width: 1250px) {
-  .login-layout::after {
-    left: calc(100% - 460px);
-  }
   .runtime-health .health-row {
     grid-template-columns: 100px minmax(0, 1fr) auto;
     gap: 8px;
@@ -2958,19 +2701,6 @@ body {
   }
   .mobile-notification-summaries .quota-segments {
     margin-top: 8px;
-  }
-  .login-layout::after {
-    display: none;
-  }
-  .login-intro {
-    padding-top: 18px;
-  }
-  .login-intro h1 {
-    line-height: 1.2;
-  }
-  .login-signal-field {
-    inset: 0 -24px -40px;
-    opacity: 0.25;
   }
   .admin-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
