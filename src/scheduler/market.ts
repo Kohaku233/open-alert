@@ -61,8 +61,8 @@ export function createMarketCache(options: { fetch?: Fetch; now?: () => number }
         if (next.has(tick.instrument)) throw new Error('duplicate_tick');
         next.set(tick.instrument, tick);
       }
-      prices = next;
       if (!next.size) throw new Error('prices_empty');
+      prices = next;
       lastPollAt = receivedAt; failures = 0; nextPollAt = receivedAt + 5000;
       priceCode = null;
     } catch { priceCode = 'prices_unavailable'; failures++; nextPollAt = now() + Math.min(60_000, 5000 * 2 ** Math.min(failures - 1, 4)); }
