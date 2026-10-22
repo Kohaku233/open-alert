@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { t } from "../i18n.js";
+import { Spinner } from './ui/spinner.js';
 
 gsap.registerPlugin(useGSAP);
 const reduceQuery = "(prefers-reduced-motion: reduce)";
@@ -320,7 +321,7 @@ function BootStage({
                 <span>{t(text)}</span>
                 <span className={done ? "signal-text" : ""}>
                   {pending
-                    ? "SYNC"
+                    ? <><Spinner/> SYNC</>
                     : done
                       ? "OK"
                       : phase === "exiting"
@@ -331,7 +332,7 @@ function BootStage({
             );
           })}
           <div className="boot-status" role="status">
-            {label}
+            <Spinner/>{label}
           </div>
         </div>
       </div>

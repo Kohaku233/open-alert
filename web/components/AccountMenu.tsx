@@ -70,6 +70,7 @@ export function AccountMenu({
         <Button
           variant="ghost"
           className="account-logout"
+          loading={busy}
           disabled={busy}
           onClick={logout}
         >

@@ -98,21 +98,21 @@ export function Invitations({ model, notify }: { model: WorkspaceModel; notify: 
       <div className="invitation-panel-heading"><h2 id="invitations-heading">{t('邀请邮箱')}</h2><details className="invitation-instructions"><summary>{t('邀请规则')}</summary><p className="small muted">{t('邀请有效期为 7 天，仅限指定邮箱。已注册用户可直接登录，无需再次邀请。')}</p></details></div>
       <form onSubmit={event => void create(event)}>
         <Label htmlFor="invite-email">{t('受邀邮箱')}</Label><Input id="invite-email" name="inviteEmail" type="email" maxLength={254} required autoComplete="off" autoCapitalize="none" spellCheck={false} value={email} onChange={event => setEmail(event.target.value)} disabled={busy} placeholder={t('受邀者的邮箱地址')}/>
-        <Button variant="default" className="primary" disabled={busy || !!model.error}>{action === 'create' ? t('正在创建…') : t('创建邮箱邀请')}</Button>
+        <Button loading={action === 'create'} variant="default" className="primary" disabled={busy || !!model.error}>{action === 'create' ? t('正在创建…') : t('创建邮箱邀请')}</Button>
       </form>
       <FormError message={error}/>
       {invite && <Notice className="invitation-result" role="status"><p>{invite.reused ? t('已有有效邀请：') : t('已创建 ')}<strong>{invite.email}</strong>{t(' 的邀请，有效至 ')}{formatTime(invite.expiresAt)}</p><p>{t('邀请已生效。')}{deliveryText(invite)}</p><Button onClick={() => void copy(invite.email)}>{t('复制登录链接')}</Button></Notice>}
-      <div className="invitation-list-heading"><h3>{t('邀请记录')}</h3><Button variant="ghost" disabled={loading || busy} onClick={() => void load()}>{t('刷新邀请')}</Button></div>
+      <div className="invitation-list-heading"><h3>{t('邀请记录')}</h3><Button loading={loading} variant="ghost" disabled={loading || busy} onClick={() => void load()}>{t('刷新邀请')}</Button></div>
       <FormError message={listError}/>
       {loading && !items.length ? <ListSkeleton label={t('正在读取邀请…')}/> : !items.length && !listError ? <p className="small muted">{t('还没有邀请。创建后可在这里查看、重发或撤销。')}</p> : <ul className="invitation-list">{items.map(item => {
           const status = item.status === 'pending' && item.expiresAt <= now ? 'expired' : item.status;
           const seconds = Math.min(60, Math.max(0, Math.ceil(((deadlines[item.id] ?? 0) - now) / 1000)));
           return <li key={item.id}><div className="invitation-row-info"><strong>{item.email}</strong><span className="invitation-state">{statusText(status)}</span><small>{status === 'revoked' ? t('此邀请已失效，重新创建可再次邀请。') : t('有效至 {0}', formatTime(item.expiresAt))}</small></div>
-            {status === 'pending' && <div className="invitation-actions"><Button disabled={busy || seconds > 0} onClick={() => void resend(item)}>{action === item.id ? t('正在发送…') : seconds ? t('{0} 秒后重发', seconds) : t('重发邀请')}</Button><Button variant="ghost" disabled={busy} onClick={() => { setTarget(item); setTargetError(''); }}>{t('撤销邀请')}</Button></div>}
+            {status === 'pending' && <div className="invitation-actions"><Button loading={action === item.id} disabled={busy || seconds > 0} onClick={() => void resend(item)}>{action === item.id ? t('正在发送…') : seconds ? t('{0} 秒后重发', seconds) : t('重发邀请')}</Button><Button variant="ghost" disabled={busy} onClick={() => { setTarget(item); setTargetError(''); }}>{t('撤销邀请')}</Button></div>}
             {(status === 'expired' || status === 'revoked') && <Button disabled={busy} onClick={() => { setEmail(item.email); document.getElementById('invite-email')?.focus(); }}>{t('再次邀请')}</Button>}
           </li>;
       })}</ul>}
-      {cursor && <Button disabled={loading || busy} onClick={() => void load(cursor)}>{t('加载更多邀请')}</Button>}
-      <DialogPresence present={!!target}>{target && <Dialog title={t('撤销此邀请？')} onClose={() => setTarget(null)} busy={busy}><p className="invitation-address">{target.email}</p><p>{t('撤销后，此邮箱不能再凭该邀请注册。已经发出的邮件无法撤回。')}</p><FormError message={targetError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setTarget(null)}>{t('取消')}</Button><Button variant="destructive" disabled={busy} onClick={() => void revoke()}>{action === 'revoke' ? t('正在处理…') : t('确认撤销')}</Button></div></Dialog>}</DialogPresence>
+      {cursor && <Button loading={loading} disabled={loading || busy} onClick={() => void load(cursor)}>{t('加载更多邀请')}</Button>}
+      <DialogPresence present={!!target}>{target && <Dialog title={t('撤销此邀请？')} onClose={() => setTarget(null)} busy={busy}><p className="invitation-address">{target.email}</p><p>{t('撤销后，此邮箱不能再凭该邀请注册。已经发出的邮件无法撤回。')}</p><FormError message={targetError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setTarget(null)}>{t('取消')}</Button><Button loading={action === 'revoke'} variant="destructive" disabled={busy} onClick={() => void revoke()}>{action === 'revoke' ? t('正在处理…') : t('确认撤销')}</Button></div></Dialog>}</DialogPresence>
     </Panel>;
 }

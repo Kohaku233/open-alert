@@ -111,6 +111,15 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         throw new Error(`Unexpected native auth route ${method} ${path}`);
       }
       if (path === '/api/auth-capabilities' && method === 'GET') return ok({ google: state.googleEnabled, emailOtp: true, registration: 'invite', emailSenderMode:state.emailSenderMode });
+      if (path === '/api/public-quotes' && method === 'GET') {
+        if(state.holdPublicQuotes)await state.holdPublicQuotes.wait;
+        if(state.publicPreviewFail)return fail('service_unavailable',503);
+        const capturedAt=Date.now(),revision=state.previewRevision??0;
+        return ok({capturedAt,entries:[['binance:swap:BTCUSDT','BINANCE','BTC/USDT-P',70000],['ETH-USDT-SWAP','OKX','ETH/USDT-P',2500],['mexc:spot:SOLUSDT','MEXC','SOL/USDT',180]].map(([instrument,venue,pair,base])=>{
+          const history=Array.from({length:90},(_,i)=>({instrument,price:base+Math.sin((i+revision)*.2)*base*.002,timestamp:capturedAt-(89-i)*500,observedAt:capturedAt}));
+          return {instrument,venue,pair,quote:history.at(-1),history,stale:false};
+        })});
+      }
       if (!loggedIn) return fail('unauthenticated', 401);
       if (state.failNext && state.failNext.path === path && state.failNext.method === method) {
         const error = state.failNext; state.failNext = null;
@@ -227,7 +236,7 @@ async function signOut(page) { await accountControls(page); await page.getByRole
 
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
-const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities');
+const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes');
 // A paused virtual clock also freezes the session SDK's first timer, so a fresh document needs one virtual tick to boot.
 const tick = page => page.clock.runFor(1);
 async function settleBootClock(page) {
@@ -403,7 +412,7 @@ try {
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.clock.install(); await page.clock.pauseAt(new Date());
     state.failNext={path:'/api/test-notification',method:'POST',code:'rate_limited',status:429,headers:{'Retry-After':'10'}};
-    const businessCount = () => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities').length;
+    const businessCount = () => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes').length;
     const countBefore429 = businessCount();
     await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
     await check('429 retry shown', () => expect(page.getByRole('dialog').getByRole('alert')).toContainText('重试等待：10'));
@@ -702,7 +711,7 @@ try {
     }
     s.failNext={path:'/api/status',method:'GET',code:'rate_limited',status:429,headers:{'Retry-After':'120'}};
     await p.clock.runFor(5000); await expect(p.locator('.connection-error')).toContainText('重试等待：120 秒');
-    const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length;
+    const before = s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes').length;
     await signOut(p);
     await expect.poll(async()=>{await p.clock.runFor(100);return await p.getByRole('heading',{name:'登录或注册'}).count();}).toBe(1);
     await settleBootClock(p);
@@ -716,7 +725,7 @@ try {
     await check('OTP independent resend timer still blocks at 59s',()=>expect(p.getByRole('button',{name:'1 秒后重发',exact:true})).toBeDisabled());
     await p.clock.runFor(1000); await p.getByRole('button',{name:'重新发送',exact:true}).click();
     await check('OTP resend at 60s does not wait for business 120s',async()=>await expect.poll(()=>requests(s,'POST','/api/auth/email-otp/send-verification-otp').length).toBe(2));
-    await check('auth traffic leaves business gate intact',async()=>assert.equal(s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities').length,before));
+    await check('auth traffic leaves business gate intact',async()=>assert.equal(s.requests.filter(r=>!r.path.startsWith('/api/auth/')&&r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes').length,before));
     await fixture.context.close();
   });
   await journey('13 Google enabled, social callbacks, safe known/unknown errors and legacy normalization', async () => {
@@ -992,7 +1001,7 @@ try {
     await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-dashboard-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     const scriptsBefore=await p.evaluate(()=>window.__mockChartConfigs.length);
-    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Notes & limits'}).click();
     await expect(p.locator('.disclosure-content')).toBeVisible();
     await nav(p,'Notifications');
     await expect(p.getByRole('heading',{name:/^Pushover connection/})).toBeVisible();
@@ -1132,8 +1141,8 @@ try {
       }
     });
     await nav(p,'Markets & alerts');
-    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toHaveAttribute('data-motion-state','settled');
-    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Monitoring notes & limits'}).click();await expect(p.locator('.disclosure-content')).toBeHidden();
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Notes & limits'}).click();await expect(p.locator('.disclosure-content')).toHaveAttribute('data-motion-state','settled');
+    if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Notes & limits'}).click();await expect(p.locator('.disclosure-content')).toBeHidden();
     await p.emulateMedia({reducedMotion:'reduce'});
     await p.getByRole('button',{name:'Create alert',exact:true}).click();
     await check('reduced motion keeps the form visible and immediately usable',async()=>{await expect(p.locator('[data-slot="dialog-content"]')).toHaveAttribute('data-motion-state','settled');await p.getByLabel('Alert name').fill('Reduced-motion draft');await expect(p.getByLabel('Alert name')).toHaveValue('Reduced-motion draft');});

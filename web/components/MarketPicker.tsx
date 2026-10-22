@@ -60,7 +60,7 @@ export function MarketPicker({ compact = false, labelOutside = false, label, mar
     return <div className={`market-search ${labelOutside ? 'market-search-external-label' : ''}`}>
     {labelOutside && <Label htmlFor={`${id}-trigger`}>{label}</Label>}
     <Popover open={open && !disabled} onOpenChange={next => { if (!disabled || !next) setOpen(next); }}>
-      <PopoverTrigger asChild><Button id={`${id}-trigger`} type="button" className="market-search-trigger" role="combobox" aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
+      <PopoverTrigger asChild><Button id={`${id}-trigger`} type="button" className="market-search-trigger" role="combobox" title={marketLabel(value, selected)} aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
         {!labelOutside && <span className="market-search-label">{label}</span>}
         <span className={`market-search-selection ${compact ? 'compact-market-identity' : ''}`}>{value ? compact ? <><strong>{identity.base || identity.nativeId}<em> / {identity.quote || '—'}</em></strong><small>{identity.venue ? venueLabels[identity.venue!] : ''} · {identity.type ? typeLabels[identity.type!] : ''}</small></> : marketLabel(value, selected) : t("请选择市场")}{unavailable && <span className="amber-text">{t(" · 不可用，已保留")}</span>}</span>
         <ChevronDown className="market-trigger-chevron" aria-hidden="true" />

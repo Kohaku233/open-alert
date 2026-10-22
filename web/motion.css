@@ -2,14 +2,11 @@
   .app-nav { position: relative; }
   .app-nav a[aria-current="page"] { border-bottom-color: transparent; }
   .nav-indicator { position: absolute; left: 0; bottom: 0; width: 1px; height: 2px; background: var(--foreground); transform-origin: left center; pointer-events: none; opacity: 0; }
-  .languages,[data-slot="tabs-list"] { position: relative; isolation: isolate; }
-  .segment-indicator { position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--accent); border-radius: calc(5px / var(--indicator-scale, 1)) / 5px; transform-origin: left center; pointer-events: none; opacity: 0; z-index: 0; }
-  .languages [data-slot="button"],.languages [data-slot="button"][aria-pressed="true"] { position: relative; z-index: 1; border: 0; background: transparent; color: var(--muted-foreground); }
-  .languages [data-slot="button"][aria-pressed="true"] { color: var(--foreground); }
-  .languages [data-slot="button"]:hover { color: var(--foreground); }
-  .alert-scope [data-slot="tabs-list"] { background: var(--background); }
-  [data-slot="tabs-trigger"],.alert-scope [data-slot="tabs-trigger"],.alert-scope [data-slot="tabs-trigger"][data-state="active"] { position: relative; z-index: 1; background: transparent; box-shadow: none; }
-  [data-slot="tabs-trigger"][data-state="active"] { color: var(--foreground); }
+  .languages[data-motion-indicator] { position: relative; isolation: isolate; }
+  .segment-indicator { position: absolute; left: 0; top: 0; width: 1px; background: var(--accent); border-radius: 999px; transform-origin: left center; pointer-events: none; opacity: 0; z-index: 0; }
+  .languages[data-motion-indicator] [data-slot="button"] { position: relative; z-index: 1; border: 0; background: transparent; color: var(--muted-foreground); }
+  .languages[data-motion-indicator] [data-slot="button"][aria-pressed="true"] { color: var(--foreground); }
+  .languages[data-motion-indicator] [data-slot="button"]:hover { color: var(--foreground); }
   .theme-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 16px; height: 16px; }
   .theme-icon svg { display: block; width: 16px; height: 16px; }
   .appearance-options .select-item-text { display: inline-flex; align-items: center; gap: 10px; }

@@ -37,13 +37,23 @@ The code entry accepts the server default of six digits. Codes are never returne
 
 ## Market data and updates
 
-The workspace refreshes the signed-in user's status, catalog, and alerts every five seconds. A failed refresh keeps the last display and shows the connection error. Freshness uses a 30-second window around the exchange timestamp and `receivedAt`. Prices are shown as received, including stale prices. The client never invents a price, and triggering always happens on the server.
+The workspace refreshes the signed-in user's status and alerts every five seconds. Market metadata loads once per workspace session and refreshes only on explicit request; routine polling does not reload the catalog. A failed refresh keeps the last display and shows the connection error. Freshness uses a 30-second window around the exchange timestamp and `receivedAt`. Prices are shown as received, including stale prices. The client never invents a price, and triggering always happens on the server.
 
 Alert edits, deletion, rearm, and settings changes send `expectedGeneration`. A conflict rereads the current state and tells the user. Editing does not release a latch. Queued or sending alerts cannot be edited, deleted, or rearmed. Turning monitoring off requires confirmation because a request already sent cannot be withdrawn. Every terminal delivery state remains latched, and `uncertain` warns that delivery may already have happened.
 
 The shared market picker reads the authenticated `/api/markets` snapshot, searches market metadata, filters Binance/OKX/MEXC and spot/USDT perpetuals, and renders at most 40 results. It retains selected identities when the directory no longer contains them or marks them unavailable. `available: false` prevents a new selection. Existing alert edits omit unchanged instrument and enablement fields so other edits can preserve unavailable markets without implicitly re-enabling them.
 
 The TradingView advanced chart is an official reference embed. Only the incumbent exact OKX perpetual allowlist is accepted (BTC, ETH, SOL, XRP, DOGE, ADA, AVAX, LINK, DOT, LTC, BCH, TON), also matched to the selected venue/type/base/quote. Binance and MEXC mappings stay disabled until verified. Symbol changes inside the widget are disabled. The chart instance survives status refreshes, edits, notification changes, and page navigation; it is rebuilt when its verified symbol changes or the user reconnects. The client does not read the iframe document. Price and chart copy distinguish the selected exchange's backend latest trade price from the reference chart. An unavailable verified embed offers retry and safe external-link fallback.
+
+## Shared visual and loading rules
+
+`app.css` declares the cascade order. `tokens.css` owns theme values; `controls.css` owns inputs, search focus wrappers, static active tab backgrounds and bounded popovers; `layout.css` owns responsive geometry. Full shadows use `--elevation-*`, while `--shadow-*` contain colors. Long pairs, English labels and narrow layouts must shrink or wrap within the component.
+
+`Spinner` is the shared 90ms braille indicator for boot and asynchronous work. It stops its timer when hidden or reduced motion is requested; skeletons remain static. Alert scope tabs have no marker or entrance animation.
+
+`GET /api/public-quotes` is unauthenticated and accepts no query parameters. It exposes only three fixed display markets, genuine observed prices/history and freshness: Binance BTC/USDT perpetual, OKX ETH/USDT perpetual and MEXC SOL/USDT spot. A shared five-second cache coalesces requests. It never loads tenant rules or changes scheduler demand. Private `/api/quote` and `/api/markets` retain session protection. Login polls only while visible and keeps prior data on failure, marking it stale without changing old timestamps. There is no fabricated fallback history.
+
+Account/admin health summaries omit unverified notification-provider availability. Actual failed and uncertain deliveries remain operational incidents; credential validation and explicit test-send behavior are unchanged.
 
 ## Checks
 

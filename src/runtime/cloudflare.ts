@@ -16,6 +16,7 @@ import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { createVercelBinanceSource } from '../markets/vercel-relay.js';
 import { createMarketQuoteService, type MarketQuote } from '../markets/quotes.js';
+import { createPublicMarketPreview, type PublicMarketPreview } from '../markets/public-preview.js';
 import { catalogDirectory, marketQuerySchema, searchMarkets } from '../api/markets.js';
 import { D1SqlDatabase } from '../db/d1.js';
 import { wakeWithRetry } from './wake.js';
@@ -45,7 +46,7 @@ async function workerApp(env:CloudflareBindings) {
       const response=await coordinator().fetch('https://coordinator.internal'+path);
       if(!response.ok){if(path==='/observability'&&(observationFailureAt===null||Date.now()-observationFailureAt>=60000||Date.now()<observationFailureAt)){observationFailureAt=Date.now();console.error('open_alert_observation_failed',response.status);}throw new Error('coordinator_unavailable');}return await response.json() as T;
     }
-    const app=createApp({...services,auth,notifications,quotes:{
+    const app=createApp({...services,auth,notifications,publicPreview:{get:()=>coordinatorJson<PublicMarketPreview>('/public-preview')},quotes:{
       get:market=>coordinatorJson<MarketQuote>('/quote?instrument='+encodeURIComponent(market.instrument)),
       lookup:instrument=>coordinatorJson<QuoteLookup>('/quote-lookup?instrument='+encodeURIComponent(instrument)),
     },catalog:{
@@ -106,6 +107,7 @@ export class Coordinator {
   private revision=0;
   private active=false;
   private quotes: ReturnType<typeof createMarketQuoteService> | null=null;
+  private publicPreview: ReturnType<typeof createPublicMarketPreview> | null=null;
   private monitor: ReturnType<typeof createObservability> | null=null;
   private alarmWrites:Promise<unknown>=Promise.resolve();
   private workCheck:{revision:number;promise:Promise<boolean>}|null=null;
@@ -118,6 +120,7 @@ export class Coordinator {
     this.initialized=state.blockConcurrencyWhile(async()=>{
       const services=await databaseServices(env);
       this.quotes=createMarketQuoteService({fetchImplementation:globalThis.fetch,...(services.config.binanceRelay?{relay:services.config.binanceRelay}:{})});
+      this.publicPreview=createPublicMarketPreview({read:market=>this.quotes!.recent(market)});
       const engine=createScheduler({...services,notifications:createNotificationService(services),
         marketSource:(services.config.binanceRelay ? createVercelBinanceSource : createPublicCcxtMarketSource)({mode:'polling',fetchImplementation:globalThis.fetch,
           ...(services.config.binanceRelay ? { relay: services.config.binanceRelay } : {}),
@@ -165,6 +168,7 @@ export class Coordinator {
   async alarm(){await this.cycle();}
   async fetch(request:Request):Promise<Response> {
     const engine=await this.initialized,path=new URL(request.url).pathname;
+    if(path==='/public-preview'&&request.method==='GET'&&this.publicPreview)return Response.json(await this.publicPreview.get());
     if(path==='/reconcile'&&request.method==='POST'){
       await this.monitor?.pulse(undefined,request.headers.get('X-Open-Alert-Cron')==='1');
       this.revision++;engine.invalidate();

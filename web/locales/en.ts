@@ -368,7 +368,7 @@ export const english: Record<string, string> = {
   "后台监控 ": "Background monitoring ",
   "更新于 {0}": "Updated {0}",
   "尚未更新": "Not updated yet",
-  "监控说明与限制": "Monitoring notes & limits",
+  "监控说明与限制": "Notes & limits",
   "先配置手机通知。": "Configure mobile notifications first.",
   " 添加你的 Pushover 用户密钥，再明确启用监控。": " Add your Pushover User Key, then explicitly enable monitoring.",
   "配置通知": "Configure notifications",
@@ -579,5 +579,13 @@ export const english: Record<string, string> = {
   "等待报价": "Awaiting quote",
   "后台守夜": "Always on watch",
   "会话由 Cookie 保护": "Cookie-protected session",
-  "正在读取登录方式…": "Loading sign-in methods..."
+  "正在读取登录方式…": "Loading sign-in methods...",
+  "全部": "All",
+  "公开市场行情": "Public market quotes",
+  "公开行情 · 约 5 秒更新": "Public quotes · refreshed about every 5s",
+  "行情更新暂停": "Quote updates paused",
+  "更新暂停": "Updates paused",
+  "成交采样": "Trade samples",
+  "行情暂时不可用": "Quotes temporarily unavailable",
+  "正在读取行情…": "Loading quotes…",
 };

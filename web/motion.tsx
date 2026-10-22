@@ -143,6 +143,7 @@ export function useIndicatorMotion(ref: RefObject<HTMLElement | null>, indicator
   useGSAP(() => {
     const root = ref.current, marker = indicator.current;
     if (!root || !marker) return;
+    root.dataset.motionIndicator = 'true';
     let first = true;
     const media = gsap.matchMedia();
     media.add({ all: 'all', reduced: reduceQuery }, (context, contextSafe) => {
@@ -174,7 +175,7 @@ export function useIndicatorMotion(ref: RefObject<HTMLElement | null>, indicator
       move();
       return () => { observer.disconnect(); resize.disconnect(); moveRef.current = null; };
     }, ref);
-    return () => media.revert();
+    return () => { media.revert(); delete root.dataset.motionIndicator; };
   }, { scope: ref });
   useLayoutEffect(() => { moveRef.current?.(); }, [revision]);
 }

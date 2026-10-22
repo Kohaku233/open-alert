@@ -151,7 +151,7 @@ components:
 
 Open Alert is an operating instrument for exchange-price alerts. Its approved world is the final Breakout HTML handoff: a split-circle SVG mark, charcoal fields, a thin trade trace, compact operational labels and calm, very light headings. The quote, monitoring state and rule actions carry the hierarchy. The English page indexes and dotted signal field are deliberate parts of this user-approved world.
 
-This replaces the previous Signal Almanac identity. Design authority is the README and final HTML/SVG files in F:/code/design_handoff_openalert_final/. The implemented source of truth is the final cascade in web/breakout.css, web/alignment.css, web/login.css, web/boot.css and web/fonts.css, together with the shipped React components. web/redesign.css supplies inherited primitives and light appearance; it is no longer the visual authority by itself. Dark appearance follows the supplied reference. Light and system appearance remain supported through semantic tokens; the light edition is a functional adaptation, not a claim of a second supplied reference.
+This replaces the previous Signal Almanac identity. Design authority is the README and final HTML/SVG files in F:/code/design_handoff_openalert_final/. The implemented source of truth is the ordered cascade in web/app.css: web/tokens.css owns semantic values, web/controls.css owns shared control geometry and focus, web/layout.css and web/login.css own responsive layout, and web/breakout.css, web/boot.css and web/fonts.css preserve the supplied visual identity. Inherited styles stay inside the legacy layer so they cannot silently override shared controls. Dark appearance follows the supplied reference. Light and system appearance remain supported through semantic tokens; the light edition is a functional adaptation, not a claim of a second supplied reference.
 
 **Key Characteristics:**
 
@@ -225,7 +225,7 @@ At desktop widths through 1250px, main padding becomes 24px, instrument edge col
 
 At 900px and below, the fixed rail becomes a 64px top bar. A 64px floating dock, inset 20px from either side, provides Markets, Alerts, Notifications and Account. Main content reserves 112px below content. The instrument stacks market/price, a 120px trace and three telemetry cells. The trace reserves an 84px right gutter, with current-price labels bounded to 78px. Markets shows compact current-market alert summaries and an explicit chart expander; the chart is closed initially. The /alerts route supplies the full list and actions. Mobile chart height is 380px.
 
-Settings use two-column desktop panels and a single mobile column. Account puts identity and textual preferences beside runtime health; mobile leads directly with identity, hides the branded top rail, starts content at 24px and reserves 128px bottom clearance. All account panels stretch to the full available width. The runtime heading is the mobile details toggle above five compact status rows; it does not add a separate disclosure row. Notifications uses separate channel and delivery cards on desktop, with summary-first mobile cards and reachable edit forms. Admin begins with three summary cells plus five health indicators; secondary diagnostics are expandable.
+Settings use two-column desktop panels and a single mobile column. Account puts identity and textual preferences beside runtime health; mobile leads directly with identity, hides the branded top rail, starts content at 24px and reserves 128px bottom clearance. All account panels stretch to the full available width. The runtime heading is the mobile details toggle above four compact status rows; it does not add a separate disclosure row. Notifications uses separate channel and delivery cards on desktop, with summary-first mobile cards and reachable edit forms. Admin begins with three summary cells plus four health indicators; secondary diagnostics are expandable.
 
 Desktop login uses a full-height split with a 520px form region, reducing it to 460px on compact desktop. At 1440px, its 56px gutters place the statement at y160 and the 407px form card at x977/y174. The form uses 30px/28px padding, 16px spacing, 48px controls, and a 20px radius; help and privacy sit below the card. Dots cover the introductory column while the trace has an independent 260px band at y420. Mobile stacks the 34px statement, compact exchange caption and full-width form, with scrolling for OTP, errors and expanded help. Dialogs are centered at 560px maximum on desktop and become bottom sheets with safe-area padding on mobile.
 
@@ -239,7 +239,7 @@ Floating surfaces use purposeful shadows: the account menu uses 0 24px 60px #000
 
 The claim-driven GSAP boot sequence reveals the dotted field, offsets the mark halves, focuses the wordmark, presents three lifecycle log rows, expands a fine exit line and fades the curtain. A completed claimed stage may produce one mark ripple. Unclaimed stages remain WAIT or finish as SKIP rather than pretending a successful request. Initial route claims and keyed generations retain their lifecycle protection.
 
-Loading can use a one-pixel indeterminate panel segment while work is pending; skeleton rows stay static and reduce opacity by row. Buttons use the existing braille spinner only while busy. Reduced motion removes the trace ripple, digit flash, guide transition and loading-segment animation, and settles boot formation without the decorative wait. Shared control/route transitions stay interruptible and never delay a mutation.
+All pending surfaces share the 90ms braille spinner, including boot, forms, buttons, list and chart loading. Loading can also use a one-pixel indeterminate panel segment while work is pending; skeleton rows stay static. Hidden documents and reduced-motion preferences stop the spinner timer. Reduced motion removes the trace ripple, digit flash, guide transition and loading-segment animation, and settles boot formation without the decorative wait. Shared control/route transitions stay interruptible and never delay a mutation.
 
 ## Shapes
 
@@ -259,7 +259,7 @@ Inputs and market selectors use the field surface, a control hairline and the co
 
 ### Navigation
 
-The desktop active route is a selected fill with a measured 3px signal stripe. Existing indicator motion moves the full measured box. Mobile routes use the dock's selected item fill. Preferences have icon segments in the desktop account menu and explicit text segments on the account page. Theme and language are persisted preferences; automatic defaults do not write explicit choices.
+The desktop active route is a selected fill with a measured 3px signal stripe. Existing indicator motion moves the full measured box. Mobile routes use the dock's selected item fill. Preferences have icon segments in the desktop account menu and explicit text segments on the account page. Theme and language are persisted preferences; automatic defaults do not write explicit choices. Shared tabs use the native active trigger background without a moving marker. Alert scope switching neither animates the filter nor replays the page entrance. Measured navigation markers explicitly opt in to motion and use a zero-position origin.
 
 ### Chips / State Notices
 
@@ -267,7 +267,7 @@ State chips are compact mono pills. Armed state uses signal; latch and uncertain
 
 ### Cards / Containers
 
-Cards group content with tonal fill, a hairline and the established radius. Settings panels normally use 24px internal padding; mobile settings use 20px unless a compact summary establishes 16px side padding. Account identity and notification connection information use bordered subgrids. Runtime health displays five labelled rows; diagnostics disclose detail without replacing the summary.
+Cards group content with tonal fill, a hairline and the established radius. Settings panels normally use 24px internal padding; mobile settings use 20px unless a compact summary establishes 16px side padding. Account identity and notification connection information use bordered subgrids. Runtime health displays four labelled rows (database, scheduler, exchange data and email); diagnostics disclose detail without replacing the summary.
 
 ### Signal Instrument
 
@@ -281,7 +281,9 @@ Desktop combines scope segments, count, identity, threshold, distance, outcome a
 
 ### Login / Boot / Loading
 
-The login signal illustration is a static, aria-hidden identity treatment, not a live price claim. Its broad trace uses 90 densely sampled, low-amplitude schematic points and a 1.4px non-scaling stroke. Its three exchange quote slots use labelled placeholders because /api/quote requires a session. Email-code and Google paths retain capability checks, retry/uncertainty copy and safe session lifecycle.
+The login page reads the fixed public display endpoint /api/public-quotes every five seconds while visible. It shows Binance BTC/USDT perpetual, OKX ETH/USDT perpetual and MEXC SOL/USDT spot prices. Its aria-hidden trace contains up to 90 genuine Binance samples, using a low-amplitude scale and a 1.4px non-scaling stroke. New samples update the path; no schematic or random history is drawn. Failures preserve the previous quote and history with a paused label and do not block login. Public display data never creates alert-scheduler demand; private /api/quote remains authenticated. Email-code and Google paths retain capability checks, retry/uncertainty copy and safe session lifecycle.
+
+Notification-provider availability is omitted from account/admin summaries because an untested provider is not evidence of a service restriction. Genuine delivery errors and uncertain outcomes stay visible in alert and operational diagnostics.
 
 Boot rows describe session, workspace and price claims. Route output is gated by the existing entrance mechanism; completion follows the timeline and active claims. Background polling retains content rather than replaying a full-screen entrance. Initial failures become stable retry states, and loading never supplies invented values.
 

@@ -1,3 +1,6 @@
+import { usePublicQuotes } from '../usePublicQuotes.js';
+import { LoginTrace } from '../components/LoginTrace.js';
+import { formatQuotePrice } from '../utils.js';
 import { Spinner } from '../components/ui/spinner.js';
 import { usePageMotion, useFormStepMotion } from '../motion.js';
 import { Panel, Notice, LoadingStatus } from '../components/Surface.js';
@@ -16,9 +19,6 @@ import { FormError } from '../components/Dialog.js';
 import { clearEmailLoginFlow, emailAddress, OTP_LIFETIME_MS, readEmailLoginFlow, saveEmailLoginFlow, withAttempt } from '../email-login-flow.js';
 import type { EmailLoginFlow } from '../email-login-flow.js';
 
-// A static schematic follows the handoff; no unauthenticated prices are invented.
-const loginTrace = Array.from({length:90}, (_, index) => `${index ? 'L' : 'M'}${(index / 89 * 600).toFixed(2)} ${(66 + Math.sin(index * .23) * 5 + Math.sin(index * .71) * 2 + Math.sin(index * 1.7) * .8).toFixed(2)}`).join(' ');
-
 function initialFlow(): EmailLoginFlow {
     const saved = readEmailLoginFlow();
     const invited = emailAddress(new URLSearchParams(window.location.search).get('email') ?? '');
@@ -26,6 +26,7 @@ function initialFlow(): EmailLoginFlow {
 }
 export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     const pageRef = useRef<HTMLElement>(null);
+    const preview = usePublicQuotes();
     usePageMotion(pageRef, true, true, 'login');
     const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
     const [capError, setCapError] = useState('');
@@ -161,7 +162,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     const formRef = useRef<HTMLElement>(null);
     useFormStepMotion(formRef, flow.step);
     return <main ref={pageRef} className="login-layout" id="main-content">
-      <section className="login-intro"><div className="login-signal-field" aria-hidden="true"><svg viewBox="0 0 600 200" preserveAspectRatio="none"><defs><linearGradient id="login-trace-area" x1="0" y1="0" x2="0" y2="1"><stop stopColor="var(--signal)" stopOpacity=".18"/><stop offset="1" stopColor="var(--signal)" stopOpacity="0"/></linearGradient></defs><path d={`${loginTrace} L600 200L0 200Z`} fill="url(#login-trace-area)"/><path d={loginTrace} fill="none" stroke="currentColor" strokeWidth="1.4" vectorEffect="non-scaling-stroke"/></svg><span className="login-trace-guide upper"/><span className="login-trace-guide lower"/></div><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p className="login-description">{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><p className="login-venues">BINANCE · OKX · MEXC</p><div className="login-proof-row" aria-label={t('登录后读取行情')}>{[['BINANCE', 'BTC/USDT'], ['OKX', 'ETH/USDT-P'], ['MEXC', 'SOL/USDT']].map(([venue, pair]) => <div key={venue}><span>{venue}<small>{pair}</small></span><strong title={t('登录后读取行情')}>—,———.——</strong></div>)}</div><p className="login-intro-caption">SERVER-SIDE · LATCHED · PUSHOVER — {t('后台运行时无需保持页面打开。')}<span className="login-quote-note"> · {t('登录后读取行情')}</span></p></section>
+      <section className="login-intro"><LoginTrace entry={preview.data?.entries[0]} failed={preview.failed}/><h1>{t('盯住价格，')}<br/>{t('把提醒交给哨站。')}</h1><p className="login-description">{t('Binance、OKX、MEXC 现货与 USDT 永续价格警报。每条警报触发一次，Pushover 把结果送到你的手机。')}</p><p className="login-venues">BINANCE · OKX · MEXC</p><div className="login-proof-row" aria-label={t('公开市场行情')}>{[['BINANCE','BTC/USDT-P'],['OKX','ETH/USDT-P'],['MEXC','SOL/USDT']].map(([venue,pair],index)=>{const entry=preview.data?.entries[index];return <div key={venue} data-quote-state={preview.pending?'loading':preview.failed||entry?.stale?'stale':'ready'}><span>{venue}<small>{pair}</small></span><strong title={entry?.quote?new Date(entry.quote.observedAt).toLocaleTimeString():t('等待报价')}>{entry?.quote?formatQuotePrice(entry.quote.price):preview.pending?<Spinner/>:'—'}</strong></div>;})}</div><p className="login-intro-caption">SERVER-SIDE · LATCHED · PUSHOVER — {t('后台运行时无需保持页面打开。')}<span className="login-quote-note"> · {t(preview.failed?'行情更新暂停':'公开行情 · 约 5 秒更新')}</span></p></section>
       <div className={`login-access ${codeStep ? 'is-code-step' : ''}`}><Panel ref={formRef} className="login-panel" aria-labelledby="login-heading" aria-busy={busy}>
         <div className="login-panel-status"><span className="live-pip"/><span>SECURE ACCESS<span className="login-security-note"> · {t('会话由 Cookie 保护')}</span></span></div>
         <h2 id="login-heading">{codeStep ? t('验证邮箱') : t('登录或注册')}</h2>

@@ -48,7 +48,7 @@ export function diagnose(input: {
     if (h.state === 'healthy') continue;
     const expected = idle && (key === 'scheduler' && code === 'idle_no_active_alerts' || key === 'prices' && ['idle_no_active_alerts','prices_empty_or_stale','no_demand'].includes(code ?? ''));
     if (expected) continue;
-    if (key === 'notifications' && code === 'provider_not_checked') { add(key,code,'info'); continue; }
+    if (key === 'notifications' && code === 'provider_not_checked') continue;
     if (key === 'scheduler' && code === 'cycle_budget_exceeded') { add(key,code,'info'); continue; }
     if (!idle && now - input.startedAt < 15_000 && (code === 'lease_unavailable' || code === 'no_demand' || h.state === 'starting')) { unknown = true; continue; }
     add(key, code ?? `${key}_unavailable`, h.state === 'unhealthy' ? 'critical' : 'warning');

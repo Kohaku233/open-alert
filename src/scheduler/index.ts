@@ -27,7 +27,9 @@ export interface SchedulerOptions {
 }
 export type RuntimeSchedulerService = ReturnType<typeof createScheduler>;
 export function overallHealth(components: ComponentHealth[]): SystemStatus['health']['overall'] {
-  const states = components.map(component => component.state);
+  // A missing delivery sample is not a provider outage. Only actual failures
+  // participate in availability; delivery outcomes remain recorded separately.
+  const states = components.filter(component => component.code !== 'provider_not_checked' || component.state === 'unhealthy').map(component => component.state);
   return states.includes('unhealthy') ? 'unhealthy' : states.includes('starting') ? 'starting' : states.includes('degraded') ? 'degraded' : 'healthy';
 }
 const bounded = (value: number, min: number, max: number, code: string) => {

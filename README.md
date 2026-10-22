@@ -228,3 +228,9 @@ npm run test:browser:mock
 ### 许可证
 
 项目采用 [Apache License 2.0](LICENSE)，允许按许可证条件使用、修改与分发。依赖仍受各自许可证约束；Google、Cloudflare、Binance、OKX、MEXC、TradingView 和 Pushover 服务按各自条款与收费规则使用。
+
+### Login display quotes / 登录行情预览
+
+The login page shows three fixed public display markets through `GET /api/public-quotes`: Binance BTC/USDT perpetual, OKX ETH/USDT perpetual and MEXC SOL/USDT spot. Requests share a five-second cache, accept no market/query parameters, and never create alert scheduler demand. Prices and trace samples are real; unavailable updates keep the last timestamped data with a paused status. Authenticated quote/catalog APIs remain protected. Notification availability is omitted from the health summary until it can be verified; genuine delivery errors remain visible.
+
+登录页通过固定的公开展示接口显示上述三个标的，每五秒共享缓存并合并并发请求，不接受自选标的参数，也不增加警报调度需求。价格和曲线使用真实采样；更新失败时保留原时间的数据并标注暂停。需登录的行情/目录接口仍受保护。通知服务不再因“尚未验证”被显示为受限，真实投递失败仍会保留。

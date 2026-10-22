@@ -115,6 +115,13 @@ export function createApi(d:ApiDependencies) {
     return d.auth.handler(request);
   });
   app.get('/api/auth-capabilities',c=>ok(c,d.auth.capabilities()));
+  app.get('/api/public-quotes',async c=>{
+    if(Object.keys(c.req.query()).length)throw new HttpError(400,'invalid_request');
+    if(!d.publicPreview)throw new HttpError(503,'service_unavailable');
+    const preview=await d.publicPreview.get();
+    c.header('Cache-Control','public, max-age=5, s-maxage=5');
+    return ok(c,preview);
+  });
   async function aggregateHealth(runtime:Awaited<ReturnType<ApiDependencies['runtime']['snapshot']>>) {
     const health={...runtime.health,email:d.auth.emailHealth()};
     const own=d.notifications.health(), engine=runtime.health.notifications;

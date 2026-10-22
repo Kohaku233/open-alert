@@ -22,6 +22,7 @@ export interface NotificationPort {
   health(): ComponentHealth;
 }
 export interface ApiDependencies {
+  publicPreview?: { get(): Promise<import('../markets/public-preview.js').PublicMarketPreview> };
   config: AppConfig; db: SqlDatabase; repositories: Repositories; auth: OpenAlertAuth;
   catalog: {
     get(): Promise<CatalogSnapshot>;

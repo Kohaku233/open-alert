@@ -32,6 +32,7 @@ export function createMarketQuoteService(options: {
   type Client = { exchange: CcxtExchange; markets: ReturnType<typeof normalizeCatalog>; at: number; loading: Promise<void> | null };
   const clients = new Map<string, Promise<Client>>(), cache = new Map<string, MarketQuote>();
   const pending = new Map<string, Promise<MarketQuote>>();
+  const histories = new Map<string, MarketQuote[]>();
   let stopped = false;
   async function client(venue: Venue, type: MarketType) {
     const key = `${venue}:${type}`;
@@ -67,12 +68,14 @@ export function createMarketQuoteService(options: {
       const live = state.exchange.seedMarket ? market : state.markets.get(market.instrument);
       if (!live || live.base !== market.base || live.quote !== market.quote) throw new Error('quote_market_unavailable');
       let value: unknown;
+      let trades: unknown[] | null = null;
       // OKX's ticker endpoint can rate-limit Cloudflare's shared egress while
       // its public recent-trades endpoint remains available. Sample the same
       // official trade endpoint used by monitoring, without evaluating rules.
       if (identity.venue === 'okx' || identity.venue === 'binance' && identity.type === 'swap' && read) {
-        const trades = await state.exchange.fetchTrades(live.symbol!, undefined, 100);
-        if (!Array.isArray(trades)) throw new Error('invalid_quote');
+        const batch = await state.exchange.fetchTrades(live.symbol!, undefined, 100);
+        if (!Array.isArray(batch)) throw new Error('invalid_quote');
+        trades = batch;
         value = trades.filter(record).filter(t => t.symbol === live.symbol && typeof t.timestamp === 'number')
           .sort((a, b) => (b.timestamp as number) - (a.timestamp as number))[0];
       } else {
@@ -86,14 +89,19 @@ export function createMarketQuoteService(options: {
       const quote: MarketQuote = { instrument: market.instrument, price: value.price, observedAt: now(), timestamp: value.timestamp as number | null ?? null };
       if (stopped) throw new Error('quote_stopped');
       cache.delete(market.instrument); cache.set(market.instrument, quote);
-      if (cache.size > 64) cache.delete(cache.keys().next().value!);
+      const samples = trades?.filter(record).filter(t=>t.symbol===live.symbol&&typeof t.price==='number'&&Number.isFinite(t.price)&&t.price>0&&t.price<=1e12&&typeof t.timestamp==='number'&&Number.isSafeInteger(t.timestamp)&&t.timestamp>=0&&t.timestamp<=now()+5000)
+        .map(t=>({instrument:market.instrument,price:t.price as number,timestamp:t.timestamp as number,observedAt:quote.observedAt})) ?? [quote];
+      const distinct=new Map<number,MarketQuote>();
+      for(const sample of [...(histories.get(market.instrument)??[]),...samples])distinct.set(sample.timestamp??sample.observedAt,sample);
+      histories.set(market.instrument,[...distinct.values()].sort((a,b)=>(a.timestamp??a.observedAt)-(b.timestamp??b.observedAt)).slice(-90));
+      if (cache.size > 64) { const oldest=cache.keys().next().value!;cache.delete(oldest);histories.delete(oldest); }
       return quote;
     })().finally(() => { pending.delete(market.instrument); });
     pending.set(market.instrument, next);
     return next;
   }
-  return { get, async stop() {
-    stopped = true; cache.clear();
+  return { get, async recent(market: Market) { await get(market);return (histories.get(market.instrument)??[]).map(quote=>({...quote})); }, async stop() {
+    stopped = true; cache.clear();histories.clear();
     await Promise.allSettled([...clients.values()].map(async work => (await work).exchange.close()));
   } };
 }

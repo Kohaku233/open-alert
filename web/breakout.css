@@ -1,50 +1,6 @@
 /* Breakout 3a — final handoff. Primitives retain their semantic state and lifecycle. */
-:root {
-  --body-font: "Geist", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --mono-font: "Geist Mono", "Noto Sans SC", monospace;
-  --signal: #5f7d00;
-  --trace-head: #496500;
-  --field: #f4f2e9;
-  --hero-bg: #f4f3e9;
-  --hero-text: #111416;
-  --hero-muted: #596158;
-  --hero-line: #d0d5c5;
-  --hero-grid: #5f7d0030;
-  --hero-signal: var(--signal);
-  --hero-copper: var(--amber);
-}
-:root[data-theme="dark"] {
-  --background: #05070a;
-  --card: #0a0e10;
-  --muted: #101618;
-  --popover: #0b1012;
-  --foreground: #f3f0e5;
-  --muted-foreground: #959c94;
-  --border: #1a2123;
-  --control-border: #26302e;
-  --control-hover: #53654b;
-  --primary-hover: #dad8cf;
-  --secondary-hover: #121a1c;
-  --selected: #1b2419;
-  --rail-bg: #07090c;
-  --signal: #d6ff4f;
-  --amber: #f0a36b;
-  --hero-bg: #090d0c;
-  --hero-text: #f3f0e5;
-  --hero-muted: #959c94;
-  --hero-line: #26302e;
-  --hero-grid: #d6ff4f2e;
-  --hero-signal: var(--signal);
-  --hero-copper: var(--amber);
-  --trace-head: #f4ffd2;
-  --field: #07090b;
-  --row-hover: #111916;
-  --warning-bg: #241d14;
-  --warning-border: #74552f;
-  --warning-text: #ffdba8;
-  --primary: var(--foreground);
-  --primary-foreground: var(--background);
-}
+
+
 html,
 body {
   font-family: var(--body-font);
@@ -155,6 +111,9 @@ input::placeholder {
   gap: 4px;
 }
 .app-nav a {
+  position: relative;
+  z-index: 1;
+  color: var(--muted-foreground);
   min-height: 46px;
   border: 0;
   border-radius: 12px;
@@ -163,8 +122,15 @@ input::placeholder {
 }
 .app-nav a[aria-current="page"] {
   border: 0;
+  color: var(--text);
 }
 .nav-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: auto;
+  z-index: 0;
+  background: linear-gradient(90deg, var(--signal) 0 3px, var(--selected) 3px);
   border-radius: 12px;
 }
 .rail-footer {
@@ -421,7 +387,7 @@ input::placeholder {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr) 264px;
   min-height: 248px;
-  height: 248px;
+  height: auto;
   padding: 0;
   background: var(--hero-bg);
   border: 1px solid var(--hero-line);

@@ -1,7 +1,6 @@
-import { useFloatingMotion, useLoadingMotion, useMotionPresence } from '../motion.js';
+import { useFloatingMotion, useMotionPresence } from '../motion.js';
 import { useTheme } from '../theme.js';
-import { Skeleton } from './ui/skeleton.js';
-import { EmptyState } from './Surface.js';
+import { EmptyState, LoadingStatus } from './Surface.js';
 import { Button } from './ui/button.js';
 import { t } from '../i18n.js';
 import { useLanguage } from '../i18n.js';
@@ -70,7 +69,6 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
 function ChartLoading({ open }: { open: boolean }) {
   const root = useRef<HTMLDivElement>(null);
   const { present, finish } = useMotionPresence(open);
-  useLoadingMotion(root, 'skeleton', open);
   useFloatingMotion(root, open, present, finish);
-  return present ? <div ref={root} className="chart-loading" aria-hidden="true"><Skeleton className="skeleton-line"/><div className="skeleton-chart-grid"/></div> : null;
+  return present ? <div ref={root} className="chart-loading"><LoadingStatus>{t('正在连接 TradingView 图表…')}</LoadingStatus><div className="skeleton-chart-grid" aria-hidden="true"/></div> : null;
 }

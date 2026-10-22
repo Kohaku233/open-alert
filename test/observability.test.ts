@@ -18,7 +18,7 @@ function fixture(storage?:MonitorStorage){
  return {monitor,health,db,logs,pulse,metrics,reads:()=>reads,advance:(ms:number)=>{time+=ms;},setFail:(value:boolean)=>{fail=value;},setWork:(value:boolean|null)=>{hasWork=value;}};
 }
 test('expected idle and an untested provider are explained without fake failures or fake health',async()=>{
- const f=fixture();await f.pulse();const report=await f.monitor.capture();assert.equal(report.state,'idle');assert.equal(report.expectedIdle,true);assert.equal(report.events.length,0);assert.ok(report.issues.some(i=>i.code==='provider_not_checked'));assert.equal(f.health.overall,'degraded');assert.equal(report.notifications,'disabled');
+ const f=fixture();await f.pulse();const report=await f.monitor.capture();assert.equal(report.state,'idle');assert.equal(report.expectedIdle,true);assert.equal(report.events.length,0);assert.ok(!report.issues.some(i=>i.code==='provider_not_checked'));assert.equal(f.health.overall,'degraded');assert.equal(report.notifications,'disabled');
  f.setWork(true);f.health.scheduler={...good};f.health.prices={...good};await f.monitor.pulse();assert.equal((await f.monitor.capture()).state,'ok');
 });
 test('incident opening is deduplicated and healthy recovery is persisted across monitor instances',async()=>{

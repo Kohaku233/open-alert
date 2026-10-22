@@ -59,7 +59,6 @@ export function Account({
     ["database", t("数据库")],
     ["scheduler", t("后台监控")],
     ["prices", t("交易所行情")],
-    ["notifications", t("通知服务")],
     ["email", t("邮件服务")],
   ] as const;
   const healthy = components.filter(
@@ -157,6 +156,7 @@ export function Account({
                     <Button
                       variant="default"
                       className="primary"
+                      loading={busy}
                       disabled={busy || !!model.error}
                     >
                       {busy ? t("正在设置…") : t("设为初始管理员")}
@@ -172,6 +172,7 @@ export function Account({
             <Preferences labels />
             <Button
               className="desktop-account-logout"
+              loading={logoutBusy}
               disabled={logoutBusy}
               onClick={logout}
             >
@@ -182,11 +183,11 @@ export function Account({
         <Panel className="settings-panel runtime-panel">
           <div className="runtime-heading">
             <h2>{t("后台运行状态")}</h2>
-            <span className={healthy === 5 ? "signal-text" : "amber-text"}>
-              {healthy} / 5 {t("正常")}
+            <span className={healthy === components.length ? "signal-text" : "amber-text"}>
+              {healthy} / {components.length} {t("正常")}
             </span>
           </div>
-          <Button className="mobile-runtime-heading" aria-expanded={runtimeExpanded} aria-controls="account-runtime-detail" onClick={() => setRuntimeExpanded(value => !value)}><span>{t('后台运行状态')}</span><span className={healthy === 5 ? 'signal-text' : 'amber-text'}>{healthy} / 5</span></Button>
+          <Button className="mobile-runtime-heading" aria-expanded={runtimeExpanded} aria-controls="account-runtime-detail" onClick={() => setRuntimeExpanded(value => !value)}><span>{t('后台运行状态')}</span><span className={healthy === components.length ? 'signal-text' : 'amber-text'}>{healthy} / {components.length}</span></Button>
           <div className="runtime-health">
             {components.map(([key, label]) => {
               const health = data.status.health[key];
@@ -242,7 +243,8 @@ export function Account({
                 {t("管理 · 邀请与账户")} <span>›</span>
               </Button>
             )}
-          <Button disabled={logoutBusy} onClick={logout}>
+          <Button loading={logoutBusy}
+              disabled={logoutBusy} onClick={logout}>
             {logoutBusy ? t("正在退出…") : t("退出登录")}
           </Button>
         </div>

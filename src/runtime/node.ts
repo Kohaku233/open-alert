@@ -12,6 +12,7 @@ import { createNotificationService } from '../notifications/index.js';
 import { createScheduler } from '../scheduler/index.js';
 import { createPublicCcxtMarketSource } from '../markets/ccxt.js';
 import { createMarketQuoteService } from '../markets/quotes.js';
+import { createPublicMarketPreview } from '../markets/public-preview.js';
 import { createObservability } from './observability.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
@@ -38,7 +39,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};
-  const app=createApp({...services,notifications,quotes,catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const app=createApp({...services,notifications,quotes,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   let started=false,monitorTimer:ReturnType<typeof setInterval>|undefined;
   return {
     config,services,engine,app,
