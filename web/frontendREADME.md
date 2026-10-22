@@ -49,6 +49,8 @@ The TradingView advanced chart is an official reference embed. Only the incumben
 
 `app.css` declares the cascade order. `tokens.css` owns theme values; `controls.css` owns inputs, search focus wrappers, static active tab backgrounds and bounded popovers; `layout.css` owns responsive geometry. Full shadows use `--elevation-*`, while `--shadow-*` contain colors. Long pairs, English labels and narrow layouts must shrink or wrap within the component.
 
+`npm run lint:css` fails when a declaration can never apply because a later layer or rule sets the same property on the same selector. Remove the losing declaration instead of adding another override. Reduced motion has one owner, the `base` layer in `ui.css`. `!important` is reserved for that rule, theme-change suppression, `[hidden]`, and the two overrides of non-layered sources (GSAP inline dialog transforms and Sonner's injected stylesheet).
+
 `Spinner` is the shared 90ms braille indicator for boot and asynchronous work. It stops its timer when hidden or reduced motion is requested; skeletons remain static. Alert scope tabs have no marker or entrance animation.
 
 `GET /api/public-quotes` is unauthenticated and accepts no query parameters. It exposes only three fixed display markets, genuine observed prices/history and freshness: Binance BTC/USDT perpetual, OKX ETH/USDT perpetual and MEXC SOL/USDT spot. A shared five-second cache coalesces requests. It never loads tenant rules or changes scheduler demand. Private `/api/quote` and `/api/markets` retain session protection. Login polls only while visible and keeps prior data on failure, marking it stale without changing old timestamps. There is no fabricated fallback history.

@@ -273,7 +273,6 @@ input::placeholder {
   align-items: center;
   gap: 10px;
   padding: 0 10px;
-  min-height: 40px;
   color: var(--text);
   font-size: 13px;
   border: 0;
@@ -385,7 +384,6 @@ input::placeholder {
 .signal-hero {
   position: relative;
   display: grid;
-  grid-template-columns: 330px minmax(0, 1fr) 264px;
   min-height: 248px;
   height: auto;
   padding: 0;
@@ -434,7 +432,6 @@ input::placeholder {
   width: auto;
   max-width: 100%;
   min-height: 44px;
-  padding: 8px 10px;
   border-radius: 12px;
   background: var(--field);
   border-color: var(--control-border);
@@ -445,7 +442,6 @@ input::placeholder {
   display: none;
 }
 .market-search-selection {
-  min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -535,7 +531,6 @@ input::placeholder {
 }
 .trace-plot {
   position: absolute;
-  top: 54px;
   bottom: 22px;
   left: 16px;
   right: 78px;
@@ -654,7 +649,6 @@ input::placeholder {
 .telemetry-item strong {
   font-size: 19px;
   font-weight: 400;
-  letter-spacing: -0.04em;
   line-height: 1.2;
 }
 .telemetry-item strong em {
@@ -726,7 +720,7 @@ input::placeholder {
   min-width: 44px;
   height: 44px;
   min-height: 44px;
-  background: transparent !important;
+  background: transparent;
   border: 0;
   border-radius: 999px;
   padding: 0;
@@ -771,39 +765,25 @@ input::placeholder {
 }
 .chart-panel-head {
   padding: 12px 18px;
-  min-height: 44px;
-  gap: 12px;
   border-bottom: 1px solid var(--line);
   align-items: center;
 }
 .chart-panel-head > div:first-child {
-  display: flex;
   align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 .chart-panel-head h2 {
-  font-size: 13px;
   white-space: nowrap;
 }
 .chart-panel-head p {
-  font-size: 11px;
   margin: 0;
 }
 .chart-toolbar {
   font: 11px var(--mono-font);
   color: var(--muted-foreground);
 }
-.chart-shell {
-  height: clamp(350px, 50vh, 520px);
-}
-.chart-caption,
-.chart-tools {
+.chart-caption {
   font-family: var(--body-font);
   font-size: 11px;
-}
-.chart-tools {
-  padding: 8px 16px;
 }
 .chart-caption {
   padding: 10px 16px;
@@ -817,10 +797,6 @@ input::placeholder {
   position: relative;
 }
 .alerts-panel .panel-heading {
-  height: 66px;
-  min-height: 66px;
-  padding: 0 18px;
-  align-items: center;
   margin: 0;
   border-bottom: 1px solid var(--line);
 }
@@ -836,9 +812,6 @@ input::placeholder {
 }
 .alert-market-tabs {
   min-width: 0;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
 }
 .alert-scope {
   display: flex;
@@ -858,7 +831,6 @@ input::placeholder {
   border: 0;
   border-radius: 999px;
   min-height: 30px;
-  padding: 4px 12px;
   font-size: 12px;
 }
 .alert-scope-count {
@@ -875,9 +847,7 @@ input::placeholder {
   max-height: 520px;
 }
 .alert-row {
-  padding: 18px 0 16px;
   border-bottom: 1px solid var(--line);
-  background: none;
   border-radius: 0;
 }
 .alert-row:last-child {
@@ -885,7 +855,6 @@ input::placeholder {
 }
 .alert-title-block {
   display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex: 1;
@@ -1067,13 +1036,9 @@ input::placeholder {
 }
 .account-column {
   display: grid;
-  gap: 20px;
 }
 .preferences-panel .account-preferences {
   padding: 0 0 16px;
-}
-.runtime-panel {
-  height: 100%;
 }
 .health-row {
   display: grid;
@@ -1091,9 +1056,6 @@ input::placeholder {
 .admin-overview {
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: var(--card);
-  padding: 20px 24px;
-  gap: 16px;
 }
 .admin-overview strong {
   font-family: var(--body-font);
@@ -1101,18 +1063,6 @@ input::placeholder {
 }
 .admin-grid {
   gap: 20px;
-}
-.admin-health {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.admin-health > span {
-  font-size: 11px;
-}
-.users-section,
-.operational-monitor {
-  border-radius: 20px;
 }
 .users-section {
   margin-top: 20px;
@@ -1209,8 +1159,6 @@ input::placeholder {
   font-size: 11px;
 }
 .threshold-distance {
-  padding: 14px;
-  border: 1px solid var(--line);
   border-radius: 12px;
   margin-top: 14px;
 }
@@ -1279,25 +1227,13 @@ input::placeholder {
   min-height: 36px;
   font-size: 12px;
 }
-.intro-detail strong {
-  color: var(--text);
-  font-size: 13px;
-}
-.intro-detail p {
-  font-size: 12px;
-}
-.live-pip,
-.dot.live,
-.monitor-state-dot {
+.live-pip {
   animation: none;
   box-shadow: none;
 }
 @media (min-width: 901px) and (max-width: 1250px) {
   .app-main {
     padding: 24px;
-  }
-  .signal-hero {
-    grid-template-columns: 280px minmax(0, 1fr) 220px;
   }
   .signal-hero-main {
     padding: 20px;
@@ -1317,9 +1253,6 @@ input::placeholder {
   }
 }
 @media (max-width: 1100px) and (min-width: 901px) {
-  .signal-hero {
-    grid-template-columns: 260px minmax(0, 1fr) 190px;
-  }
   .trace-caption > span:first-child {
     display: none;
   }
@@ -1341,7 +1274,6 @@ input::placeholder {
     min-height: 64px;
     flex-direction: row;
     align-items: center;
-    padding: 12px 18px;
     border-right: 0;
     background: var(--bg);
     z-index: 40;
@@ -1399,8 +1331,6 @@ input::placeholder {
     min-width: 0;
   }
   .mobile-dock svg {
-    width: 19px;
-    height: 19px;
     stroke-width: 1.6;
   }
   .mobile-dock a[aria-current="page"] {
@@ -1432,10 +1362,8 @@ input::placeholder {
   }
   .dashboard-heading .create-alert-button {
     position: fixed;
-    top: 12px;
     right: 20px;
     z-index: 44;
-    min-height: 40px;
     padding: 0 14px;
     font-size: 12px;
   }
@@ -1443,7 +1371,6 @@ input::placeholder {
     width: 13px;
   }
   .signal-hero {
-    grid-template-columns: 1fr;
     grid-template-rows: auto 120px auto;
     height: auto;
     min-height: 0;
@@ -1469,9 +1396,6 @@ input::placeholder {
   .price-block > strong {
     gap: 10px;
   }
-  .price-block > span {
-    font-size: 11px;
-  }
   .price-unit {
     display: none;
   }
@@ -1488,7 +1412,6 @@ input::placeholder {
     display: none;
   }
   .trace-plot {
-    top: 28px;
     bottom: 16px;
     left: 16px;
     right: 66px;
@@ -1508,7 +1431,6 @@ input::placeholder {
   .telemetry-item {
     border-bottom: 0;
     border-right: 1px solid var(--hero-line);
-    padding: 12px 10px;
     gap: 6px;
     min-height: 68px;
   }
@@ -1571,9 +1493,6 @@ input::placeholder {
     border-radius: 18px;
   }
   .alerts-panel .panel-heading {
-    min-height: 46px;
-    height: auto;
-    padding: 14px 16px;
     border-bottom: 1px solid var(--line);
   }
   .panel-heading h2 {
@@ -1584,10 +1503,6 @@ input::placeholder {
   }
   .alerts-list {
     padding: 0 16px;
-    max-height: none;
-  }
-  .alert-row {
-    padding: 14px 0;
   }
   .alert-name {
     font-size: 13px;
@@ -1614,13 +1529,8 @@ input::placeholder {
   .chart-panel-head {
     padding: 12px 16px;
   }
-  .chart-shell {
-    height: 380px;
-  }
   .chart-caption {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
     font-size: 11px;
   }
   .monitor-notes {
@@ -1657,9 +1567,6 @@ input::placeholder {
   .settings-panel h2 {
     font-size: 20px;
   }
-  .account-column {
-    gap: 16px;
-  }
   .mobile-admin-link[data-slot="button"] {
     display: flex;
     min-height: 46px;
@@ -1669,23 +1576,14 @@ input::placeholder {
     height: 44px;
     min-width: 44px;
   }
-  .account-logout[data-slot="button"] {
-    min-height: 44px;
-  }
   .admin-overview {
-    padding: 16px;
     border-radius: 18px;
-    gap: 10px;
-  }
-  .admin-overview > span {
-    font-size: 11px;
   }
   .admin-overview strong {
     font-size: 23px;
   }
   .user-row {
     flex-wrap: wrap;
-    gap: 12px;
   }
   .user-row > div {
     max-width: 100%;
@@ -1695,10 +1593,10 @@ input::placeholder {
     bottom: 0;
     left: 50%;
     width: 100%;
-    max-width: 100%;
     max-height: calc(100dvh - 36px);
     border-radius: 24px 24px 0 0;
     padding: 24px 20px max(24px, env(safe-area-inset-bottom));
+    /* Beats the inline transform GSAP writes while the dialog animates. */
     transform: translate(-50%, 0) !important;
   }
   .app-dialog::before {
@@ -1736,7 +1634,6 @@ input::placeholder {
     font-size: 12px;
   }
   .public-masthead {
-    padding: 20px 24px;
     height: 72px;
     min-height: 72px;
   }
@@ -1762,7 +1659,7 @@ input::placeholder {
   .trace-end i,
   .digit-up,
   .digit-down {
-    animation: none !important;
+    animation: none;
   }
   .trace-end,
   .trace-guide {
@@ -1824,11 +1721,8 @@ body {
 }
 @media (min-width: 901px) {
   .alerts-panel .alert-scope {
-    position: absolute;
     right: 0;
     top: 14px;
-    border: 0;
-    padding: 0 18px;
   }
   .alert-scope-count {
     display: none;
@@ -1968,6 +1862,7 @@ body {
     transform: translateX(20px);
   }
   [data-sonner-toaster][data-y-position="bottom"] {
+    /* Sonner injects unlayered CSS, which outranks every layer without !important. */
     bottom: 100px !important;
   }
   .alerts-list {
@@ -2021,11 +1916,8 @@ body {
 .compact-market-identity {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 .compact-market-identity strong {
-  font-size: 16px;
   letter-spacing: -0.04em;
   font-weight: 400;
 }
@@ -2155,7 +2047,6 @@ body {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 14px;
 }
 .runtime-heading h2 {
   font-size: 16px;
@@ -2180,7 +2071,6 @@ body {
 .runtime-health .health-row small {
   grid-column: auto;
   margin: 0;
-  font-size: 11px;
 }
 .health-row > span:last-child {
   display: flex;
@@ -2201,7 +2091,6 @@ body {
   gap: 12px;
   margin-top: 14px;
 }
-.mobile-runtime-details,
 .mobile-account-actions {
   display: none;
 }
@@ -2216,7 +2105,6 @@ body {
 }
 .notifications-grid > .settings-panel h2 {
   font-size: 18px;
-  margin: 6px 0 8px;
 }
 .notifications-grid .section-index {
   font: 11px/1.5 var(--mono-font);
@@ -2405,7 +2293,6 @@ body {
 }
 .admin-health-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   align-content: center;
   padding: 18px 22px;
@@ -2463,15 +2350,6 @@ body {
   }
 }
 @media (max-width: 900px) {
-  .compact-market-identity {
-    gap: 8px;
-  }
-  .compact-market-identity strong {
-    font-size: 16px;
-  }
-  .compact-market-identity small {
-    font-size: 11px;
-  }
   .account-heading {
     display: none;
   }
@@ -2577,15 +2455,6 @@ body {
   .desktop-runtime-notes {
     display: none;
   }
-  .mobile-runtime-details {
-    display: block;
-    margin: 4px 0 0;
-    border-top: 1px solid var(--line);
-  }
-  .mobile-runtime-details .disclosure-trigger {
-    min-height: 44px;
-    font-size: 12px;
-  }
   .mobile-account-actions {
     display: grid;
     gap: 12px;
@@ -2608,7 +2477,6 @@ body {
   }
   .notifications-grid {
     display: block;
-    min-height: 0;
   }
   .notifications-grid > .settings-panel {
     min-height: 0;

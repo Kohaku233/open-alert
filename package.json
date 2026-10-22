@@ -31,6 +31,7 @@
     "cf:check": "wrangler deploy --dry-run --outdir dist/worker",
     "cf:deploy": "wrangler deploy",
     "typecheck:web": "tsc -p web/tsconfig.json --noEmit",
+    "lint:css": "node scripts/css-cascade.mjs",
     "test:runtime:cf": "npm run build:web && npm run cf:check && node scripts/test-batches.mjs test/runtime-cloudflare.test.ts"
   },
   "dependencies": {
