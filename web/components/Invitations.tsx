@@ -10,6 +10,7 @@ import { formatTime } from '../utils.js';
 import { Button } from './ui/button.js';
 import { Input } from './ui/input.js';
 import { Label } from './ui/label.js';
+import { Skeleton } from './ui/skeleton.js';
 import { Dialog, FormError } from './Dialog.js';
 
 function deliveryText(invite: InvitationResult) {
@@ -23,6 +24,19 @@ function deliveryText(invite: InvitationResult) {
 }
 function statusText(status: InvitationSummary['status']) {
     return status === 'pending' ? t('待加入') : status === 'accepted' ? t('已加入') : status === 'revoked' ? t('已撤销') : t('已过期');
+}
+function InvitationListLoading() {
+    return <ul className="invitation-list invitation-list-loading">{Array.from({ length: 2 }, (_, index) => <li key={index}>
+        <div className="invitation-row-info">
+            <Skeleton className="invitation-skeleton-email"/>
+            <Skeleton className="invitation-skeleton-state"/>
+            <Skeleton className="invitation-skeleton-date"/>
+        </div>
+        <div className="invitation-actions invitation-skeleton-actions" aria-hidden="true">
+            <Skeleton className="invitation-skeleton-button"/>
+            <Skeleton className="invitation-skeleton-button short"/>
+        </div>
+    </li>)}</ul>;
 }
 export function Invitations({ model, notify }: { model: WorkspaceModel; notify: (text: string) => void }) {
     const [email, setEmail] = useState('');
@@ -104,7 +118,7 @@ export function Invitations({ model, notify }: { model: WorkspaceModel; notify: 
       {invite && <Notice className="invitation-result" role="status"><p>{invite.reused ? t('已有有效邀请：') : t('已创建 ')}<strong>{invite.email}</strong>{t(' 的邀请，有效至 ')}{formatTime(invite.expiresAt)}</p><p>{t('邀请已生效。')}{deliveryText(invite)}</p><Button onClick={() => void copy(invite.email)}>{t('复制登录链接')}</Button></Notice>}
       <div className="invitation-list-heading"><h3>{t('邀请记录')}</h3><Button loading={loading} variant="ghost" disabled={loading || busy} onClick={() => void load()}>{t('刷新邀请')}</Button></div>
       <FormError message={listError}/>
-      {loading && !items.length ? <ListSkeleton label={t('正在读取邀请…')}/> : !items.length && !listError ? <p className="small muted">{t('还没有邀请。创建后可在这里查看、重发或撤销。')}</p> : <ul className="invitation-list">{items.map(item => {
+      {loading && !items.length ? <ListSkeleton label={t('正在读取邀请…')} className="invitation-loading"><InvitationListLoading/></ListSkeleton> : !items.length && !listError ? <p className="small muted">{t('还没有邀请。创建后可在这里查看、重发或撤销。')}</p> : <ul className="invitation-list">{items.map(item => {
           const status = item.status === 'pending' && item.expiresAt <= now ? 'expired' : item.status;
           const seconds = Math.min(60, Math.max(0, Math.ceil(((deadlines[item.id] ?? 0) - now) / 1000)));
           return <li key={item.id}><div className="invitation-row-info"><strong>{item.email}</strong><span className="invitation-state">{statusText(status)}</span><small>{status === 'revoked' ? t('此邀请已失效，重新创建可再次邀请。') : t('有效至 {0}', formatTime(item.expiresAt))}</small></div>

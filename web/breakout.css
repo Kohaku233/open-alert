@@ -1292,42 +1292,6 @@ input::placeholder {
   animation: none;
   box-shadow: none;
 }
-.skeleton-row:nth-child(2) {
-  opacity: 0.6;
-}
-.skeleton-row:nth-child(3) {
-  opacity: 0.3;
-}
-.list-skeleton {
-  position: relative;
-  overflow: hidden;
-}
-.list-skeleton::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 30%;
-  height: 1px;
-  background: var(--signal);
-  animation: panel-loading 1.6s ease-in-out infinite;
-}
-.skeleton-row [data-slot="skeleton"] {
-  animation: none !important;
-}
-.braille-spinner {
-  display: inline-block;
-  width: 1em;
-  font-family: var(--mono-font);
-}
-@keyframes panel-loading {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(440%);
-  }
-}
 @media (min-width: 901px) and (max-width: 1250px) {
   .app-main {
     padding: 24px;
@@ -1797,8 +1761,7 @@ input::placeholder {
 @media (prefers-reduced-motion: reduce) {
   .trace-end i,
   .digit-up,
-  .digit-down,
-  .list-skeleton::before {
+  .digit-down {
     animation: none !important;
   }
   .trace-end,

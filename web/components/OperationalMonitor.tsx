@@ -3,8 +3,9 @@ import type { LatencyMetric, ObservabilitySnapshot, OperationalComponent, Operat
 import { request, errorText } from '../api.js';
 import { t } from '../i18n.js';
 import { formatTime } from '../utils.js';
-import { Panel, Disclosure } from './Surface.js';
+import { Panel, Disclosure, LoadingRegion } from './Surface.js';
 import { Button } from './ui/button.js';
+import { Skeleton } from './ui/skeleton.js';
 
 const stateLabels: Record<OperationalState,string> = { ok:'未发现需处理的异常',idle:'空闲待命',warning:'需要关注',critical:'发现异常',unknown:'等待巡检确认' };
 const componentLabels:Record<OperationalComponent,string>={database:'数据库',scheduler:'监控',prices:'行情',notifications:'通知',email:'邮件',api:'接口',cron:'定时巡检',queue:'投递队列',monitor:'监控记录'};
@@ -40,7 +41,13 @@ export function OperationalMonitor(){
   return <Panel className="ops-panel">
     <div className="ops-heading"><div><h2>{t('服务运行诊断')}</h2><p className="small muted">{t('服务自身的健康与恢复记录，与币价提醒分开。')}</p></div><Button onClick={()=>void load()} disabled={busy}>{busy?t('正在读取…'):t('刷新诊断')}</Button></div>
     {error&&<p role="alert" className="form-error">{error} {data&&t('以下为上次成功读取的数据。')}</p>}
-    {!data?<p role="status">{error?t('诊断暂不可用，请重试。'):t('正在读取运行诊断…')}</p>:<>
+    {!data?error?<p role="status">{t('诊断暂不可用，请重试。')}</p>:<LoadingRegion label={t('正在读取运行诊断…')} className="ops-loading">
+      <div className="ops-state ops-state-loading"><Skeleton className="ops-skeleton-heading"/><Skeleton className="ops-skeleton-time"/></div>
+      <div className="ops-loading-issues"><Skeleton/><Skeleton/></div>
+      <div className="ops-metrics ops-metrics-loading">
+        {Array.from({length:6},(_,index)=><div key={index}><div className="ops-skeleton-label"><Skeleton/></div><div className="ops-skeleton-value"><Skeleton/></div></div>)}
+      </div>
+    </LoadingRegion>:<>
       <div className="ops-state" data-state={error?'unknown':data.state}><strong>{t(error?'诊断已过期':stateLabels[data.state])}</strong><span>{t('采集时间')} {formatTime(data.observedAt)}</span></div>
       <ul className="ops-issues">{data.issues.length?data.issues.map(issue=><li key={issue.component+issue.code}><strong>{t(componentLabels[issue.component])}</strong><span>{t(reasons[issue.code]??'需要检查组件状态。')} <code>{issue.code}</code></span></li>):<li>{t('当前未发现需要处理的服务异常。')}</li>}</ul>
       <dl className="ops-metrics">

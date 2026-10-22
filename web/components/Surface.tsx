@@ -27,10 +27,32 @@ export function Disclosure({ title, children, className = '' }: { title: string;
     <CollapsibleContent forceMount asChild><div ref={content} hidden={!present} inert={!open} className="disclosure-content" data-slot="collapsible-content"><div>{children}</div></div></CollapsibleContent>
   </Collapsible>;
 }
-export function LoadingStatus({ children }: { children: ReactNode }) { return <div className="loading-status" role="status"><Spinner/>{children}</div>; }
-export function ListSkeleton({ label }: { label: string }) {
+export function LoadingStatus({ children }: { children: ReactNode }) { return <div className="loading-status" role="status" aria-live="polite" aria-atomic="true"><Spinner/>{children}</div>; }
+export function LoadingRegion({ label, children, className = '', contentClassName = '' }: {
+  label: string;
+  children?: ReactNode;
+  className?: string;
+  contentClassName?: string;
+}) {
   const root = useRef<HTMLDivElement>(null);
-  return <div ref={root} className="list-skeleton" aria-busy="true"><LoadingStatus>{label}</LoadingStatus><div aria-hidden="true">{[0, 1, 2].map(row => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-line short"/></div>)}</div></div>;
+  return <div ref={root} className={`loading-region ${className}`.trim()} aria-busy="true">
+    <LoadingStatus>{label}</LoadingStatus>
+    {children && <div className={`loading-region-content ${contentClassName}`.trim()} aria-hidden="true">{children}</div>}
+  </div>;
+}
+export function ListSkeleton({ label, children, className = '', contentClassName = '', rows = 3 }: {
+  label: string;
+  children?: ReactNode;
+  className?: string;
+  contentClassName?: string;
+  rows?: number;
+}) {
+  const items = children ?? Array.from({ length: rows }, (_, row) => <div className="skeleton-row" key={row}><Skeleton className="skeleton-line"/><Skeleton className="skeleton-line short"/></div>);
+  return <LoadingRegion
+    label={label}
+    className={`list-skeleton ${className}`.trim()}
+    contentClassName={`list-skeleton-content ${contentClassName}`.trim()}
+  >{items}</LoadingRegion>;
 }
 /** Retained failure surface for a first load that came back with an error: the
     page states what happened instead of holding an empty placeholder. */
