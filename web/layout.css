@@ -260,7 +260,7 @@
 .users-section .user-row > button { min-height: 32px; padding: 0 14px; font-size: 12px; }
 .users-section .loading-region { min-height:0; }
 .users-section .loading-region>.loading-status { margin:0; padding:14px 22px; border-bottom:1px solid var(--line); font:12px/1.5 var(--mono-font); }
-.users-section .loading-region-content { padding:0 22px; }
+.users-section .loading-region-content { padding:0; }
 .user-row-skeleton { border-top:0; border-bottom:1px solid var(--line); }
 .user-row-skeleton:last-child { border-bottom:0; }
 .user-row-skeleton>[data-slot="skeleton"] { height:10px; border-radius:3px; }
@@ -342,9 +342,11 @@
   .workspace-shell .heading-lockup { text-align: left; }
   .workspace-shell .alerts-route .page-index { display: none; }
   .workspace-shell .alerts-route .dashboard-heading { min-height: 44px; }
-  .workspace-shell .alerts-route .heading-lockup { min-width:0; }
-  .workspace-shell .alerts-route .heading-lockup h1 { min-width:max-content; }
-  .workspace-shell .alerts-route .heading-actions { position: static; display: flex; width: auto; flex: none; }
+  .workspace-shell .alerts-route .heading-lockup { min-width:max-content; }
+  .workspace-shell .alerts-route .heading-lockup h1 { min-width:max-content; white-space:nowrap; }
+  .workspace-shell .alerts-route .heading-actions {
+    position:static;display:flex;width:auto;min-width:max-content;flex:none;
+  }
   .workspace-shell .alerts-route .create-alert-button { position: static; min-height: 40px; padding: 0 14px; font-size: 13px; }
   .signal-hero-main .compact-market-identity strong { padding: 0; background: none; }
   .signal-hero-main .compact-market-identity small { font-size: 11px; }
@@ -394,11 +396,15 @@
   .admin-page .deployment-panel { min-height: 200px; }
   .admin-page .users-section { margin-top: 16px; }
   .users-section .loading-region>.loading-status { padding:12px 16px; }
-  .users-section .loading-region-content { padding-inline:16px; }
-  .users-section .user-list-loading { width:calc(100% + 32px); margin-inline:-16px; }
+  .users-section .loading-region-content { padding-inline:0; }
+  .users-section .user-list-loading { width:auto; margin-inline:0; }
   .admin-page .user-row,
   .user-row-skeleton { padding-block:12px; }
-  .users-list .user-row-skeleton { grid-template-rows:minmax(0,1fr) minmax(0,1fr); row-gap:8px; min-height:103px; }
+  .users-list .user-row-skeleton {
+    grid-template-rows:minmax(0,1fr) minmax(0,1fr);
+    row-gap:8px;
+    min-height:103px;
+  }
   .users-list .user-row-skeleton>.user-skeleton-copy { grid-column:1;grid-row:1; }
   .users-list .user-row-skeleton>.user-skeleton-role { grid-column:1;grid-row:2; }
   .users-list .user-row-skeleton>.user-skeleton-state { grid-column:1;grid-row:2;margin-left:72px; }
@@ -437,6 +443,10 @@
 .account-menu .preference-segments:not(.languages) [data-slot="button"] {
   width:26px;min-width:26px;height:24px;min-height:24px;padding:0;
 }
+.account-menu .preference-segments.languages [data-slot="button"] {
+  inline-size:auto;min-inline-size:38px;block-size:24px;min-block-size:24px;
+  padding-inline:8px;white-space:nowrap;writing-mode:horizontal-tb;
+}
 @media (min-width: 901px) {
   .trace-plot::after { content: ""; position: absolute; top: -22px; bottom: -10px; right: 0; border-right: 1px dashed var(--control-border); pointer-events: none; }
   .alert-editor-fields .enable-rule { position: relative; min-height: 39px; padding-top: 0; }
@@ -456,8 +466,4 @@
   .mobile-dock svg { width: 18px; height: 18px; }
 }
 
-.account-menu .languages [data-slot="button"] {
-  inline-size:auto;min-inline-size:38px;block-size:24px;min-block-size:24px;
-  padding-inline:8px;white-space:nowrap;writing-mode:horizontal-tb;
-}
 @media (max-width: 900px) { .workspace-shell .alerts-route .heading-lockup h1 { white-space: nowrap; } }
