@@ -44,6 +44,7 @@ async function workerApp(env:CloudflareBindings) {
     let observationFailureAt:number|null=null;
     async function coordinatorJson<T>(path:string):Promise<T>{
       const response=await coordinator().fetch('https://coordinator.internal'+path);
+      if(path==='/public-preview'&&!response.ok)console.error('open_alert_public_preview_failed',response.status);
       if(!response.ok){if(path==='/observability'&&(observationFailureAt===null||Date.now()-observationFailureAt>=60000||Date.now()<observationFailureAt)){observationFailureAt=Date.now();console.error('open_alert_observation_failed',response.status);}throw new Error('coordinator_unavailable');}return await response.json() as T;
     }
     const app=createApp({...services,auth,notifications,publicPreview:{get:()=>coordinatorJson<PublicMarketPreview>('/public-preview')},quotes:{

@@ -118,7 +118,9 @@ export function createApi(d:ApiDependencies) {
   app.get('/api/public-quotes',async c=>{
     if(Object.keys(c.req.query()).length)throw new HttpError(400,'invalid_request');
     if(!d.publicPreview)throw new HttpError(503,'service_unavailable');
-    const preview=await d.publicPreview.get();
+    let preview;
+    try {preview=await d.publicPreview.get();}
+    catch(error){console.error('open_alert_public_preview_unavailable',error instanceof Error?error.name:'unknown');throw error;}
     c.header('Cache-Control','public, max-age=5, s-maxage=5');
     return ok(c,preview);
   });
