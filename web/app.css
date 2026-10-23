@@ -7,6 +7,7 @@
 @import './appearance.css' layer(product);
 @import './motion.css';
 @import './redesign.css' layer(legacy);
+@import './operational-monitor.css' layer(legacy);
 @import './fonts.css';
 @import './breakout.css' layer(product);
 @import './layout.css' layer(layout);
