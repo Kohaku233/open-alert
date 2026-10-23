@@ -1,7 +1,12 @@
 /* One-way ownership: legacy < product surfaces < layout < shared controls.
    Theme custom properties live separately so portals and pages share a palette. */
 @layer theme, base, legacy, components, utilities, product, layout, controls, tokens;
-@import './styles.css' layer(legacy);
+@import './legacy/01-base.css' layer(legacy);
+@import './legacy/02-shell.css' layer(legacy);
+@import './legacy/03-surfaces.css' layer(legacy);
+@import './legacy/04-dialog.css' layer(legacy);
+@import './legacy/05-responsive.css' layer(legacy);
+@import './legacy/06-market-search.css' layer(legacy);
 @import './workbench.css' layer(legacy);
 @import './ui.css';
 @import './appearance.css' layer(product);
