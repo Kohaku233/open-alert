@@ -68,8 +68,8 @@ try {
 const valid = baseline?.version === 1 && Array.isArray(baseline.duplicates) && baseline.duplicates.every(g =>
   typeof g?.selector === 'string' && Array.isArray(g.context) && g.context.every(c => typeof c === 'string') &&
   typeof g.property === 'string' && Array.isArray(g.owners) &&
-  g.owners.every(o => typeof o?.file === 'string' && typeof o.layer === 'string'));
-if (!valid) throw new Error(`Malformed ${rel(baselineFile)}: expected {version: 1, duplicates: [{selector, context, property, owners}]}`);
+  g.owners.every(o => typeof o?.file === 'string' && typeof o.layer === 'string' && typeof o.important === 'boolean'));
+if (!valid) throw new Error(`Malformed ${rel(baselineFile)}: expected {version: 1, duplicates: [{selector, context, property, owners: [{file, layer, important}]}]}`);
 
 const known = new Map(baseline.duplicates.map(g => [groupKey(g), new Set(g.owners.map(ownerKey))]));
 const current = new Map(duplicates.map(g => [groupKey(g), new Set(g.owners.map(ownerKey))]));

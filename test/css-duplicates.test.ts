@@ -168,11 +168,30 @@ test('lists stale groups and owners without failing', () => {
   assert.match(result.stdout, /1 duplicate groups; 0 new; 1 stale \(remove stale entries from docs\/css-duplicates\.json\)/);
 });
 
+test('passes and lists the stale owner when a known group loses one of three owners', () => {
+  const pair = twoFiles('.x { color: red; }\n', '.x { color: blue; }\n');
+  const before = { ...pair, 'app.css': `${pair['app.css']}@import './c.css' layer(high);\n`, 'c.css': '.x { color: green; }\n' };
+  const result = run(pair, [], baselineOf(inventory(before)));
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /stale: \.x \{ color \} web\/c\.css\[high\]\n/);
+  assert.match(result.stdout, /1 duplicate groups; 0 new; 1 stale/);
+});
+
+test('distinguishes owners by the full nested layer path', () => {
+  const groups = inventory({
+    'app.css': "@layer outer;\n@import './a.css' layer(outer);\n",
+    'a.css': '@layer one, two;\n@layer one { .x { color: red; } }\n@layer two { .x { color: blue; } }\n.x { color: green; }\n',
+  });
+  assert.deepEqual(groups[0]?.owners.map(o => o.layer), ['outer', 'outer.one', 'outer.two']);
+});
+
 for (const [name, baseline, diagnostic] of [
   ['missing', undefined, /Unable to read docs\/css-duplicates\.json/],
   ['invalid JSON', '{', /Unable to read docs\/css-duplicates\.json/],
   ['wrong version', '{"version":2,"duplicates":[]}\n', /Malformed docs\/css-duplicates\.json/],
   ['owner without layer', '{"version":1,"duplicates":[{"selector":".x","context":[],"property":"color","owners":[{"file":"web/a.css"}]}]}\n', /Malformed/],
+  ['owner without important', '{"version":1,"duplicates":[{"selector":".x","context":[],"property":"color","owners":[{"file":"web/a.css","layer":""}]}]}\n', /Malformed/],
+  ['string important', '{"version":1,"duplicates":[{"selector":".x","context":[],"property":"color","owners":[{"file":"web/a.css","layer":"","important":"false"}]}]}\n', /Malformed/],
 ] as const) {
   test(`rejects a ${name} baseline`, () => {
     const result = run({ 'app.css': '.x { color: red; }\n' }, [], baseline);
