@@ -7,13 +7,13 @@
       "property": "--radius",
       "owners": [
         {
-          "file": "web/tokens.css",
-          "layer": "tokens",
+          "file": "web/redesign.css",
+          "layer": "legacy",
           "important": false
         },
         {
-          "file": "web/workbench.css",
-          "layer": "legacy",
+          "file": "web/tokens.css",
+          "layer": "tokens",
           "important": false
         }
       ]

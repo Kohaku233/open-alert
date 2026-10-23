@@ -7,7 +7,6 @@
 @import './legacy/04-dialog.css' layer(legacy);
 @import './legacy/05-responsive.css' layer(legacy);
 @import './legacy/06-market-search.css' layer(legacy);
-@import './workbench.css' layer(legacy);
 @import './ui.css';
 @import './appearance.css' layer(product);
 @import './motion.css';
