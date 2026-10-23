@@ -51,7 +51,7 @@ Users work from desktop and mobile browsers, usually in short check-ins. They cr
 - Product behavior and limits: `README.md`, `CONTRACT.md`, `docs/`.
 - API and state contracts: `src/contracts/api.ts`, `src/contracts/domain.ts`.
 - Frontend behavior: `web/model.ts`, `web/api.ts`, `web/useMarketQuote.ts`.
-- Existing surfaces: `web/pages/`, `web/components/`, `web/legacy/`, `web/workbench.css`.
+- Existing surfaces: `web/pages/`, `web/components/`, `web/legacy/`, `web/redesign.css`.
 - Existing self-hosted display font: `public/fonts/Sora-Variable.ttf`.
 - No verified customer logos, testimonials, benchmarks, or production claims are present. Future work must not fabricate them.
 

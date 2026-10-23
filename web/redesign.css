@@ -2,6 +2,36 @@
    A nocturnal instrument surface: warm paper, graphite glass, acid signal,
    visible construction lines, and motion tied to live state. */
 
+/* Former workbench.css baseline; keep before redesign rules. */
+:root{--radius:6px}
+html:lang(en){font-family:Sora,'Segoe UI',sans-serif}input{caret-color:var(--signal)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline-color:var(--ring)}input,select{background:var(--field)}h1{font-size:26px}.primary{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:500}.primary:hover{background:var(--primary-hover);color:var(--bg);border-color:var(--primary-hover)}
+.masthead{min-height:76px;padding:0 36px;gap:36px}.brand{color:var(--text);font-size:17px;gap:12px}.brand-mark{width:34px;height:34px;border:0;border-radius:0;color:var(--text)}.languages{flex-shrink:0}.languages button[aria-pressed=true]{background:var(--selected);color:var(--text)}.app-nav{align-self:stretch}.app-nav a{border-bottom:2px solid transparent}.app-nav a[aria-current=page]{color:var(--text);border-color:var(--signal)}.app-footer{margin:auto;border-color:var(--secondary-hover)}.page-heading button{flex-shrink:0}.page-heading p{max-width:65ch}
+.market-header{padding:15px 18px;border:1px solid var(--line);border-radius:6px;margin-bottom:20px;min-height:80px;gap:28px}.contract{background:none;font-size:12px}.quote{font-size:inherit;font-weight:450}.price-block{margin-left:0}.health{margin-left:auto}
+.workspace{grid-template-columns:minmax(0,2.2fr) minmax(340px,1fr);gap:20px;align-items:start}.chart-bottom{line-height:1.7;gap:18px}.chart-bottom>span{max-width:65%}.chart-fallback,.empty-chart{background:var(--bg)}.switch[aria-checked=true]{background:var(--signal);border-color:var(--signal)}.switch:after{background:var(--bg)}.alert-row{border-color:var(--line)}.state-label{font-size:11px}.state-label:before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:currentColor;margin-right:5px}.instrument-button{font-size:11px}.rule-result{line-height:1.8}.rule-result time{display:block;font-family:Consolas,monospace}.alert-buttons button{border:0;padding:4px 0;min-height:32px;font-size:11px;color:var(--muted-foreground)}.alert-buttons button:hover{background:none;color:var(--text);text-decoration:underline;text-underline-offset:4px}.monitor-control{font-size:11px;flex-wrap:wrap}.monitor-notes{color:var(--muted-foreground);font-size:12px}.monitor-notes>summary{padding:8px 0;color:var(--muted-foreground)}.warning{border:1px solid var(--warning-border)}.settings-panel h2{margin-bottom:16px}.status-pill{background:none}.login-intro h1{line-height:1.45}.signal-mark span:last-child{background:var(--signal)}.google-button svg{width:18px;height:18px}.dialog-heading button{display:flex;align-items:center;justify-content:center}.dialog-heading+p{max-width:65ch;font-size:13px}
+@media(max-width:1599px){.app-footer{margin-inline:36px}}
+@media(max-width:1200px){.masthead{gap:24px}.workspace{grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr)}.chart-bottom{flex-direction:column;align-items:start}.chart-bottom>span{max-width:none}}
+@media(max-width:900px){.masthead{flex-wrap:wrap;gap:0;padding:16px 22px 0}.brand{margin-bottom:14px}.app-nav{order:3;flex-basis:100%;height:46px}.app-footer{margin-inline:22px}.workspace{grid-template-columns:1fr}.alerts-panel{grid-row:1}.chart-panel{grid-row:2}.market-header{gap:18px;flex-wrap:wrap}}
+@media(max-width:600px){.masthead{padding:14px 16px 0}.brand{font-size:15px;gap:9px}.brand-mark{width:29px;height:29px}.app-nav{overflow-x:auto}.app-nav a{flex-shrink:0}.app-footer{margin-inline:16px;flex-wrap:wrap}.page-heading{margin-bottom:18px}.page-heading button{font-size:12px}.market-header{padding:14px;gap:16px;display:grid;grid-template-columns:1fr 1fr}.price-block{grid-column:1/-1;grid-row:2}.price-block strong{font-size:27px}.price-block>span{overflow-wrap:anywhere}.health{grid-column:2;grid-row:1;width:auto}.health small{margin:0}.contract{font-size:11px}.alert-row{margin-inline:18px}.alert-buttons button{font-size:12px}.chart-bottom a{min-height:44px;display:flex;align-items:center}.login-header-note{display:none}dialog{padding:22px}}
+@media(max-width:380px){.page-heading button{padding:8px 10px;font-size:11px}.market-header{gap:12px}}
+.switch{background:var(--control-border);border-color:var(--control-border)}.tradingview-widget-container{height:100%;width:100%}.tradingview-widget-container__widget{height:100%;width:100%}.tradingview-widget-container iframe{height:100%;width:100%;border:0}
+
+@media(max-width:600px){button, .languages button, .instrument-button, .alert-buttons button, .chart-caption .text-button{min-width:44px;min-height:44px}input,select{min-height:44px}.languages button{padding-inline:7px}.user-row>div{grid-column:1;grid-row:1}.user-row>span{grid-column:1;grid-row:2;min-width:0;overflow-wrap:anywhere}.user-row>button{grid-column:2;grid-row:1/3;width:100px}.switch{width:44px;height:44px;min-height:44px;background:transparent;border:0;padding:0}.switch:before{content:'';position:absolute;left:0;top:10px;width:44px;height:24px;border-radius:20px;background:var(--control-border)}.switch:after{width:18px;height:18px;left:3px;top:13px;background:var(--bg)}.switch[aria-checked=true],.switch:hover,.switch[aria-checked=true]:hover{background:transparent}.switch[aria-checked=true]:before{background:var(--signal)}.switch[aria-checked=true]:after{left:3px;transform:translateX(20px)}}
+/* Market scope follows the same inset as rules and monitoring controls. */
+.alert-market-tabs{gap:0}
+.alert-scope{flex-wrap:wrap}
+.alert-scope [data-slot="tabs-trigger"]{line-height:1.4;white-space:nowrap}
+.alert-scope [data-slot="tabs-trigger"][data-state="active"]{background:var(--selected);box-shadow:none}
+.alert-scope [data-slot="tabs-trigger"]:hover{color:var(--text)}
+.alert-scope [data-slot="tabs-trigger"]:focus-visible{outline:2px solid var(--ring);outline-offset:2px;box-shadow:none}
+.alert-scope-count{flex-shrink:0;line-height:1.4;white-space:nowrap}
+.alert-market-tabs .alerts-list{margin:0;min-height:240px}
+.alerts-panel .empty-list strong{color:var(--text);line-height:1.5}
+.alerts-panel .empty-list p{margin:0;text-wrap:pretty}
+.alerts-panel .empty-list [data-slot="button"]{margin-top:4px;min-height:44px;padding:10px 16px}
+.alerts-panel .monitor-control{gap:12px;padding:16px 20px;color:var(--muted-foreground);font-size:12px;line-height:1.6}
+@media(max-width:600px){.alerts-panel .monitor-control{padding:16px 18px}.alert-market-tabs .alerts-list{max-height:none}}
+
 
 
 
