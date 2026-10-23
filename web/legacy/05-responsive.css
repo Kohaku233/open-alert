@@ -1,0 +1,31 @@
+@media(max-width:1100px){
+  .masthead,.app-footer{padding-inline:20px}
+  .app-nav{padding-inline:20px}
+  .chart-bottom{flex-wrap:wrap}
+}
+@media(max-width:760px){
+  .brand-mark{font-size:24px}
+  .login-header-note{display:none}
+  .app-footer{flex-wrap:wrap}
+  .market-header{flex-wrap:wrap}
+  .price-block{max-width:100%}
+  .price-block strong{font-size:24px}
+  .health{width:100%;flex-wrap:wrap}
+  .health small{margin-left:auto}
+  .banner{margin-bottom:12px}
+  .banner button{display:block}
+  .chart-toolbar{gap:10px}
+  .chart-toolbar>button{margin-left:auto;min-height:38px;font-size:12px}
+  .chart-bottom{align-items:flex-start;flex-direction:column}
+  .history-heading>span{display:block;margin-top:7px}
+  .history{margin-top:24px}
+  dialog{padding:23px}
+  .connection-error{display:block;padding:12px}
+  .connection-error button{margin-top:10px}
+  .login-intro{padding:0 4px}
+  .login-intro>.small{display:none}
+  .page-heading>button{font-size:11px;padding:7px 9px;max-width:120px}
+}
+@media(max-width:380px){
+  .price-block{width:100%}
+}

@@ -1,0 +1,14 @@
+.masthead{border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--deep)}
+.brand{display:flex;align-items:center;font-weight:600;flex-shrink:0}
+.brand-mark{display:grid;place-items:center;font-size:29px;line-height:1}
+.brand small{display:block;color:var(--muted-foreground);line-height:1.8}
+.app-nav{border-bottom:1px solid var(--border)}
+.app-nav a{white-space:nowrap}
+.app-main{margin:auto}
+.app-footer{border-top:1px solid var(--border)}
+.page-loading{max-width:1000px;margin:auto;padding:45px 24px}
+.page-loading p{margin:18px 0;color:var(--muted-foreground)}
+.connection-error{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--error-border);padding:12px 16px;margin-bottom:20px;font-size:12px}
+.connection-error p{overflow-wrap:anywhere}
+.connection-error button{flex-shrink:0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:13px 20px;border-radius:8px;box-shadow:0 6px 32px var(--shadow-soft);max-width:calc(100% - 30px);font-size:13px;line-height:1.7;z-index:40;overflow-wrap:anywhere}
