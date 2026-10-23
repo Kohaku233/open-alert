@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "duplicates": [
+    {
+      "selector": ":root",
+      "context": [],
+      "property": "--radius",
+      "owners": [
+        {
+          "file": "web/tokens.css",
+          "layer": "tokens",
+          "important": false
+        },
+        {
+          "file": "web/workbench.css",
+          "layer": "legacy",
+          "important": false
+        }
+      ]
+    }
+  ]
+}
