@@ -32,6 +32,7 @@
     "cf:deploy": "wrangler deploy",
     "typecheck:web": "tsc -p web/tsconfig.json --noEmit",
     "lint:css": "node scripts/css-cascade.mjs",
+    "lint:css:dupes": "node scripts/css-duplicates.mjs",
     "test:runtime:cf": "npm run build:web && npm run cf:check && node scripts/test-batches.mjs test/runtime-cloudflare.test.ts"
   },
   "dependencies": {
