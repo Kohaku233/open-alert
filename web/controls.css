@@ -78,7 +78,7 @@
 .loading-region-content { min-width:0; }
 .list-skeleton { overflow:hidden; }
 .list-skeleton-content>.skeleton-row:last-child { border-bottom:0; }
-.skeleton-row>[data-slot="skeleton"] { animation:none!important; }
+.skeleton-row>[data-slot="skeleton"] { animation:none; }
 .chart-loading { position:absolute; }
 @keyframes loading-seek { 0%{transform:translateX(-100%);opacity:0} 20%{opacity:1} 80%{opacity:1} 100%{transform:translateX(335%);opacity:0} }
 .boot-status { display:flex;align-items:center;gap:10px; }

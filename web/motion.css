@@ -1,7 +1,7 @@
 @layer product {
   .app-nav { position: relative; }
   .app-nav a[aria-current="page"] { border-bottom-color: transparent; }
-  .nav-indicator { position: absolute; left: 0; bottom: 0; width: 1px; height: 2px; background: var(--foreground); transform-origin: left center; pointer-events: none; opacity: 0; }
+  .nav-indicator { width: 1px; height: 2px; transform-origin: left center; pointer-events: none; opacity: 0; }
   .languages[data-motion-indicator] { position: relative; isolation: isolate; }
   .segment-indicator { position: absolute; left: 0; top: 0; width: 1px; background: var(--accent); border-radius: 999px; transform-origin: left center; pointer-events: none; opacity: 0; z-index: 0; }
   .languages[data-motion-indicator] [data-slot="button"] { position: relative; z-index: 1; border: 0; background: transparent; color: var(--muted-foreground); }
