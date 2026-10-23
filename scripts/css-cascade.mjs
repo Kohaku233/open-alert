@@ -6,8 +6,9 @@
  *   node scripts/css-cascade.mjs          report and fail when any exist
  *
  * Only normal (non-!important) declarations with exactly matching selector text
- * are candidates. Place "css-cascade-ignore: reason" in a comment immediately
- * before a declaration to keep an intentional fallback.
+ * in different rules or layers are candidates. Repeats within one rule are
+ * outside this check's scope. Place "css-cascade-ignore: reason" in a comment
+ * immediately before a declaration to keep an intentional fallback.
  */
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -57,6 +58,7 @@ async function walk(container, file, layer, context) {
   for (const node of [...(container.nodes ?? [])]) {
     if (node.type === 'atrule' && node.name === 'import') {
       const params = node.params.trim();
+      if (container.type !== 'root') throw new Error(`Unsupported local @import at ${file}:${node.source.start.line}: ${params}`);
       // Tailwind package imports are outside our ownership. Every other import
       // must be an unconditional local import in the form below.
       if (/^(['"])tailwindcss\/(theme|utilities)\.css\1\s+layer\(\2\)$/.test(params)) continue;
