@@ -18,6 +18,7 @@ import { TradingChart } from '../components/TradingChart.js';
 import { AlertEditor } from '../components/AlertEditor.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { MarketPicker } from '../components/MarketPicker.js';
+import { FirstRunGuide } from '../components/FirstRunGuide.js';
 import { useMarketQuote } from '../useMarketQuote.js';
 import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 type ConfirmAction = {
@@ -121,6 +122,10 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
       <div className="heading-lockup"><span className="page-index">{alertsOnly ? '02 — ALERT RULES' : '01 — MARKETS · ALERTS'}</span><h1>{alertsOnly ? t("价格警报") : t("行情与警报")}</h1></div>
       <div className="heading-actions"><Button variant="default" className="primary create-alert-button" onClick={() => setEditor({ alert: null })} disabled={busy || !available || !!error || data.alerts.length >= 20}><Icon name="plus"/>{t("创建警报")}</Button></div>
     </PageHeader>
+
+    {!alertsOnly && <FirstRunGuide channelConfigured={data.status.channel.configured} alertCount={data.alerts.length} monitoring={settings.enabled}
+      canCreate={available && !error && data.alerts.length < 20} canEnable={data.status.channel.configured && data.alerts.length > 0 && !settingsPending && !error} seasoned={data.alerts.some(alert => !!alert.last || alert.triggered)} busy={busy}
+      onConfigure={() => navigate('/notifications')} onCreate={() => setEditor({ alert: null })} onEnable={() => void enableMonitoring()}/>}
 
     <section className="market-header signal-hero" aria-label={t("当前市场信号")}>
       <div className="signal-hero-main">
