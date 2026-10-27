@@ -17,6 +17,7 @@ import { createPublicMarketPreview } from '../markets/public-preview.js';
 import { createObservability } from './observability.js';
 import { createLiveQuoteHub } from '../markets/live-quotes.js';
 import { createRealtimeGateway, REALTIME_PATH } from './realtime.js';
+import { handleUnhandledRejection } from './rejections.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
@@ -60,6 +61,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   };
 }
 export async function startNode(env: Record<string,unknown>=process.env) {
+  process.on('unhandledRejection',reason=>{handleUnhandledRejection(reason);});
   let runtime:Awaited<ReturnType<typeof createNodeRuntime>>|null=null;
   try {runtime=await createNodeRuntime(env);runtime.start();}
   catch(error) {console.error(error instanceof ConfigurationError?error.message:'Open Alert startup unavailable: database or email configuration/readiness failed');}

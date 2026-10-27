@@ -91,12 +91,39 @@
   .threshold-input,.otp-input { --field-size:26px; }
   .market-command-item { min-height:48px; }
   [data-slot="tabs-trigger"] { min-height:40px; }
-  .public-shell .login-signal-field { height:96px;opacity:.7; }
-  .public-shell .login-proof-row { position:absolute;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));left:6px;right:6px;top:326px;bottom:auto;margin:0;border:1px solid var(--line);border-radius:12px;background:var(--card); }
+  /* Trace and quotes stay in document flow so they can never overlap the login card on short screens. */
+  .public-shell .login-signal-field { order:2;position:relative;inset:auto;flex-shrink:0;height:96px;margin:14px -6px 0;opacity:.7; }
+  .public-shell .login-proof-row { order:3;position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));inset:auto;margin:10px 0 0;border:1px solid var(--line);border-radius:12px;background:var(--card); }
+  .public-shell .login-layout { justify-content:flex-start; }
+  .public-shell .login-access { margin:0 auto; }
   .public-shell .login-proof-row>div { min-width:0;padding:8px; }
   .public-shell .login-proof-row>div>span { display:block;font-size:8px;letter-spacing:.03em; }
   .public-shell .login-proof-row small { display:block;font-size:8px; }
   .public-shell .login-proof-row strong { font-size:13px;white-space:nowrap; }
   .public-shell .login-trace-label { top:0;bottom:auto;font-size:8px; }
+}
+/* Tablet portrait: center the single column instead of leaving the lower half empty. */
+@media(min-width:601px) and (max-width:900px) {
+  .public-shell .login-layout { justify-content:center;padding:96px 32px 48px; }
+  .public-shell .login-intro { padding-top:0; }
+  .public-shell .login-intro h1 { font-size:48px; }
+  .public-shell .login-signal-field { height:140px; }
+  .public-shell .login-proof-row>div { padding:14px 16px; }
+  .public-shell .login-proof-row>div>span,.public-shell .login-proof-row small { font-size:10px;letter-spacing:.08em; }
+  .public-shell .login-proof-row strong { font-size:18px; }
+  .public-shell .login-access { max-width:none;padding:32px; }
+}
+/* Short phones (iPhone SE): drop the decorative trace so the login card starts above the fold. */
+@media(max-width:600px) and (max-height:700px) {
+  .public-shell .login-signal-field { display:none; }
+  .public-shell .login-layout { gap:20px; }
+  .public-shell .login-intro { padding-top:88px; }
+  .public-shell .login-intro h1 { font-size:30px; }
+}
+/* Large tablets in portrait keep two columns; center the login card vertically instead of top-pinning it. */
+@media(min-width:901px) and (max-width:1200px) and (orientation:portrait) {
+  .public-shell .login-access { display:flex;flex-direction:column;justify-content:center;padding-block:96px; }
+  .public-shell .login-intro { padding-top:360px; }
+  .public-shell .login-signal-field { top:auto;bottom:200px; }
 }
 @media(prefers-reduced-motion:reduce) { .loading-region::after,.chart-loading::after { animation:none;opacity:.7;transform:none; } }
