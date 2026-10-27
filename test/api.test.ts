@@ -290,6 +290,30 @@ test('view quote requires session, validates canonical market and never saves or
  }finally{await f.close();}
 });
 
+test('candles require session, validate market/timeframe/cursor and never touch alert state',async()=>{
+ const seen:{instrument:string;timeframe:string;before?:number}[]=[];let fail=false;
+ const f=await fixture({}, {candles:{get:async(market,timeframe,before)=>{seen.push({instrument:market.instrument,timeframe,...(before===undefined?{}:{before})});if(fail)throw new Error('exchange down');return {instrument:market.instrument,timeframe,candles:[[1,1,2,0.5,1.5,3]],done:false};}}});
+ try{
+  assert.equal((await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1h')).status,401);
+  const alice=await f.login('candles@example.com');
+  for(const query of ['', '?instrument=BTC-USDT-SWAP', '?instrument=BTC-USDT-SWAP&timeframe=2h', '?instrument=FAKE-USDT-SWAP&timeframe=1h', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=-1', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=abc', '?instrument=BTC-USDT-SWAP&timeframe=1h&timeframe=1d', '?instrument=BTC-USDT-SWAP&timeframe=1h&extra=1'])
+   assert.equal((await f.call('/api/candles'+query,'GET',undefined,alice.cookie)).status,400,query);
+  assert.equal(seen.length,0);
+  const page=await f.body(await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1h&before=1700000000000','GET',undefined,alice.cookie));
+  assert.deepEqual(page.data.candles,[[1,1,2,0.5,1.5,3]]);assert.deepEqual(seen,[{instrument:'BTC-USDT-SWAP',timeframe:'1h',before:1700000000000}]);
+  await f.body(await f.call('/api/candles?instrument=ETH-USDT-SWAP&timeframe=1w','GET',undefined,alice.cookie));assert.equal(seen[1]!.before,undefined);
+  fail=true;assert.equal((await f.body(await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1d','GET',undefined,alice.cookie),503)).error.code,'service_unavailable');
+  f.setStale(true);fail=false;assert.equal((await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1d','GET',undefined,alice.cookie)).status,503);
+  assert.equal((await f.repositories.alerts.listForUser(alice.id)).length,0);assert.equal(f.wakes(),0);
+ }finally{await f.close();}
+});
+
+test('candles report service_unavailable on runtimes without a candle source',async()=>{
+ const f=await fixture();try{const alice=await f.login('nocandles@example.com');
+  assert.equal((await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1h','GET',undefined,alice.cookie)).status,503);
+ }finally{await f.close();}
+});
+
 test('quote lookup uses one trusted hop only after authentication/input validation and preserves API errors',async()=>{
  let lookups=0,result:QuoteLookup={quote:{instrument:'BTC-USDT-SWAP',price:123,observedAt:1700000000000,timestamp:null}};
  const f=await fixture({}, {catalog:{get:async()=>{throw new Error('unexpected catalog read');}},quotes:{

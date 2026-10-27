@@ -15,6 +15,8 @@ import type { WorkspaceModel } from '../model.js';
 import { api, errorText } from '../api.js';
 import { alertState, breached, formatPrice, formatQuotePrice, formatTime, healthLabels, outcomeLabels, safeChartSymbol } from '../utils.js';
 import { TradingChart } from '../components/TradingChart.js';
+import { NativeChart } from '../components/NativeChart.js';
+import { setChartKind, useChartKind } from '../chartPreference.js';
 import { AlertEditor } from '../components/AlertEditor.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { MarketPicker } from '../components/MarketPicker.js';
@@ -24,6 +26,10 @@ import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selec
 type ConfirmAction = {
     kind: 'delete' | 'rearm';
     alert: Alert;
+} | {
+    kind: 'retarget';
+    alert: Alert;
+    price: number;
 } | {
     kind: 'disable';
 };
@@ -47,7 +53,10 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     const [mobileChartOpen, setMobileChartOpen] = useState(false);
     const [editor, setEditor] = useState<{
         alert: Alert | null;
+        threshold?: number;
+        side?: 'upper' | 'lower';
     } | null>(null);
+    const chartKind = useChartKind();
     const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
     const [actionError, setActionError] = useState('');
     useEffect(() => {
@@ -104,6 +113,15 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
                 await mutate(() => api('DELETE /api/alerts/:id', { expectedGeneration: confirm.alert.generation }, confirm.alert.id));
                 notify(t("警报已删除。"));
             }
+            else if (confirm.kind === 'retarget') {
+                const current = data.alerts.find(alert => alert.id === confirm.alert.id);
+                if (!current || current.generation !== confirm.alert.generation || current.pending) {
+                    setActionError(t("警报已在其他页面更新，请关闭窗口后重新打开。"));
+                    return;
+                }
+                await mutate(() => api('PATCH /api/alerts/:id', { threshold: confirm.price, expectedGeneration: confirm.alert.generation }, confirm.alert.id));
+                notify(confirm.alert.triggered ? t("目标价已更新；已触发的警报仍保持锁定。") : t("目标价已更新。"));
+            }
             else {
                 await mutate(() => api('POST /api/alerts/:id/rearm', { expectedGeneration: confirm.alert.generation }, confirm.alert.id));
                 notify(t("警报已重新武装。"));
@@ -117,6 +135,12 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     function openConfirm(action: ConfirmAction) { setActionError(''); setConfirm(action); }
     const rearmTick = confirm && confirm.kind === 'rearm' ? data.status.prices.find(item => sameMarket(item.instrument, confirm.alert.instrument)) : undefined;
     const rearmHit = confirm && confirm.kind === 'rearm' && breached(confirm.alert.side, confirm.alert.threshold, rearmTick);
+    const retargetTick = tick && confirm?.kind === 'retarget' && sameMarket(tick.instrument, confirm.alert.instrument) ? { instrument: tick.instrument, price: tick.price, timestamp: tick.timestamp ?? tick.observedAt, receivedAt: tick.observedAt } : undefined;
+    const retargetHit = confirm?.kind === 'retarget' && confirm.alert.enabled && !confirm.alert.triggered && breached(confirm.alert.side, confirm.price, retargetTick);
+    const nativeAvailable = !!market?.symbol && available;
+    const tradingViewAvailable = !!market && safeChartSymbol(market.tradingViewSymbol, market);
+    const showNative = chartVisited && !!market && nativeAvailable && (chartKind === 'native' || !tradingViewAvailable);
+    const canCreate = available && !busy && !error && data.alerts.length < 20;
     return <section ref={pageRef} className={`route-surface dashboard-v2 ${alertsOnly ? 'alerts-route' : ''}`} hidden={!active} data-mobile-chart={mobileChartOpen ? 'open' : 'closed'} aria-label={t("行情与警报")}>
     <PageHeader className="page-heading dashboard-heading">
       <div className="heading-lockup"><span className="page-index">{alertsOnly ? '02 — ALERT RULES' : '01 — MARKETS · ALERTS'}</span><h1>{alertsOnly ? t("价格警报") : t("行情与警报")}</h1></div>
@@ -141,9 +165,13 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     </section>
 
     {quoteState.error && <Notice as="p" className="warning inline-warning" role="status">{t("行情报价更新失败，将自动重试。")}{quoteState.error}</Notice>}
-    {compact && !alertsOnly && <Panel className="mobile-market-alerts"><div className="mobile-alerts-heading"><h2>{t('本市场警报')} · {marketAlerts.length}</h2><Button variant="ghost" onClick={() => navigate('/alerts')}>{t('全部')} {data.alerts.length} →</Button></div>{marketAlerts.length ? marketAlerts.map(alert => <Button key={alert.id} variant="ghost" className={`mobile-alert-summary ${alert.side}`} onClick={() => navigate('/alerts')}><span><strong>{alert.name}</strong><small>{alert.triggered ? t('已锁定') : !settings.enabled ? t('总开关关闭') : tick ? `${t('距现价')} ${((alert.threshold / tick.price - 1) * 100).toFixed(2)}%` : t('等待报价')}</small></span><b>{alert.side === 'upper' ? '↑' : '↓'} {formatPrice(alert.threshold)}</b></Button>) : <p className="small muted">{t('此市场暂无警报')}</p>}<Button variant="ghost" className="mobile-chart-toggle" aria-expanded={mobileChartOpen} onClick={() => setMobileChartOpen(value => !value)}>{t('参考图表')} · TradingView <span>{mobileChartOpen ? '−' : '›'}</span></Button></Panel>}
-    <div className="workspace dashboard-grid"><Panel className="chart-panel" aria-label={t("TradingView 参考图表")}><div className="chart-panel-head"><div><h2>{t("参考图表")}</h2><p>{t("显示用图表，不参与警报判断。")}</p></div><div className="chart-toolbar"><span>TradingView</span></div></div>
-      {chartVisited && market && safeChartSymbol(market.tradingViewSymbol, market) ? <TradingChart symbol={market.tradingViewSymbol} source={source}/> : <EmptyState className="empty-chart"><div><strong>{selected ? t("此市场暂无已验证的参考图表") : t("请选择要查看的市场")}</strong><p>{t("警报使用所选交易所的后台最新成交价；TradingView 仅供参考。")}</p>{!data.markets.length && <p>{t("市场目录暂时不可用，请重新读取状态。")}</p>}</div></EmptyState>}
+    {compact && !alertsOnly && <Panel className="mobile-market-alerts"><div className="mobile-alerts-heading"><h2>{t('本市场警报')} · {marketAlerts.length}</h2><Button variant="ghost" onClick={() => navigate('/alerts')}>{t('全部')} {data.alerts.length} →</Button></div>{marketAlerts.length ? marketAlerts.map(alert => <Button key={alert.id} variant="ghost" className={`mobile-alert-summary ${alert.side}`} onClick={() => navigate('/alerts')}><span><strong>{alert.name}</strong><small>{alert.triggered ? t('已锁定') : !settings.enabled ? t('总开关关闭') : tick ? `${t('距现价')} ${((alert.threshold / tick.price - 1) * 100).toFixed(2)}%` : t('等待报价')}</small></span><b>{alert.side === 'upper' ? '↑' : '↓'} {formatPrice(alert.threshold)}</b></Button>) : <p className="small muted">{t('此市场暂无警报')}</p>}<Button variant="ghost" className="mobile-chart-toggle" aria-expanded={mobileChartOpen} onClick={() => setMobileChartOpen(value => !value)}>{t('参考图表')} · {chartKind === 'native' ? t('内置图表') : 'TradingView'} <span>{mobileChartOpen ? '−' : '›'}</span></Button></Panel>}
+    <div className="workspace dashboard-grid"><Panel className="chart-panel" aria-label={showNative ? t("内置图表") : t("TradingView 参考图表")}><div className="chart-panel-head"><div><h2>{t("参考图表")}</h2><p>{showNative ? t("拖动警报线可直接改价。") : t("显示用图表，不参与警报判断。")}</p></div><div className="chart-toolbar">{nativeAvailable && tradingViewAvailable ? <div className="chart-kind-switch" role="group" aria-label={t("图表类型")}>{(['tradingview', 'native'] as const).map(kind => <Button key={kind} type="button" variant="ghost" aria-pressed={(kind === 'native') === showNative} onClick={() => setChartKind(kind)}>{kind === 'native' ? t('内置图表') : 'TradingView'}</Button>)}</div> : <span>{showNative ? t('内置图表') : 'TradingView'}</span>}</div></div>
+      {showNative && market ? <NativeChart market={market} tick={tick} alerts={marketAlerts} source={source} canCreate={canCreate}
+          onRetarget={({ alert, price }) => openConfirm({ kind: 'retarget', alert, price })}
+          onCreateAt={price => setEditor({ alert: null, threshold: price, side: tick && price < tick.price ? 'lower' : 'upper' })}/>
+        : chartVisited && market && tradingViewAvailable ? <TradingChart symbol={market.tradingViewSymbol} source={source} onUseNative={nativeAvailable ? () => setChartKind('native') : undefined}/>
+        : <EmptyState className="empty-chart"><div><strong>{selected ? t("此市场暂无已验证的参考图表") : t("请选择要查看的市场")}</strong><p>{t("警报使用所选交易所的后台最新成交价；TradingView 仅供参考。")}</p>{!data.markets.length && <p>{t("市场目录暂时不可用，请重新读取状态。")}</p>}</div></EmptyState>}
       {data.marketStale && <Notice as="p" className="warning inline-warning">{t("市场目录已过期，新增市场仍需服务端确认支持。")}</Notice>}
     </Panel>{(!compact || alertsOnly) && <Panel as="aside" className="alerts-panel">
       <Tabs value={showAllAlerts ? 'all' : 'market'} onValueChange={value => setShowAllAlerts(value === 'all')} className="alert-market-tabs">
@@ -157,12 +185,15 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     <p className="history-note">{t("查看市场时每 5 秒更新报价，无需创建警报。后台监控仅采集启用且未锁定规则所需的成交价；参考报价不会触发警报。近期无成交不代表断线。")}</p>
     </Disclosure>
     {!confirm && <FormError message={actionError}/>}
-    <DialogPresence present={!!editor}>{editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} onClose={() => setEditor(null)} notify={notify}/>}</DialogPresence>
-    <DialogPresence present={!!confirm}>{confirm && <Dialog title={confirm.kind === 'disable' ? t("暂停所有监控？") : confirm.kind === 'delete' ? t("删除这条警报？") : t("重新武装这条警报？")} onClose={() => setConfirm(null)} busy={busy}>
-      <p>{confirm.kind === 'disable' ? t("暂停后不再触发新通知，并取消仍在队列中的投递。已经开始发送的请求无法撤回，结果可能不确定。") : confirm.kind === 'delete' ? t("将删除「{0}」。历史投递记录由后台保留。", confirm.alert.name) : t("「{0}」将解除触发锁定。之后首次满足条件的新鲜价格会再次触发。", confirm.alert.name)}</p>
+    <DialogPresence present={!!editor}>{editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} {...(editor.threshold !== undefined ? { initialThreshold: editor.threshold } : {})} {...(editor.side ? { initialSide: editor.side } : {})} onClose={() => setEditor(null)} notify={notify}/>}</DialogPresence>
+    <DialogPresence present={!!confirm}>{confirm && <Dialog title={confirm.kind === 'disable' ? t("暂停所有监控？") : confirm.kind === 'delete' ? t("删除这条警报？") : confirm.kind === 'retarget' ? t("修改目标价？") : t("重新武装这条警报？")} onClose={() => setConfirm(null)} busy={busy}>
+      {confirm.kind === 'retarget' ? <div className="retarget-summary"><p>{t("「{0}」", confirm.alert.name)}</p><div className={`retarget-values ${confirm.alert.side}`}><span><small>{t("原目标价")}</small><s>{formatPrice(confirm.alert.threshold)}</s></span><b aria-hidden="true">→</b><span><small>{t("新目标价")}</small><strong>{formatPrice(confirm.price)}</strong></span></div>{tick && <p className="small muted">{t("距现价")} {((confirm.price - tick.price) / tick.price * 100) >= 0 ? '+' : ''}{((confirm.price - tick.price) / tick.price * 100).toFixed(2)}% · {confirm.alert.side === 'upper' ? t("达到或高于") : t("达到或低于")}</p>}</div>
+      : <p>{confirm.kind === 'disable' ? t("暂停后不再触发新通知，并取消仍在队列中的投递。已经开始发送的请求无法撤回，结果可能不确定。") : confirm.kind === 'delete' ? t("将删除「{0}」。历史投递记录由后台保留。", confirm.alert.name) : t("「{0}」将解除触发锁定。之后首次满足条件的新鲜价格会再次触发。", confirm.alert.name)}</p>}
+      {retargetHit && <Notice as="p" className="warning">{t("当前新鲜成交价已经满足新的条件，保存后可能立即触发。")}</Notice>}
+      {confirm.kind === 'retarget' && confirm.alert.triggered && <Notice as="p" className="warning">{t("此警报已触发。修改目标价不会重新武装，请在列表中明确操作。")}</Notice>}
       {confirm.kind === 'rearm' && confirm.alert.last?.outcome === 'uncertain' && <Notice as="p" className="warning">{t("上次投递结果不确定，可能已经送达。请先查看手机，再决定是否重新武装。")}</Notice>}
       {rearmHit && <Notice as="p" className="warning">{t("当前新鲜成交价已经满足条件，重新武装后可能立即再次触发。")}</Notice>}
-      <FormError message={actionError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setConfirm(null)}>{t("取消")}</Button><Button variant="default" className="primary" disabled={busy} onClick={() => void confirmAction()}>{busy ? t("正在处理…") : confirm.kind === 'disable' ? t("暂停监控") : confirm.kind === 'delete' ? t("删除警报") : t("重新武装")}</Button></div>
+      <FormError message={actionError}/><div className="confirm-actions"><Button disabled={busy} onClick={() => setConfirm(null)}>{t("取消")}</Button><Button variant="default" className="primary" disabled={busy} onClick={() => void confirmAction()}>{busy ? t("正在处理…") : confirm.kind === 'disable' ? t("暂停监控") : confirm.kind === 'delete' ? t("删除警报") : confirm.kind === 'retarget' ? t("确认修改") : t("重新武装")}</Button></div>
     </Dialog>}</DialogPresence>
   </section>;
 }

@@ -1,0 +1,115 @@
+/* Built-in chart and chart switch. Reuses the segmented-control language of
+   .direction-segments and the mono telemetry type of the chart caption. */
+.chart-kind-switch,
+.native-chart-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chart-kind-switch {
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--field);
+}
+.chart-kind-switch [data-slot="button"],
+.native-chart-bar [data-slot="button"] {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: 11px/1 var(--mono-font);
+  letter-spacing: .06em;
+  color: var(--muted-foreground);
+}
+.chart-kind-switch [aria-pressed="true"],
+.native-chart-bar [aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--signal);
+}
+.native-chart-bar {
+  width: 100%;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.native-chart-bar [data-slot="button"] { padding: 0 10px; flex: none; }
+.native-chart-status {
+  margin-left: auto;
+  padding-left: 12px;
+  font: 10px/1.4 var(--mono-font);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.native-chart-shell { position: relative; overflow: hidden; }
+.native-chart { position: absolute; inset: 0; touch-action: pan-y; }
+.native-chart.is-line-hover { cursor: ns-resize; }
+.native-chart-shell[data-selected-line="true"] .native-chart { touch-action: none; }
+/* Lightweight Charts' required attribution logo; keep it legible but quiet. */
+.native-chart a[href*="tradingview"] { opacity: .45; }
+.chart-drag-label,
+.chart-create-at {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  transform: translateY(-50%);
+  font: 11px/1 var(--mono-font);
+  letter-spacing: .02em;
+}
+.chart-drag-label {
+  padding: 7px 10px;
+  border: 1px solid var(--signal);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--signal);
+  pointer-events: none;
+}
+.chart-create-at[data-slot="button"] {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px dashed var(--control-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--text);
+  opacity: 0;
+  animation: chart-chip-in .18s ease-out forwards;
+}
+.chart-create-at[data-slot="button"]:hover { border-color: var(--signal); color: var(--signal); }
+@keyframes chart-chip-in { from { opacity: 0; transform: translate(-6px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
+.chart-slow-hint {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.retarget-summary > p:first-child { margin: 0 0 14px; }
+.retarget-values {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--field);
+}
+.retarget-values span { display: grid; gap: 6px; min-width: 0; }
+.retarget-values small { font: 10px/1 var(--mono-font); letter-spacing: .12em; color: var(--muted-foreground); }
+.retarget-values s { font: 300 18px/1.1 var(--mono-font); color: var(--muted-foreground); overflow-wrap: anywhere; }
+.retarget-values strong { font: 400 24px/1.1 var(--mono-font); letter-spacing: -.03em; color: var(--signal); overflow-wrap: anywhere; }
+.retarget-values.lower strong { color: var(--amber); }
+.retarget-values b { padding-bottom: 4px; color: var(--muted-foreground); font-weight: 400; }
+@media (max-width: 900px) {
+  .chart-kind-switch [data-slot="button"] { min-height: 36px; height: 36px; }
+  .native-chart-bar [data-slot="button"] { min-height: 36px; height: 36px; }
+  .native-chart-status { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } }

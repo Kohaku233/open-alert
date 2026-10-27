@@ -30,7 +30,8 @@ expect.configure({ timeout: 6000 });
 const results = [], violations = [], runtimeErrors = [], externalAttempts = [];
 let assertions = 0, apiRequests = 0, authRequests = 0, chartScripts = 0;
 const check = async (name, fn) => { assertions++; await fn(); };
-const journey = async (name, fn) => { const start = Date.now(); try { await fn(); results.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`); } catch (error) { results.push({ name, passed: false, error: error.stack }); throw error; } };
+const only = process.env.OPEN_ALERT_JOURNEY ? new RegExp(process.env.OPEN_ALERT_JOURNEY) : null;
+const journey = async (name, fn) => { if (only && !only.test(name)) return; const start = Date.now(); try { await fn(); results.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`); } catch (error) { results.push({ name, passed: false, error: error.stack }); throw error; } };
 const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
 assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
 assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
@@ -80,7 +81,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
     const method = req.method(), path = url.pathname;
     const body = req.postData() ? req.postDataJSON() : undefined;
     // Request evidence deliberately excludes raw OTP/key/token/bearer values.
-    const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
+    const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, threshold: body?.threshold, timeframe: url.searchParams.get('timeframe') ?? undefined, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
     state.requests.push(evidence);
     const send = (data, status = 200, headers = {}) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(data) });
     const ok = (data, status = 200) => send({ ok: true, data, ...(method!=='GET'&&state.wakePending?{effects:{schedulerWake:'pending'}}:{}), ...(!state.omitRequestIds ? {requestId:'mock-request'} : {}) }, status);
@@ -145,6 +146,16 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         try { quoteNow=await page.evaluate(()=>Date.now()); }
         catch(error) { if(/Target page, context or browser has been closed|Execution context was destroyed/.test(error.message))return;throw error; }
         return ok({instrument,price:state.quotePrice ?? 60000,observedAt:quoteNow,timestamp:quoteNow});
+      }
+      if (path === '/api/candles' && method === 'GET') {
+        // Deterministic synthetic candles around the mock quote; older pages end after two.
+        const tf={'1m':6e4,'5m':3e5,'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5}[url.searchParams.get('timeframe')];
+        assert(tf && state.markets.some(m=>m.instrument===url.searchParams.get('instrument')));
+        const before=url.searchParams.get('before'), end=before?Number(before):Math.floor(Date.now()/tf)*tf+tf;
+        state.candlePages=(state.candlePages??0)+1;
+        if(before&&state.candlePages>3)return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles:[],done:true});
+        const candles=Array.from({length:300},(_,i)=>{const time=end-(300-i)*tf,base=(state.quotePrice??60000)*(1+Math.sin(time/tf/9)*0.01);return [time,base,base*1.003,base*0.997,base*(1+Math.cos(time/tf/5)*0.002),10+i%7];});
+        return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles,done:false});
       }
       if (path === '/api/markets' && method === 'GET') {
         if(state.catalogFail)return route.fulfill({status:503,contentType:'text/html',headers:{'CF-Ray':'mock-catalog-HKG'},body:'<h1>Worker exceeded resource limits</h1>'});
@@ -865,6 +876,65 @@ try {
     await check('all alerts management remains available',()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.length+1));
     await p.getByRole('tab',{name:'当前市场',exact:true}).click();
     await check('current MEXC market only shows MEXC rule',()=>expect(p.locator('.alert-row')).toHaveCount(1));
+    await fixture.context.close();
+  });
+  for (const profile of ['desktop','mobile']) await journey('17 built-in chart: switch, history paging, drag to retarget and create at price ('+profile+')',async()=>{
+    const fixture=await setup(browser,profile,true),p=fixture.page,s=fixture.state;
+    s.markets=s.markets.map(m=>({...m,venue:'okx',type:'swap',nativeId:m.instrument,symbol:`${m.base}/USDT:USDT`,settle:'USDT'}));
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    if(profile==='mobile'){await p.getByRole('button',{name:/参考图表/}).click();}
+    const chart=p.locator('.chart-panel');
+    await chart.getByRole('button',{name:'内置图表',exact:true}).click();
+    await check('choice persisted locally',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-chart')),'native'));
+    await check('tradingview embed removed',()=>expect(p.locator('.tradingview-widget-container')).toHaveCount(0));
+    await check('candles requested for the selected market',async()=>expect.poll(()=>requests(s,'GET','/api/candles').length).toBeGreaterThan(0));
+    await check('chart canvas renders',()=>expect(p.locator('.native-chart canvas').first()).toBeVisible());
+    await check('chart ready',()=>expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready'));
+    await noOverflow(p);await p.waitForTimeout(400);await p.screenshot({path:join(outputs,`native-chart-${profile}-MOCK.png`),fullPage:profile==='mobile'});
+    await p.locator('.native-chart-bar').getByRole('button',{name:'1h',exact:true}).click();
+    await check('timeframe switch requests 1h',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='1h')).toBe(true));
+    await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
+    // Locate the armed alert's line from the series' own coordinate transform, through the rendered price label.
+    const box=await p.locator('.native-chart').boundingBox();
+    const alert=s.alerts.find(a=>a.instrument==='BTC-USDT-SWAP'&&!a.triggered&&!a.pending);
+    assert(alert,'fixture has an armed BTC alert');
+    // Scan for the line: the cursor switches to ns-resize only on a draggable line.
+    let lineY=null;
+    if(profile==='desktop'){
+      for(let y=box.y+8;y<box.y+box.height-30;y+=2){await p.mouse.move(box.x+box.width*0.4,y);if(await p.locator('.native-chart.is-line-hover').count()){lineY=y;break;}}
+      await check('armed alert line is hit-testable',async()=>assert.notEqual(lineY,null));
+      await p.mouse.down();await p.mouse.move(box.x+box.width*0.4,lineY+40,{steps:6});
+      await check('drag shows a live preview label',()=>expect(p.locator('.chart-drag-label')).toBeVisible());
+      await p.mouse.up();
+    }else{
+      for(let y=box.y+8;y<box.y+box.height-30&&lineY===null;y+=4){await p.touchscreen.tap(box.x+box.width*0.4,y);if(await p.locator('.native-chart-shell[data-selected-line="true"]').count())lineY=y;}
+      await check('tap selects the alert line',async()=>assert.notEqual(lineY,null));
+      const cdp=await p.context().newCDPSession(p);const x=box.x+box.width*0.4;
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:lineY}]});
+      for(let i=1;i<=6;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:lineY+i*7}]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    }
+    const dialog=p.getByRole('dialog');
+    await check('release opens retarget confirmation',()=>expect(dialog.getByRole('heading',{name:'修改目标价？'})).toBeVisible());
+    await p.waitForTimeout(400);await p.screenshot({path:join(outputs,`native-retarget-${profile}-MOCK.png`)});
+    const shown=Number((await dialog.locator('.retarget-values strong').textContent()).replace(/,/g,''));
+    await check('dragging down lowers the target',async()=>assert(shown<alert.threshold,`${shown} < ${alert.threshold}`));
+    await check('nothing saved before confirming',async()=>assert.equal(requests(s,'PATCH',`/api/alerts/${alert.id}`).length,0));
+    await dialog.getByRole('button',{name:'确认修改',exact:true}).click();await expect(dialog).toHaveCount(0);
+    await check('confirm sends threshold-only patch with generation',async()=>{const sent=requests(s,'PATCH',`/api/alerts/${alert.id}`).at(-1);assert.deepEqual([...sent.fields].sort(),['expectedGeneration','threshold']);assert.equal(sent.threshold,shown);assert.equal(sent.expectedGeneration,0);});
+    await check('alert list reflects new target',()=>expect(p.locator('.alert-row,.mobile-alert-summary').filter({hasText:alert.name}).first()).toContainText(shown.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).slice(0,4)));
+    // Create at a hovered price (desktop) or long-press point (mobile crosshair).
+    if(profile==='desktop'){
+      await p.mouse.move(box.x+box.width*0.5,box.y+box.height*0.2);
+      const chip=p.locator('.chart-create-at');await expect(chip).toBeVisible();
+      await chip.hover();await chip.click();
+      await check('create dialog prefilled from chart price',async()=>{await expect(dialog.getByRole('heading',{name:'创建价格警报'})).toBeVisible();assert(Number(await dialog.getByLabel('价格 · USDT').inputValue())>0);});
+      await check('price above market defaults to upper',()=>expect(dialog.getByRole('button',{name:/达到或高于/})).toHaveAttribute('aria-pressed','true'));
+      await p.keyboard.press('Escape');
+    }
+    await check('selection survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart canvas').first()).toBeVisible();});
+    await p.locator('.chart-panel').getByRole('button',{name:'TradingView',exact:true}).click();
+    await check('switching back restores TradingView embed',()=>expect(p.locator('.tradingview-widget-container script')).toHaveCount(1));
     await fixture.context.close();
   });
   await journey('16 invite recovery, email failure states and sandbox login stays available after logout',async()=>{

@@ -18,6 +18,7 @@ export interface CcxtExchange {
   /** Display clients reuse already validated catalog metadata, avoiding a second full catalog fetch. */
   seedMarket?(market: Market): void;
   fetchTrades(symbol: string, since?: number, limit?: number): Promise<unknown>;
+  fetchOHLCV?(symbol: string, timeframe: string, since?: number, limit?: number): Promise<unknown>;
   watchTrades?(symbol: string, since?: number, limit?: number): Promise<unknown>;
   /** Stream mode only: releases one symbol's trade subscription on a shared socket. */
   unWatchTrades?(symbol: string): Promise<unknown>;

@@ -7,22 +7,25 @@ import { useLanguage } from '../i18n.js';
 import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { safeChartSymbol } from '../utils.js';
 // Official reference embed only; symbols must satisfy the verified allowlist.
-export const TradingChart = memo(function TradingChart({ symbol, source }: {
+export const TradingChart = memo(function TradingChart({ symbol, source, onUseNative }: {
     symbol: string;
     source: string;
+    /** Offered when TradingView is slow or blocked (for example behind the GFW). */
+    onUseNative?: (() => void) | undefined;
 }) {
     const language = useLanguage();
     const { theme } = useTheme();
     const host = useRef<HTMLDivElement>(null);
     const [retry, setRetry] = useState(0);
     const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+    const [slow, setSlow] = useState(false);
     useLayoutEffect(() => {
         const container = host.current!;
         if (!safeChartSymbol(symbol)) {
             setState('failed');
             return;
         }
-        setState('loading');
+        setState('loading'); setSlow(false);
         const widget = document.createElement('div');
         widget.className = 'tradingview-widget-container__widget';
         const script = document.createElement('script');
@@ -52,23 +55,24 @@ export const TradingChart = memo(function TradingChart({ symbol, source }: {
         container.replaceChildren(widget, script);
         const timeout = window.setTimeout(() => { if (alive)
             setState(value => value === 'loading' ? 'failed' : value); }, 20000);
-        return () => { alive = false; window.clearTimeout(timeout); observer.disconnect(); script.onerror = null; container.replaceChildren(); };
+        const slowTimer = window.setTimeout(() => { if (alive) setSlow(true); }, 8000);
+        return () => { alive = false; window.clearTimeout(timeout); window.clearTimeout(slowTimer); observer.disconnect(); script.onerror = null; container.replaceChildren(); };
     }, [symbol, retry, language, theme]);
     const chartURL = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
     return <>
 
     <div className="chart-shell">
-      <ChartLoading open={state === 'loading'}/>
+      <ChartLoading open={state === 'loading'} onUseNative={slow ? onUseNative : undefined}/>
       <div ref={host} className="tradingview-widget-container"/>
-      {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t("图表暂时无法连接")}</strong><p>{t("后台警报使用 ")}{source}{t(" 最新成交价。可以重试参考图表，或打开 TradingView 查看。")}</p><Button variant="default" className="primary" onClick={() => setRetry(value => value + 1)}>{t("重试图表")}</Button>{safeChartSymbol(symbol) && <a href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 打开")}</a>}</EmptyState>}
+      {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t("图表暂时无法连接")}</strong><p>{onUseNative ? t("TradingView 在当前网络下可能无法访问。内置图表的数据来自 {0}，不依赖 TradingView。", source) : <>{t("后台警报使用 ")}{source}{t(" 最新成交价。可以重试参考图表，或打开 TradingView 查看。")}</>}</p>{onUseNative && <Button variant="default" className="primary" onClick={onUseNative}>{t("切换到内置图表")}</Button>}<Button variant={onUseNative ? 'ghost' : 'default'} className={onUseNative ? '' : 'primary'} onClick={() => setRetry(value => value + 1)}>{t("重试图表")}</Button>{safeChartSymbol(symbol) && <a href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 打开")}</a>}</EmptyState>}
     </div>
     <div className="chart-bottom"><div className="chart-caption"><span role="status">{state === 'loading' ? t("正在连接 TradingView 图表…") : state === 'failed' ? t("图表连接不可用") : t("图表由 TradingView 提供")}</span><Button variant="ghost" className="text-button" onClick={() => setRetry(value => value + 1)}>{t("重连图表")}</Button></div><span className="chart-disclaimer">{t("TradingView 仅供参考；警报按 ")}{source}{t(" 后台最新成交价判断。")}</span>{safeChartSymbol(symbol) && <a className="tradingview-widget-copyright" href={chartURL} target="_blank" rel="noopener noreferrer">{t("在 TradingView 追踪所有市场")}</a>}</div>
   </>;
 });
 
-function ChartLoading({ open }: { open: boolean }) {
+function ChartLoading({ open, onUseNative }: { open: boolean; onUseNative?: (() => void) | undefined }) {
   const root = useRef<HTMLDivElement>(null);
   const { present, finish } = useMotionPresence(open);
   useFloatingMotion(root, open, present, finish);
-  return present ? <div ref={root} className="chart-loading"><LoadingStatus>{t('正在连接 TradingView 图表…')}</LoadingStatus><div className="skeleton-chart-grid" aria-hidden="true"/></div> : null;
+  return present ? <div ref={root} className="chart-loading"><LoadingStatus>{t('正在连接 TradingView 图表…')}</LoadingStatus>{onUseNative && <p className="chart-slow-hint">{t('连接较慢？')}<Button variant="ghost" className="text-button" onClick={onUseNative}>{t('切换到内置图表')}</Button></p>}<div className="skeleton-chart-grid" aria-hidden="true"/></div> : null;
 }

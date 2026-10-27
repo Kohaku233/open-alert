@@ -15,18 +15,21 @@ import { findMarket, marketLabel, marketQuote, sameMarket, selectableMarket, use
 import type { WorkspaceModel } from '../model.js';
 import { Dialog, FormError } from './Dialog.js';
 import { MarketPicker } from './MarketPicker.js';
-export function AlertEditor({ model, alert, instrument, onClose, notify }: {
+export function AlertEditor({ model, alert, instrument, initialThreshold, initialSide, onClose, notify }: {
     model: WorkspaceModel;
     alert: Alert | null;
     instrument: string;
+    /** Prefill from a chart price for a new alert; the caller derives direction from the live price. */
+    initialThreshold?: number;
+    initialSide?: 'upper' | 'lower';
     onClose: () => void;
     notify: (text: string) => void;
 }) {
     const { data, busy, mutate } = model;
     const [name, setName] = useState(alert?.name ?? '');
     const [selected, setSelected] = useState(alert?.instrument ?? instrument);
-    const [side, setSide] = useState<'upper' | 'lower'>(alert?.side ?? 'upper');
-    const [threshold, setThreshold] = useState(alert ? String(alert.threshold) : '');
+    const [side, setSide] = useState<'upper' | 'lower'>(alert?.side ?? initialSide ?? 'upper');
+    const [threshold, setThreshold] = useState(alert ? String(alert.threshold) : initialThreshold !== undefined ? String(initialThreshold) : '');
     const [enabled, setEnabled] = useState(alert?.enabled ?? true);
     const [error, setError] = useState('');
     const market = useRetainedMarket(data?.markets ?? [], selected);

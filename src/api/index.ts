@@ -10,6 +10,7 @@ import type { ApiErrorCode, InvitationResult, InvitationSummary, SessionPrincipa
 import { EmailDeliveryError } from '../auth/email.js';
 import { wakeWithRetry } from '../runtime/wake.js';
 import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
+import { CANDLE_TIMEFRAMES } from '../markets/candles.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
@@ -197,6 +198,16 @@ export function createApi(d:ApiDependencies) {
       return ok(c,result.quote);
     }
     return ok(c,await d.quotes.get(await market(query.data.instrument)));
+  });
+  app.get('/api/candles',async c=>{
+    if(Object.values(c.req.queries()).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
+    const query=z.strictObject({instrument:instrumentSchema,timeframe:z.enum(CANDLE_TIMEFRAMES),
+      before:z.string().regex(/^\d{1,15}$/).transform(Number).optional()}).safeParse(c.req.query());
+    if(!query.success)throw new HttpError(400,'invalid_request');
+    if(!d.candles)throw new HttpError(503,'service_unavailable');
+    const selected=await market(query.data.instrument);
+    try{return ok(c,await d.candles.get(selected,query.data.timeframe,query.data.before));}
+    catch{throw new HttpError(503,'service_unavailable');}
   });
   app.get('/api/alerts',async c=>ok(c,{alerts:await hydrateAll(uid(c),await d.repositories.alerts.listForUser(uid(c)))}));
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),alert)},201);});

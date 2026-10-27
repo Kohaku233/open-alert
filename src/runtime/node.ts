@@ -16,6 +16,7 @@ import { createMarketQuoteService } from '../markets/quotes.js';
 import { createPublicMarketPreview } from '../markets/public-preview.js';
 import { createObservability } from './observability.js';
 import { createLiveQuoteHub } from '../markets/live-quotes.js';
+import { createCandleService } from '../markets/candles.js';
 import { createRealtimeGateway, REALTIME_PATH } from './realtime.js';
 import { handleUnhandledRejection } from './rejections.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
@@ -39,6 +40,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const notifications=createApiNotifications(config);
   const binanceEndpoints=config.binanceEndpoints;
   const quotes=createMarketQuoteService({binanceEndpoints});
+  const candles=createCandleService({binanceEndpoints});
   // Alert state changes reach open dashboards immediately; bound to the gateway below.
   let notifyUser:(userId:string)=>void=()=>{};
   const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),onUserActivity:userId=>notifyUser(userId),
@@ -46,7 +48,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};
-  const app=createApp({...services,notifications,quotes,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const app=createApp({...services,notifications,quotes,candles,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   const live=createLiveQuoteHub({snapshot:market=>quotes.get(market),binanceEndpoints});
   const realtime=createRealtimeGateway({trustedOrigins:config.trustedOrigins,hub:live,
     authenticate:request=>services.auth.getPrincipal(request),
@@ -57,7 +59,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
     config,services,engine,app,realtime,
     fetch:async(request: Request,address:string|null=null)=>{const r=trustedRequest(request,address);return new URL(r.url).pathname.startsWith('/api/')?app.fetch(r):serveAssets(r);},
     start(){if(!started){started=true;engine.start();const inspect=()=>{void observe().catch(()=>console.error('open_alert_monitor_failed'));};inspect();monitorTimer=setInterval(inspect,60000);}},
-    async stop(){clearInterval(monitorTimer);await monitorWork?.catch(()=>{});await realtime.close();await live.stop();await quotes.stop();await engine.stop();services.auth.close();await services.db.close();},
+    async stop(){clearInterval(monitorTimer);await monitorWork?.catch(()=>{});await realtime.close();await live.stop();await quotes.stop();await candles.stop();await engine.stop();services.auth.close();await services.db.close();},
   };
 }
 export async function startNode(env: Record<string,unknown>=process.env) {

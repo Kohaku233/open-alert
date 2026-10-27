@@ -35,6 +35,10 @@ export interface ApiDependencies {
     /** Resolve freshness, availability and the display quote in one coordinator call. */
     lookup?(instrument: string): Promise<QuoteLookup>;
   };
+  /** Built-in chart history; absent on runtimes that only offer the TradingView embed. */
+  candles?: {
+    get(market: Market, timeframe: import('../markets/candles.js').CandleTimeframe, before?: number): Promise<import('../markets/candles.js').CandlePage>;
+  };
   runtime: { snapshot(): Promise<RuntimeSnapshot>; observe?(): Promise<ObservabilitySnapshot> };
   notifications: NotificationPort;
   wake(signal?: AbortSignal): Promise<void>;
