@@ -195,7 +195,9 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
             market.symbol !== `${market.base}/USDT${identity.type === 'swap' ? ':USDT' : ''}` || market.quote !== 'USDT' || market.state !== 'live') throw new Error('invalid_quote_market');
         const swap = identity.type === 'swap';
         displayMarkets.delete(market.instrument);
-        displayMarkets.set(market.instrument, { id: market.nativeId, symbol: market.symbol, base: market.base, quote: 'USDT',
+        // lowercaseId is what Binance Pro uses for stream names (btcusdt@trade);
+        // without it a seeded market subscribes to "undefined@trade" and never ticks.
+        displayMarkets.set(market.instrument, { id: market.nativeId, lowercaseId: market.nativeId.toLowerCase(), symbol: market.symbol, base: market.base, quote: 'USDT',
           active: true, type: identity.type, spot: !swap, swap, future: false, option: false, contract: swap,
           linear: swap, inverse: false, settle: swap ? 'USDT' : undefined, contractSize: swap ? market.contractSize : undefined,
           precision: { price: Number(market.tickSize) } });

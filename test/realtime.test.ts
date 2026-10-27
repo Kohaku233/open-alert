@@ -160,3 +160,23 @@ test('realtime gateway enforces origin and session, pushes quotes and alert chan
     assert.equal(gateway.connections(), 0);
   } finally { await gateway.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });
+
+test('seeded Binance display markets subscribe to real lowercase stream names', async () => {
+  const { createPublicCcxtFactory } = await import('../src/markets/ccxt.js');
+  const ccxt = (await import('ccxt')).default;
+  const sent: unknown[] = [];
+  const prototype = ccxt.pro.binance.prototype as unknown as { watchMultiple: (...args: unknown[]) => unknown };
+  const original = prototype.watchMultiple;
+  // Capture the SUBSCRIBE frame instead of dialing; no network is touched.
+  prototype.watchMultiple = function (_url: unknown, _hashes: unknown, message: unknown) { sent.push(message); return Promise.reject(new Error('captured')); };
+  try {
+    for (const [type, symbol] of [['spot', 'BTC/USDT'], ['swap', 'BTC/USDT:USDT']] as const) {
+      const exchange = createPublicCcxtFactory()('binance', { mode: 'stream', product: type, timeoutMs: 1000, tradesLimit: 1000 });
+      exchange.seedMarket!({ instrument: `binance:${type}:BTCUSDT`, venue: 'binance', type, nativeId: 'BTCUSDT', symbol, base: 'BTC', quote: 'USDT',
+        state: 'live', tickSize: '0.01', contractSize: type === 'swap' ? 1 : undefined } as Market);
+      await assert.rejects(exchange.watchTrades!(symbol), /captured/);
+      await exchange.close();
+    }
+  } finally { prototype.watchMultiple = original; }
+  assert.deepEqual(sent.map(m => (m as { params: string[] }).params), [['btcusdt@trade'], ['btcusdt@trade']]);
+});
