@@ -19,6 +19,8 @@ export interface CcxtExchange {
   seedMarket?(market: Market): void;
   fetchTrades(symbol: string, since?: number, limit?: number): Promise<unknown>;
   watchTrades?(symbol: string, since?: number, limit?: number): Promise<unknown>;
+  /** Stream mode only: releases one symbol's trade subscription on a shared socket. */
+  unWatchTrades?(symbol: string): Promise<unknown>;
   close(): Promise<unknown>;
 }
 export interface ExchangeSettings {
@@ -40,6 +42,8 @@ export interface MarketSource {
   lastPollAt(): number | null;
   setDemand(instruments: readonly string[]): Promise<void>;
   stop(): Promise<void>;
+  /** Stream mode only: called synchronously after new samples are queued for an instrument. */
+  onSamples?(listener: (instrument: string) => void): () => void;
   /** Catalog freshness is independent for each venue; price freshness checked by samples/ticks. */
   eligible(instrument: string): boolean;
   /** Non-consuming so every rule/user can inspect every crossing in a scheduler cycle. */
@@ -125,6 +129,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   const states: VenueState[] = scopes.map(({venue,product}) => ({ venue, ...(product ? {product} : {}), exchange: null, epoch: 0, catalog: new Map(), catalogAt: null,
     catalogCode: 'catalog_not_loaded', priceCode: null, retryAt: 0, failures: 0, nextCatalogAt: 0, watchers: new Map(), catalogWork: null, opening: null, pollCursor: 0, controller: new AbortController(), pollRequests: 0, pollFailures: 0 }));
   let stopped = false, lastPoll: number | null = null, queued = 0;
+  const sampleListeners = new Set<(instrument: string) => void>();
   let demand = new Map<string, Demand>(), refreshWork: Promise<void> | null = null;
   let demandWork: Promise<void> = Promise.resolve(), stopWork: Promise<void> | null = null;
   const locate = (id: string) => states.find(s => s.catalog.has(id));
@@ -277,7 +282,11 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       d.cursor = d.first ? tick.timestamp : Math.max(d.cursor, tick.timestamp);
       d.first = false;
     }
-    if (next.length) { d.first = false; d.code = null; s.priceCode = null; s.failures = 0; s.retryAt = 0; lastPoll = receivedAt; }
+    if (next.length) {
+      d.first = false; d.code = null; s.priceCode = null; s.failures = 0; s.retryAt = 0; lastPoll = receivedAt;
+      // Event-driven consumers evaluate immediately instead of waiting for the next timer.
+      if (options.mode === 'stream') for (const listener of [...sampleListeners]) { try { listener(market.instrument); } catch { /* listener faults stay local */ } }
+    }
   }
   function startWatchers(s: VenueState) {
     if (options.mode !== 'stream' || !s.exchange || !catalogFresh(s)) return;
@@ -396,6 +405,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   }
   return {
     mode: options.mode, refreshCatalog, refresh, setDemand, stop, eligible, samples,
+    onSamples(listener) { sampleListeners.add(listener); return () => { sampleListeners.delete(listener); }; },
     resolve(instrument) {
       const identity = parseInstrumentIdentity(instrument);
       const scopes = identity ? states.filter(s => s.venue === identity.venue && (!s.product || s.product === identity.type)) : [];

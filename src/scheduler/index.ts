@@ -24,6 +24,8 @@ export interface SchedulerOptions {
   /** Cloudflare defaults: 100 evaluations, 4 reservations, 32 due rows, 4 serial sends. */
   maxEvaluationsPerTick?: number; maxReservationsPerTick?: number;
   duePageSize?: number; maxDueRowsPerDrain?: number; maxDeliveriesPerDrain?: number; maxClaimsPerDrain?: number;
+  /** Called after a user's trigger is reserved or its delivery result is committed. */
+  onUserActivity?: (userId: string) => void;
 }
 export type RuntimeSchedulerService = ReturnType<typeof createScheduler>;
 export function overallHealth(components: ComponentHealth[]): SystemStatus['health']['overall'] {
@@ -71,6 +73,9 @@ export function createScheduler(options: SchedulerOptions) {
   let lastUser: string | null = null;
   let providerBlocked = false;
   let confirmedWork: boolean | null = null;
+  // Stream sources wake the evaluator per arrival; at most one follow-up is queued.
+  let kickQueued = false, kickAgain = false, unsubscribeSamples: (() => void) | null = null;
+  const activity = (userId: string) => { try { options.onUserActivity?.(userId); } catch { /* observer only */ } };
   async function hasWork(): Promise<boolean> {
     try {
       const version = dirty;
@@ -228,6 +233,7 @@ export function createScheduler(options: SchedulerOptions) {
                 invalidate(); interrupted = true; break;
               }
               rule.triggered = true;
+              activity(rule.userId);
             }
             batch?.inspected.add(key);
           }
@@ -332,6 +338,7 @@ export function createScheduler(options: SchedulerOptions) {
         const saved = await r.scheduler.finishDelivery(claimed.triggerId, claimId, finishLease, phase, code, result.receipt, now());
         if (!saved) { schedulerCode = 'finish_not_committed'; return; }
         outstandingClaim = false;
+        activity(claimed.userId);
         if (phase === 'sent') metrics.sent++;
         else if (phase === 'uncertain') metrics.uncertain++;
         else if (phase === 'queued') metrics.retries++;
@@ -355,15 +362,30 @@ export function createScheduler(options: SchedulerOptions) {
   function drain(): Promise<void> { if (drainWork) return drainWork; drainWork = runDrain().finally(() => { drainWork = null; }); return drainWork; }
   function invalidate(): void { dirty++; confirmedWork = null; }
   async function cycle(): Promise<void> { await tick(); await drain(); }
+  /** Evaluate fresh stream samples now; deliveries drain only after a new reservation. */
+  function kick(): void {
+    if (stopped || fatal) return;
+    if (kickQueued || tickWork) { kickAgain = true; return; }
+    kickQueued = true;
+    setImmediate(() => {
+      kickQueued = false; kickAgain = false;
+      const before = metrics.reservations;
+      void tick().then(() => metrics.reservations > before ? drain() : undefined)
+        .catch(() => { schedulerCode = 'cycle_failed'; })
+        .finally(() => { if (kickAgain) { kickAgain = false; kick(); } });
+    });
+  }
   function start(): void {
     if (timer || stopWork || fatal || source && stopped) return;
     stopped = false;
     const background = () => { void tick().then(() => drain()).catch(() => { schedulerCode = 'cycle_failed'; }); };
+    if (source?.mode === 'stream' && source.onSamples && !unsubscribeSamples) unsubscribeSamples = source.onSamples(kick);
     background(); timer = setInterval(background, config.runtime.pollIntervalMs);
   }
   function stop(): Promise<void> {
     if (stopWork) return stopWork;
     stopped = true; if (timer !== undefined) clearInterval(timer); timer = undefined;
+    unsubscribeSamples?.(); unsubscribeSamples = null;
     stopWork = (async () => {
       // Stop first so bounded source cancellation can unblock a running refresh.
       // Keep the fence until all in-flight DB/provider work has settled.

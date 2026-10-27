@@ -62,7 +62,8 @@ for (const venue of ['binance', 'okx', 'mexc']) {
   };
   const trade = function (method, symbol, since, limit) {
     const fixture = state(this, venue);
-    assert(fixture.markets?.[symbol], 'Trade demand must use loaded unified market symbols');
+    // Monitoring loads a full catalog; the display hub seeds one validated market.
+    assert(fixture.markets?.[symbol] || this.markets?.[symbol], 'Trade demand must use loaded or seeded unified market symbols');
     assert.equal(since, undefined);
     assert.equal(limit, undefined);
     return new Promise((resolve, reject) => {
@@ -71,7 +72,8 @@ for (const venue of ['binance', 'okx', 'mexc']) {
         fixture.pending.delete(work);
         if (fixture.closed) return reject(new Error('Fixture exchange closed'));
         const timestamp = Date.now(), id = String(++serial);
-        event({ type: 'transport', provider: 'ccxt-method-fixture', venue, operation: 'trades', method, symbol, instance: fixture.id });
+        // Monitor sources load a catalog first; seeded-only instances are the display hub.
+        event({ type: 'transport', provider: 'ccxt-method-fixture', venue, operation: fixture.markets ? 'trades' : 'display_trades', method, symbol, instance: fixture.id });
         resolve([{ id, symbol, timestamp, price: symbol.startsWith('BTC/') ? 60000 : 3000, amount: 1, side: 'buy' }]);
       }, 50);
       fixture.pending.add(work);
@@ -80,6 +82,12 @@ for (const venue of ['binance', 'okx', 'mexc']) {
   prototype.watchTrades = function (symbol, since, limit) { return trade.call(this, 'watchTrades', symbol, since, limit); };
   // An accidental REST path must be visible in evidence and cannot reach the network.
   prototype.fetchTrades = function (symbol, since, limit) { return trade.call(this, 'fetchTrades', symbol, since, limit); };
+  // Display-hub unsubscribe must stay local, like every other fixture method.
+  prototype.unWatchTrades = async function (symbol) {
+    const fixture = state(this, venue);
+    event({ type: 'transport', provider: 'ccxt-method-fixture', venue, operation: 'unwatch', method: 'unWatchTrades', symbol, instance: fixture.id });
+    return true;
+  };
   prototype.close = async function (...args) {
     const fixture = instances.get(this);
     if (fixture && !fixture.closed) {

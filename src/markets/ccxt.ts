@@ -206,7 +206,10 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
       // one latest valid sample and rejects cursor regression and exact replay.
       // This also avoids MEXC spot's since+until requirement.
       fetchTrades: (symbol, _since, limit) => exchange.fetchTrades(symbol, undefined, limit),
-      ...(settings.mode === 'stream' ? { watchTrades: (symbol: string, since?: number, limit?: number) => exchange.watchTrades(symbol, since, limit) } : {}),
+      ...(settings.mode === 'stream' ? {
+        watchTrades: (symbol: string, since?: number, limit?: number) => exchange.watchTrades(symbol, since, limit),
+        unWatchTrades: (symbol: string) => exchange.unWatchTrades(symbol),
+      } : {}),
       close: () => exchange.close(),
     };
   };

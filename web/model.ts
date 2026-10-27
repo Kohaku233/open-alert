@@ -2,6 +2,7 @@ import { t } from './i18n.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Alert, Market, SystemStatus } from '../src/contracts/domain.js';
 import { AppError, assertBusinessReady, errorText, getBusinessCooldown, request, subscribeBusinessCooldown, subscribeSchedulerWake } from './api.js';
+import { isRealtimeConnected, subscribeAlertChanges } from './realtime.js';
 export interface WorkspaceData {
     status: SystemStatus;
     alerts: Alert[];
@@ -133,12 +134,21 @@ export function useWorkspace(onUnauthorized: () => void) {
                 void read();
             }
         }, 1000);
-        const interval = window.setInterval(() => { if (!document.hidden && !lock.current)
-            void read(); }, 5000);
+        // Pushed `changed` frames make status reads event-driven. While the socket
+        // is up a 30 s read only reconciles health/quota; otherwise poll every 5 s.
+        let lastRead = Date.now();
+        const pushed = () => { if (!lock.current) { lastRead = Date.now(); void read(); } };
+        const unsubscribeChanges = subscribeAlertChanges(pushed);
+        const interval = window.setInterval(() => {
+            if (document.hidden || lock.current || Date.now() - lastRead < (isRealtimeConnected() ? 30000 : 5000) - 50)
+                return;
+            lastRead = Date.now();
+            void read();
+        }, 5000);
         const onVisible = () => { if (!document.hidden && !lock.current)
             void read(); };
         document.addEventListener('visibilitychange', onVisible);
-        return () => { mounted.current = false; unsubscribe(); unsubscribeWake(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
+        return () => { mounted.current = false; unsubscribe(); unsubscribeWake(); unsubscribeChanges(); current.current?.controller.abort(); window.clearInterval(interval); window.clearInterval(clock); document.removeEventListener('visibilitychange', onVisible); };
     }, [read]);
     const mutate = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
         if (!mounted.current)
