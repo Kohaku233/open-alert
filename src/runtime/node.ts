@@ -36,16 +36,17 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const config=loadConfig(env);if(config.deployment!=='node')throw new ConfigurationError(['DEPLOYMENT']);
   const services=await createNodeServices(config);
   const notifications=createApiNotifications(config);
-  const quotes=createMarketQuoteService();
+  const binanceEndpoints=config.binanceEndpoints;
+  const quotes=createMarketQuoteService({binanceEndpoints});
   // Alert state changes reach open dashboards immediately; bound to the gateway below.
   let notifyUser:(userId:string)=>void=()=>{};
   const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),onUserActivity:userId=>notifyUser(userId),
-    marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments})});
+    marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments,binanceEndpoints})});
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};
   const app=createApp({...services,notifications,quotes,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
-  const live=createLiveQuoteHub({snapshot:market=>quotes.get(market)});
+  const live=createLiveQuoteHub({snapshot:market=>quotes.get(market),binanceEndpoints});
   const realtime=createRealtimeGateway({trustedOrigins:config.trustedOrigins,hub:live,
     authenticate:request=>services.auth.getPrincipal(request),
     resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}});

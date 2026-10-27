@@ -56,6 +56,7 @@ const envSchema = z.object({
   BINANCE_RELAY_URL: optionalText,
   BINANCE_RELAY_TOKEN: optionalText,
   BINANCE_RELAY_BYPASS: optionalText,
+  BINANCE_ENDPOINTS: z.enum(['default', 'vision']).default('default'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MAX_USERS: limit(1_000, 100_000),
   MAX_ALERTS_PER_USER: limit(20, 100),
@@ -175,6 +176,7 @@ export function loadConfig(input: Readonly<Record<string, unknown>>) {
     binanceRelay: env.BINANCE_RELAY_URL && env.BINANCE_RELAY_TOKEN
       ? Object.freeze({url:env.BINANCE_RELAY_URL,token:env.BINANCE_RELAY_TOKEN,
           ...(env.BINANCE_RELAY_BYPASS ? {bypass:env.BINANCE_RELAY_BYPASS} : {})}) : null,
+    binanceEndpoints: env.BINANCE_ENDPOINTS,
     port: env.PORT,
     secureCookies: new URL(env.APP_URL).protocol === 'https:',
     limits: Object.freeze({

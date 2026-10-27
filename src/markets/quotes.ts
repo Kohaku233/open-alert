@@ -1,6 +1,6 @@
 import type { Market, Venue, MarketType } from '../contracts/domain.js';
 import { parseInstrumentIdentity } from '../contracts/domain.js';
-import { createPublicCcxtFactory } from './ccxt.js';
+import { createPublicCcxtFactory, type BinanceEndpoints } from './ccxt.js';
 import { normalizeCatalog, record } from './normalize.js';
 import type { CcxtExchange, ExchangeFactory } from './source.js';
 import { createVercelRelayReader, type VercelRelayOptions } from './vercel-relay.js';
@@ -9,7 +9,7 @@ import { createVercelRelayReader, type VercelRelayOptions } from './vercel-relay
  * capture time; timestamp is the exchange timestamp and can be absent/old. */
 export interface MarketQuote { instrument: string; price: number; observedAt: number; timestamp: number | null }
 export function createMarketQuoteService(options: {
-  factory?: ExchangeFactory; relay?: VercelRelayOptions; fetchImplementation?: typeof fetch; now?: () => number;
+  factory?: ExchangeFactory; relay?: VercelRelayOptions; fetchImplementation?: typeof fetch; now?: () => number; binanceEndpoints?: BinanceEndpoints;
 } = {}) {
   const now = options.now ?? Date.now;
   const read = options.relay ? createVercelRelayReader(options.relay, options.fetchImplementation) : null;
@@ -28,6 +28,7 @@ export function createMarketQuoteService(options: {
   const factory = options.factory ?? createPublicCcxtFactory({
     ...(options.fetchImplementation ? { fetchImplementation: options.fetchImplementation } : {}),
     ...(read ? { binanceSwapFetchImplementation: relayTransport } : {}),
+    ...(options.binanceEndpoints ? { binanceEndpoints: options.binanceEndpoints } : {}),
   });
   type Client = { exchange: CcxtExchange; markets: ReturnType<typeof normalizeCatalog>; at: number; loading: Promise<void> | null };
   const clients = new Map<string, Promise<Client>>(), cache = new Map<string, MarketQuote>();

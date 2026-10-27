@@ -60,9 +60,18 @@ function validateRawCatalog(venue: Venue, product: 'spot' | 'swap', rows: unknow
  * direct exchange HTTP. The shared client resolves product routing from symbols.
  * Cloudflare uses polling and its platform fetch supplied to CCXT; Node uses Pro.
  */
-export function publicExchangeConfig(venue: Venue, settings: ExchangeSettings, fetchImplementation?: typeof fetch): ConstructorArgs {
+/** `vision` swaps Binance hosts that return HTTP 451 from US networks for the
+ * public market-data mirrors (spot data-api/data-stream, USD-M via www.binance.com).
+ * Futures WS (fstream) is reachable from the US and stays unchanged. */
+export type BinanceEndpoints = 'default' | 'vision';
+const binanceUrls = (endpoints: BinanceEndpoints) => endpoints === 'vision'
+  ? {api:{public:'https://data-api.binance.vision/api/v3',
+      fapiPublic:'https://www.binance.com/fapi/v1',fapiPublicV2:'https://www.binance.com/fapi/v2',fapiPublicV3:'https://www.binance.com/fapi/v3',
+      ws:{spot:'wss://data-stream.binance.vision/ws',margin:'wss://data-stream.binance.vision/ws'}}}
+  : {api:{public:'https://api-gcp.binance.com/api/v3'}};
+export function publicExchangeConfig(venue: Venue, settings: ExchangeSettings, fetchImplementation?: typeof fetch, binanceEndpoints: BinanceEndpoints = 'default'): ConstructorArgs {
   return {
-    ...(venue === 'binance' ? {urls:{api:{public:'https://api-gcp.binance.com/api/v3'}}} : {}),
+    ...(venue === 'binance' ? {urls:binanceUrls(binanceEndpoints)} : {}),
     enableRateLimit: true, timeout: settings.timeoutMs, newUpdates: true,
     ...(fetchImplementation ? { fetchImplementation } : {}),
     options: {
@@ -95,6 +104,7 @@ export interface PublicCcxtFactoryOptions {
   /** Local capture clock; defaults to Date.now. Override together with the provider in tests. */
   now?: () => number;
   maxCatalogMarkets?: number;
+  binanceEndpoints?: BinanceEndpoints;
 }
 
 export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}): (venue: Venue, settings: ExchangeSettings) => CcxtExchange {
@@ -103,7 +113,7 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
     if (options.binanceSwapFetchImplementation && venue === 'binance' && settings.product === 'swap' && settings.mode !== 'polling') throw new Error('relay_requires_polling');
     const classes = settings.mode === 'stream' ? ccxt.pro : ccxt;
     const transport = venue === 'binance' && settings.product === 'swap' ? options.binanceSwapFetchImplementation ?? options.fetchImplementation : options.fetchImplementation;
-    const exchange = new classes[venue](publicExchangeConfig(venue, settings, transport));
+    const exchange = new classes[venue](publicExchangeConfig(venue, settings, transport, options.binanceEndpoints));
     // loadMarkets normally calls fetchCurrencies if has says true; suppress its
     // credential-dependent implementations explicitly, regardless of venue options.
     exchange.has.fetchCurrencies = false;
@@ -217,7 +227,7 @@ export function createPublicCcxtFactory(options: PublicCcxtFactoryOptions = {}):
   };
 }
 export function createPublicCcxtMarketSource(options: Omit<MarketSourceOptions, 'factory'> & PublicCcxtFactoryOptions) {
-  const { fetchImplementation, binanceSwapFetchImplementation, binanceSwapCatalog, ...sourceOptions } = options;
+  const { fetchImplementation, binanceSwapFetchImplementation, binanceSwapCatalog, binanceEndpoints, ...sourceOptions } = options;
   const splitProducts = sourceOptions.splitProducts ?? (sourceOptions.venues ?? ['binance','okx','mexc']).filter(v => v === 'binance');
   if ((binanceSwapCatalog || binanceSwapFetchImplementation) && (sourceOptions.venues ?? ['binance','okx','mexc']).includes('binance') && !splitProducts.includes('binance')) {
     throw new Error('invalid_product_scope');
@@ -230,6 +240,7 @@ export function createPublicCcxtMarketSource(options: Omit<MarketSourceOptions, 
     factory: createPublicCcxtFactory({ ...(fetchImplementation ? { fetchImplementation } : {}),
       ...(binanceSwapCatalog ? { binanceSwapCatalog } : {}),
       ...(binanceSwapFetchImplementation ? { binanceSwapFetchImplementation } : {}),
+      ...(binanceEndpoints ? { binanceEndpoints } : {}),
       ...(sourceOptions.now ? { now: sourceOptions.now } : {}),
       ...(sourceOptions.maxCatalogMarkets !== undefined ? { maxCatalogMarkets: sourceOptions.maxCatalogMarkets } : {}) }) });
 }

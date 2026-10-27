@@ -69,6 +69,9 @@ async function workerApp(env:CloudflareBindings) {
 }
 export default {
   async scheduled(_controller:ScheduledController,env:CloudflareBindings,ctx:ExecutionContext):Promise<void> {
+    // Keeps an auto-pausing Node backend awake; independent of coordinator recovery.
+    const backend=nodeBackend(env);
+    if(backend)ctx.waitUntil(fetch(new URL('/api/health',backend),{headers:{'Cache-Control':'no-store'},signal:AbortSignal.timeout(8000)}).then(r=>r.body?.cancel()).catch(()=>{console.error('node_backend_ping_failed');}));
     // Independent recovery of lost initial wakes, even with no open browser.
     // Reconcile schedules active work without polling prices or sending while idle.
     ctx.waitUntil((async()=>{
@@ -93,6 +96,8 @@ export default {
   },
   async fetch(request:Request,env:CloudflareBindings,_ctx:ExecutionContext):Promise<Response> {
     const path=new URL(request.url).pathname;
+    const backend=path.startsWith('/api/')?nodeBackend(env):null;
+    if(backend)return proxyToNode(request,backend);
     try {
       configFor(env);
       if(!path.startsWith('/api/'))return env.ASSETS ? env.ASSETS.fetch(request as never) as unknown as Promise<Response> : new Response('Web assets are not configured',{status:503});
@@ -101,6 +106,20 @@ export default {
     } catch {return path.startsWith('/api/')?unavailableApi(path):new Response(setupHtml,{status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});}
   },
 };
+/** Optional NODE_BACKEND_URL moves every /api/* request, including the /api/live
+ * WebSocket upgrade, to a Node deployment while assets stay on Workers. The
+ * browser remains same-origin, so cookies and Origin checks are unchanged. */
+function nodeBackend(env:CloudflareBindings):URL|null {
+  const value=env.NODE_BACKEND_URL;
+  if(typeof value!=='string'||!value)return null;
+  try {const url=new URL(value);return url.protocol==='https:'&&url.pathname==='/'&&!url.search&&!url.username?url:null;}catch {return null;}
+}
+async function proxyToNode(request:Request,backend:URL):Promise<Response> {
+  const incoming=new URL(request.url);
+  const target=new URL(incoming.pathname+incoming.search,backend);
+  try {return await fetch(new Request(target,request));}
+  catch {return unavailableApi(incoming.pathname);}
+}
 /** One namespace instance; alarms drive work and an independent Cron repairs lost wakes. */
 export class Coordinator {
   private readonly initialized:Promise<ReturnType<typeof createScheduler>>;

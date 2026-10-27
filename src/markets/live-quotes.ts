@@ -1,6 +1,6 @@
 import type { Market, MarketType, Venue } from '../contracts/domain.js';
 import { parseInstrumentIdentity } from '../contracts/domain.js';
-import { createPublicCcxtFactory } from './ccxt.js';
+import { createPublicCcxtFactory, type BinanceEndpoints } from './ccxt.js';
 import { record } from './normalize.js';
 import type { MarketQuote } from './quotes.js';
 import type { CcxtExchange, ExchangeFactory } from './source.js';
@@ -15,6 +15,7 @@ export interface LiveQuoteHub {
 }
 export interface LiveQuoteHubOptions {
   factory?: ExchangeFactory;
+  binanceEndpoints?: BinanceEndpoints;
   /** REST snapshot used for the first value and while a market is quiet. */
   snapshot?: (market: Market) => Promise<MarketQuote>;
   now?: () => number;
@@ -35,7 +36,7 @@ interface Entry {
 
 export function createLiveQuoteHub(options: LiveQuoteHubOptions = {}): LiveQuoteHub {
   const now = options.now ?? Date.now;
-  const factory = options.factory ?? createPublicCcxtFactory();
+  const factory = options.factory ?? createPublicCcxtFactory(options.binanceEndpoints ? { binanceEndpoints: options.binanceEndpoints } : {});
   const maxInstruments = options.maxInstruments ?? 64;
   const minInterval = options.minIntervalMs ?? 50;
   const quietMs = options.quietRefreshMs ?? 5000;
