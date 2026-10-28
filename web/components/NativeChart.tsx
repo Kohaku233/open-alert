@@ -8,6 +8,8 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
+import { bucketEnd, bucketStart, parseTimeframe, timeframeSupported } from '../../src/contracts/timeframes.js';
+import { TimeframeMenu } from './TimeframeMenu.js';
 import type { MarketQuote } from '../../src/markets/quotes.js';
 import { request, errorText } from '../api.js';
 import { t } from '../i18n.js';
@@ -16,8 +18,6 @@ import { formatQuotePrice } from '../utils.js';
 import { EmptyState, LoadingStatus } from './Surface.js';
 import { Button } from './ui/button.js';
 
-const FRAMES: CandleTimeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
-const STEP: Record<CandleTimeframe, number> = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000, '1w': 604_800_000 };
 const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
 const TOOLS: { kind: DrawingKind; icon: LucideIcon; label: string }[] = [
@@ -34,7 +34,7 @@ type Bar = { time: number; open: number; high: number; low: number; close: numbe
 const offset = (ms: number) => -new Date(ms).getTimezoneOffset() * 60_000;
 const toChart = (ms: number) => ((ms + offset(ms)) / 1000) as UTCTimestamp;
 function readFrame(): CandleTimeframe {
-  try { const saved = localStorage.getItem(FRAME_KEY); if (FRAMES.includes(saved as CandleTimeframe)) return saved as CandleTimeframe; } catch { /* default */ }
+  try { const saved = localStorage.getItem(FRAME_KEY); if (saved && parseTimeframe(saved) === saved) return saved; } catch { /* default */ }
   return '4h';
 }
 function decimals(tickSize: string) { const [, fraction = ''] = tickSize.split('.'); return Math.min(10, fraction.replace(/0+$/, '').length); }
@@ -64,7 +64,7 @@ function saveDrawings(instrument: string, json: string) {
 
 export type ChartLineAction = { alert: Alert; price: number };
 export const NativeChart = memo(function NativeChart({ market, tick, alerts, source, canCreate, onRetarget, onCreateAt }: {
-  market: { instrument: string; tickSize: string }; tick: MarketQuote | undefined; alerts: Alert[]; source: string; canCreate: boolean;
+  market: { instrument: string; tickSize: string; venue?: 'binance' | 'okx' | 'mexc'; type?: 'spot' | 'swap' }; tick: MarketQuote | undefined; alerts: Alert[]; source: string; canCreate: boolean;
   onRetarget: (action: ChartLineAction) => void; onCreateAt: (price: number) => void;
 }) {
   const { theme } = useTheme();
@@ -77,7 +77,11 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const drag = useRef<{ id: string; pointerId: number; from: number; price: number } | null>(null);
   const callbacks = useRef({ onRetarget, onCreateAt });
   callbacks.current = { onRetarget, onCreateAt };
-  const [frame, setFrame] = useState(readFrame);
+  const supported = (value: CandleTimeframe) => !market.venue || !market.type || timeframeSupported(market.venue, market.type, value);
+  const [chosenFrame, setFrame] = useState(readFrame);
+  // A frame saved on another venue may not exist here (e.g. 3m on MEXC); fall back without overwriting the choice.
+  const frame = supported(chosenFrame) ? chosenFrame : '1h';
+  const shell = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -239,8 +243,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     if (!tick || tick.instrument !== market.instrument || state !== 'ready') return;
     const last = bars.current.at(-1);
     if (!last) return;
-    const step = STEP[frame], at = tick.timestamp ?? tick.observedAt;
-    const bucket = Math.floor(at / step) * step;
+    const at = tick.timestamp ?? tick.observedAt;
+    const bucket = bucketStart(at, frame);
     if (bucket < last.time) return;
     apply(bucket === last.time
       ? { ...last, high: Math.max(last.high, tick.price), low: Math.min(last.low, tick.price), close: tick.price }
@@ -366,11 +370,11 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const base = shown ? previous?.close ?? shown.open : 1;
   const change = shown ? shown.close - base : 0;
   const sign = change >= 0 ? '+' : '−';
-  const remaining = last ? countdown(last.time + STEP[frame] - now) : '';
+  const remaining = last ? countdown(bucketEnd(last.time, frame) - now) : '';
   const toolLabel = TOOLS.find(item => item.kind === tool)?.label;
   return <>
     <div className="native-chart-bar" role="group" aria-label={t('K 线周期')}>
-      {FRAMES.map(value => <Button key={value} type="button" variant="ghost" aria-pressed={frame === value} onClick={() => chooseFrame(value)}>{value === '1d' ? '1D' : value === '1w' ? '1W' : value}</Button>)}
+      <TimeframeMenu value={frame} onChange={chooseFrame} supported={supported} keyboardScope={shell}/>
       <span className="native-chart-status" role="status">{olderState === 'loading' ? t('正在加载更早的 K 线…') : olderState === 'done' ? t('已到交易所最早数据') : ''}</span>
       <div className="native-draw-tools" role="toolbar" aria-label={t('画线工具')}>
         <Button type="button" variant="ghost" aria-pressed={tool === null} aria-label={t('光标')} title={t('光标')} onClick={() => chooseTool(null)}><MousePointer2 aria-hidden="true"/></Button>
@@ -383,7 +387,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
           <Trash2 aria-hidden="true"/>{confirmClear && <span>{t('再点一次清空')}</span>}</Button>
       </div>
     </div>
-    <div className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px` } as CSSProperties}>
+    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px` } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
       {state === 'ready' && shown && <div className={`chart-legend ${change >= 0 ? 'up' : 'down'}`} data-testid="chart-legend">
         <span className="chart-legend-row"><span className="chart-legend-ohl"><b>O</b><em>{formatQuotePrice(shown.open)}</em><b>H</b><em>{formatQuotePrice(shown.high)}</em><b>L</b><em>{formatQuotePrice(shown.low)}</em></span><b>C</b><em>{formatQuotePrice(shown.close)}</em>

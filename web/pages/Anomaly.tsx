@@ -8,8 +8,8 @@ import { Input } from '../components/ui/input.js';
 import { Label } from '../components/ui/label.js';
 import { Switch } from '../components/ui/switch.js';
 import { Spinner } from '../components/ui/spinner.js';
-import { FieldSelect } from '../components/FieldSelect.js';
 import { FormError } from '../components/Dialog.js';
+import { AnomalyDelivery } from '../components/AnomalyDelivery.js';
 import { t } from '../i18n.js';
 import { errorText, request } from '../api.js';
 import type { WorkspaceModel } from '../model.js';
@@ -83,8 +83,7 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
           <label className="anomaly-toggle"><span><strong>{t('股票与 TradFi 合约')}</strong><small>{t('盘中、盘外、周末分别计算常态波动')}</small></span>
             <Switch checked={settings.tradfi} aria-label={t('股票与 TradFi 合约')} disabled={busy} onCheckedChange={checked => void save({ tradfi: checked }, t('已更新股票类推送。'))}/></label>
         </div>
-        <Label>{t('提醒级别')}<FieldSelect label={t('提醒级别')} value={String(settings.priority)} disabled={busy} onValueChange={value => void save({ priority: Number(value) as AnomalySettings['priority'] }, t('提醒级别已保存。'))}
-          options={[{ value: '2', label: t('紧急提醒 · 重复直到确认或到期') }, { value: '1', label: t('高优先级 · 单次提醒') }, { value: '0', label: t('普通提醒 · 单次提醒') }, { value: '-1', label: t('低优先级 · 单次提醒') }]}/></Label>
+        <AnomalyDelivery settings={settings} priceAlerts={model.data?.status.settings.notification} busy={busy} save={save} onOpenPriceAlerts={() => navigate('/notifications')}/>
         <dl className="key-state anomaly-state"><div><dt>{t('监测范围')}</dt><dd>{monitor.series ? t('{0} 个合约 · 币种 {1} / 股票类 {2}', monitor.series, monitor.crypto, monitor.tradfi) : t('正在读取合约列表')}</dd></div>
           <div><dt>{t('行情连接')}</dt><dd>{(['binance', 'okx', 'mexc'] as const).map(v => <span key={v} className={`venue-dot ${monitor.streams[v] ? 'is-live' : ''}`}>{venueName[v]}</span>)}</dd></div>
           <div><dt>{t('波动基准')}</dt><dd>{ready ? t('{0} / {1} 已就绪', monitor.baselines, monitor.series) : t('正在载入 30 天历史 · {0} / {1}', monitor.baselines, monitor.series)}</dd></div>

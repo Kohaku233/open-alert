@@ -9,8 +9,8 @@ import type { AlertRecord, ChannelRecord, OutboxRecord, UserSettingsRecord } fro
 import type { ApiErrorCode, InvitationResult, InvitationSummary, SessionPrincipal } from '../contracts/api.js';
 import { EmailDeliveryError } from '../auth/email.js';
 import { wakeWithRetry } from '../runtime/wake.js';
-import { instrumentSchema, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
-import { CANDLE_TIMEFRAMES } from '../markets/candles.js';
+import { instrumentSchema, parseInstrumentIdentity, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
+import { parseTimeframe, timeframeSupported } from '../contracts/timeframes.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
@@ -23,7 +23,9 @@ const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled:
 // Floors may only be raised above the system minimum (10% crypto net of BTC, 2% TradFi).
 const anomalySettingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), crypto: z.boolean().optional(), tradfi: z.boolean().optional(),
   minMoveCrypto: z.number().min(0.10).max(1).optional(), minMoveTradfi: z.number().min(0.02).max(0.5).optional(),
-  priority: z.union([z.literal(-1),z.literal(0),z.literal(1),z.literal(2)]).optional(), dailyLimit: z.number().int().min(1).max(50).optional() }).refine(v=>Object.keys(v).length>1);
+  priority: z.union([z.literal(-1),z.literal(0),z.literal(1),z.literal(2)]).optional(), dailyLimit: z.number().int().min(1).max(50).optional(), notification: notificationOptionsSchema.nullable().optional() }).refine(v=>Object.keys(v).length>1);
+const favoritesSchema = z.strictObject({ favorites: z.array(z.strictObject({ base: z.string().regex(/^[A-Z0-9]{1,24}$/), preferred: instrumentSchema.nullable() })).max(50)
+  .refine(list=>new Set(list.map(f=>f.base)).size===list.length) });
 const channelSchema = putChannelSchema;
 const pageSchema = z.strictObject({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().min(1).max(200).optional()});
 const messages: Record<ApiErrorCode,string> = {
@@ -207,11 +209,12 @@ export function createApi(d:ApiDependencies) {
   });
   app.get('/api/candles',async c=>{
     if(Object.values(c.req.queries()).some(values=>values.length!==1))throw new HttpError(400,'invalid_request');
-    const query=z.strictObject({instrument:instrumentSchema,timeframe:z.enum(CANDLE_TIMEFRAMES),
+    const query=z.strictObject({instrument:instrumentSchema,timeframe:z.string().max(8).refine(v=>parseTimeframe(v)===v),
       before:z.string().regex(/^\d{1,15}$/).transform(Number).optional()}).safeParse(c.req.query());
     if(!query.success)throw new HttpError(400,'invalid_request');
     if(!d.candles)throw new HttpError(503,'service_unavailable');
-    const selected=await market(query.data.instrument);
+    const selected=await market(query.data.instrument),identity=parseInstrumentIdentity(selected.instrument);
+    if(!identity||!timeframeSupported(identity.venue,identity.type,query.data.timeframe))throw new HttpError(400,'invalid_request');
     try{return ok(c,await d.candles.get(selected,query.data.timeframe,query.data.before));}
     catch{throw new HttpError(503,'service_unavailable');}
   });
@@ -227,6 +230,12 @@ export function createApi(d:ApiDependencies) {
     if(patch.enabled){const channel=await d.repositories.channels.get(uid(c));if(!channelProfile(channel,d.config.sharedPushoverAppToken).configured)throw new HttpError(409,'channel_unconfigured');}
     await a.store.patchSettings(uid(c),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());
     return ok(c,await anomalyView(uid(c)));
+  });
+  // Starred underlyings (BTC, NVDA...) across every venue; the client opens `preferred` or any listed market.
+  app.get('/api/favorites',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,{favorites:await anomaly().store.favorites(uid(c))});});
+  app.put('/api/favorites',async c=>{
+    const a=anomaly(),body=await json(c,favoritesSchema);
+    return ok(c,{favorites:await a.store.setFavorites(uid(c),body.favorites)});
   });
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),alert)},201);});
   app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),expectedGeneration);if(patch.instrument!==undefined||patch.enabled===true)await market(patch.instrument??current.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),a)});});

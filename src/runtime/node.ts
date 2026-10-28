@@ -20,7 +20,7 @@ import { createCandleService } from '../markets/candles.js';
 import { createRealtimeGateway, REALTIME_PATH } from './realtime.js';
 import { handleUnhandledRejection } from './rejections.js';
 import { createAnomalyEngine } from '../anomaly/engine.js';
-import { createAnomalyStore, ensureAnomalySchema } from '../anomaly/store.js';
+import { anomalyNotification, createAnomalyStore, ensureAnomalySchema } from '../anomaly/store.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
@@ -46,11 +46,11 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   await ensureAnomalySchema(services.db);
   const anomalyStore=createAnomalyStore(services.db);
   const anomaly=createAnomalyEngine({store:anomalyStore,appUrl:config.appUrl,binanceRest:binanceEndpoints==='vision'?'https://www.binance.com/fapi/v1':'https://fapi.binance.com/fapi/v1',
-    delivery:{send:async(userId,message,title,priority)=>{
+    delivery:{send:async(userId,message,title,anomalySettings)=>{
       const [channel,settings]=await Promise.all([services.repositories.channels.get(userId),services.repositories.settings.get(userId)]);
       if(!channel||!settings||settings.disabled)return {outcome:'skipped',code:'channel_unconfigured'};
-      // Reuse the user's sound and emergency retry policy; anomaly priority is its own setting.
-      const result=await notifications.send(userId,channel,message,title,{...settings.notification,priority});
+      // Anomaly pushes use their own Pushover profile, or follow the price-alert one with their own priority.
+      const result=await notifications.send(userId,channel,message,title,anomalyNotification(anomalySettings,settings.notification));
       return {outcome:result.outcome,code:result.code};
     }}});
   // Alert state changes reach open dashboards immediately; bound to the gateway below.

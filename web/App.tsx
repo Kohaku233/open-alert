@@ -131,7 +131,7 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
       {/* Keep the dashboard mounted across settings pages; polling never remounts the chart. */}
       <Dashboard model={model} active={path === '/dashboard' || path === '/alerts' || !routes.includes(path)} alertsOnly={path === '/alerts'} notify={notify} navigate={navigate}/>
       {path === '/anomaly' && <Anomaly model={model} notify={notify} navigate={navigate}/>}
-      {path === '/notifications' && <Notifications model={model} notify={notify}/>}
+      {path === '/notifications' && <Notifications model={model} notify={notify} navigate={navigate}/>}
       {path === '/account' && <Account model={model} notify={notify} navigate={navigate} logout={() => void logout()} logoutBusy={logoutBusy}/>}
       {path === '/admin' && <Admin model={model} notify={notify}/>}
     </main><nav className="mobile-dock" aria-label={t('移动导航')}>

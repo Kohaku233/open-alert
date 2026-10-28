@@ -149,7 +149,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
       }
       if (path === '/api/candles' && method === 'GET') {
         // Deterministic synthetic candles around the mock quote; older pages end after two.
-        const tf={'1m':6e4,'5m':3e5,'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5}[url.searchParams.get('timeframe')];
+        const tfm=/^(\d+)([mhdw])$/.exec(url.searchParams.get('timeframe')??''),tf=tfm?Number(tfm[1])*{m:6e4,h:36e5,d:864e5,w:6048e5}[tfm[2]]:0;
         assert(tf && state.markets.some(m=>m.instrument===url.searchParams.get('instrument')));
         const before=url.searchParams.get('before'), end=before?Number(before):Math.floor(Date.now()/tf)*tf+tf;
         state.candlePages=(state.candlePages??0)+1;
@@ -158,11 +158,13 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles,done:false});
       }
       if (path === '/api/anomaly' && method === 'GET') return ok(anomalyView(state));
+      if (path === '/api/favorites' && method === 'GET') return ok({favorites:state.favorites??=[]});
+      if (path === '/api/favorites' && method === 'PUT') { (state.favoritePuts??=[]).push(body); state.favorites=body.favorites; return ok({favorites:state.favorites}); }
       if (path === '/api/anomaly/settings' && method === 'PATCH') {
         const a=anomalyState(state),{expectedGeneration,...patch}=body;(state.anomalyPatches??=[]).push(body);
         if(expectedGeneration!==a.generation)return fail('generation_conflict',409);
         if(patch.enabled&&!state.status.channel.userKeyPresent)return fail('channel_unconfigured',409);
-        a.settings={...a.settings,...patch};a.generation++;return ok(anomalyView(state));
+        a.settings={...a.settings,...patch};if(patch.notification)a.settings.priority=Math.max(-1,patch.notification.priority);a.generation++;return ok(anomalyView(state));
       }
       if (path === '/api/markets' && method === 'GET') {
         if(state.catalogFail)return route.fulfill({status:503,contentType:'text/html',headers:{'CF-Ray':'mock-catalog-HKG'},body:'<h1>Worker exceeded resource limits</h1>'});
@@ -232,7 +234,7 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
 function anomalyState(state) {
   if (!state.anomaly) {
     const at=Date.now()-36e5, okx=state.markets[0]?.instrument ?? 'okx:BTC/USDT:USDT';
-    state.anomaly={generation:0,settings:{enabled:false,crypto:true,tradfi:true,minMoveCrypto:0.25,minMoveTradfi:0.03,priority:1,dailyLimit:10},events:[
+    state.anomaly={generation:0,settings:{enabled:false,crypto:true,tradfi:true,minMoveCrypto:0.25,minMoveTradfi:0.03,priority:1,dailyLimit:10,notification:null},events:[
       {id:'ev-1',groupId:'g-1',at,entity:'tradfi:SKHYNIX',label:'SK Hynix',category:'tradfi',direction:'down',window:'1h',session:'weekend',move:-0.071,relativeMove:-0.071,z:-5.2,volumeMultiple:8.4,marketCap:null,venues:[{venue:'binance',instrument:okx,symbol:'SKHYNIXUSDT',move:-0.071},{venue:'okx',instrument:okx,symbol:'SKHYNIX-USDT-SWAP',move:-0.069}]},
       {id:'ev-2',groupId:'g-2',at:at-864e5,entity:'crypto:quack-ai',label:'Q',category:'crypto',direction:'up',window:'24h',session:'all',move:1.306,relativeMove:1.29,z:9.1,volumeMultiple:21.3,marketCap:262e6,venues:[{venue:'mexc',instrument:okx,symbol:'Q_USDT',move:1.306}]}]};
   }
@@ -283,7 +285,7 @@ if (process.env.OPEN_ALERT_FIXTURE_SERVER_ONLY !== '1') {
 let browser, timedOut = false;
 // Every fresh document boots behind the entrance curtain until its logo is fully
 // formed and any view-handshake claims settle. The guard only needs to catch hangs.
-const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 300 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 300000);
+const deadline = setTimeout(() => { timedOut = true; process.exitCode = 1; console.error('MOCK 420 second deadline exceeded'); void browser?.close(); server.closeAllConnections(); server.close(); }, 420000);
 try {
   const launchEnv = { ...process.env }, cachedLib = join(homedir(), '.cache/okx-browser-check/lib');
   try { await access(join(cachedLib, 'libXdamage.so.1')); launchEnv.LD_LIBRARY_PATH = [cachedLib, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':'); } catch {}
@@ -644,6 +646,12 @@ try {
     await check('out-of-range floor rejected locally',async()=>{assert.equal(await crypto.evaluate(i=>i.validity.rangeUnderflow),true);assert.equal(requests(s,'PATCH','/api/anomaly/settings').length,2);});
     await crypto.fill('30');await p.getByRole('button',{name:'保存过滤条件'}).click();
     await check('floor saved as fraction',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:2,minMoveCrypto:0.3,minMoveTradfi:0.03,dailyLimit:10}));
+    await p.getByRole('group',{name:'异动推送的提醒方式'}).getByRole('button',{name:'单独设置'}).click();
+    await p.getByLabel('铃声标识').fill('cosmic');await p.getByRole('button',{name:'保存提醒方式'}).click();
+    await check('own anomaly profile saved separately',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)?.notification).toEqual({priority:1,retry:30,expire:1500,sound:'cosmic'}));
+    await check('price-alert settings untouched',async()=>assert.equal(requests(s,'PATCH','/api/settings').length,0));
+    await p.getByRole('group',{name:'异动推送的提醒方式'}).getByRole('button',{name:'跟随价格警报'}).click();
+    await check('follow resets to price-alert profile',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:4,notification:null}));
     await p.locator('.anomaly-event').first().locator('.anomaly-event-venues a').first().click();
     await check('venue link opens dashboard',()=>expect(p).toHaveURL(/\/dashboard\?market=/));
     await fixture.context.close();
@@ -937,7 +945,7 @@ try {
     await check('OHLC legend shows the latest candle',()=>expect(p.getByTestId('chart-legend')).toContainText(/O.+H.+L.+C.+%/));
     await check('candle close countdown ticks',async()=>{const first=await p.getByTestId('chart-countdown').textContent();assert.match(first,/^(\d+D )?\d{2}:\d{2}(:\d{2})?$/);await expect.poll(()=>p.getByTestId('chart-countdown').textContent(),{timeout:3000}).not.toBe(first);});
     await noOverflow(p);await p.waitForTimeout(400);await p.screenshot({path:join(outputs,`native-chart-${profile}-MOCK.png`),fullPage:profile==='mobile'});
-    await p.locator('.native-chart-bar').getByRole('button',{name:'1h',exact:true}).click();
+    await p.locator('.native-chart-bar').getByRole('button',{name:'1 小时',exact:true}).click();
     await check('timeframe switch requests 1h',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='1h')).toBe(true));
     await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
     // Locate the armed alert's line from the series' own coordinate transform, through the rendered price label.
@@ -987,6 +995,34 @@ try {
       await check('placing a drawing opens no alert dialog',()=>expect(dialog).toHaveCount(0));
       await p.waitForTimeout(300);await p.screenshot({path:join(outputs,`native-drawing-${profile}-MOCK.png`)});
     }
+    // TradingView-style intervals: typed entry on the chart, a starred custom interval, and asset favourites.
+    if(profile==='desktop'){
+      await p.mouse.move(box.x+box.width*0.5,box.y+box.height*0.5);await p.keyboard.press('Escape');await p.keyboard.type('7');
+      const typed=p.getByRole('dialog',{name:'输入周期'});
+      await check('typing a digit opens the interval entry',()=>expect(typed).toBeVisible());
+      await check('entry previews the interval',()=>expect(typed).toContainText('7 分钟'));
+      await p.keyboard.press('Enter');
+      await check('typed 7 requests a 7m page',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='7m')).toBe(true));
+      await check('unstarred interval shows as a transient pill',()=>expect(p.locator('.timeframe-favorites .is-transient')).toHaveText('7m'));
+      await p.mouse.move(box.x+box.width*0.5,box.y+box.height*0.5);await p.keyboard.type('1M');await p.keyboard.press('Enter');
+      await check('month input is rejected in place',()=>expect(typed).toContainText('无法识别'));
+      await p.keyboard.press('Escape');await check('Esc closes the entry',()=>expect(typed).toHaveCount(0));
+    }
+    await p.getByRole('button',{name:'更多周期'}).click();
+    const menu=p.locator('.timeframe-popover');
+    await check('interval menu lists presets',()=>expect(menu.getByRole('button',{name:/^2H/})).toBeVisible());
+    await menu.getByRole('button',{name:'加入常用 2H'}).click();
+    await check('starred interval saved locally',async()=>expect.poll(()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-chart-frames')||'[]'))).toContain('2h'));
+    await menu.getByLabel('自定义周期').fill('90');await menu.getByRole('button',{name:'应用'}).click();
+    await check('custom 90 becomes 90m',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='90m')).toBe(true));
+    await check('starred 2H pill in the bar',()=>expect(p.locator('.timeframe-favorites').getByRole('button',{name:'2 小时',exact:true})).toBeVisible());
+    await check('menu closes after applying',()=>expect(menu).toHaveCount(0));
+    await p.getByRole('button',{name:'更多周期'}).click();await expect(menu).toBeVisible();await p.waitForTimeout(300);
+    await p.screenshot({path:join(outputs,'native-timeframes-'+profile+'-MOCK.png')});await p.keyboard.press('Escape');await expect(menu).toHaveCount(0);
+    await p.getByRole('button',{name:/^收藏 BTC/}).click();
+    await check('star saves the underlying asset',async()=>expect.poll(()=>s.favoritePuts?.at(-1)?.favorites).toEqual([{base:'BTC',preferred:'BTC-USDT-SWAP'}]));
+    await check('starred chip listed',()=>expect(p.locator('.favorites-list').getByRole('button',{name:'BTC',exact:true})).toBeVisible());
+    await noOverflow(p);
     await check('selection survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart canvas').first()).toBeVisible();});
     if(profile==='desktop'){
       await check('drawings restored after reload',async()=>{await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(p.getByRole('button',{name:'清空画线'})).toBeEnabled();});

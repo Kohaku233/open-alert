@@ -296,7 +296,7 @@ test('candles require session, validate market/timeframe/cursor and never touch 
  try{
   assert.equal((await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1h')).status,401);
   const alice=await f.login('candles@example.com');
-  for(const query of ['', '?instrument=BTC-USDT-SWAP', '?instrument=BTC-USDT-SWAP&timeframe=2h', '?instrument=FAKE-USDT-SWAP&timeframe=1h', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=-1', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=abc', '?instrument=BTC-USDT-SWAP&timeframe=1h&timeframe=1d', '?instrument=BTC-USDT-SWAP&timeframe=1h&extra=1'])
+  for(const query of ['', '?instrument=BTC-USDT-SWAP', '?instrument=BTC-USDT-SWAP&timeframe=2M', '?instrument=BTC-USDT-SWAP&timeframe=60m', '?instrument=BTC-USDT-SWAP&timeframe=1441m', '?instrument=FAKE-USDT-SWAP&timeframe=1h', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=-1', '?instrument=BTC-USDT-SWAP&timeframe=1h&before=abc', '?instrument=BTC-USDT-SWAP&timeframe=1h&timeframe=1d', '?instrument=BTC-USDT-SWAP&timeframe=1h&extra=1'])
    assert.equal((await f.call('/api/candles'+query,'GET',undefined,alice.cookie)).status,400,query);
   assert.equal(seen.length,0);
   const page=await f.body(await f.call('/api/candles?instrument=BTC-USDT-SWAP&timeframe=1h&before=1700000000000','GET',undefined,alice.cookie));

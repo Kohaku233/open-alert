@@ -512,3 +512,29 @@
   .anomaly-event-venues { grid-column: 2; align-self: end; }
   .anomaly-page { padding-bottom: 96px; }
 }
+
+/* Favourites: assets, not venues. The star toggles the asset on screen; venue pills switch exchange. */
+.favorites-bar { display: grid; gap: 8px; min-width: 0; }
+.favorites-row, .favorites-venues { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.favorites-list { display: flex; gap: 4px; min-width: 0; margin: 0; padding: 0; overflow-x: auto; list-style: none; scrollbar-width: none; }
+.favorites-bar [data-slot="button"] { flex: none; height: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: none; font: 11px/1 var(--mono-font); letter-spacing: .04em; color: var(--muted-foreground); }
+.favorites-bar [data-slot="button"]:hover:not(:disabled) { border-color: var(--control-border); color: var(--text); }
+.favorites-bar .favorite-toggle { gap: 6px; }
+.favorite-toggle svg { width: 13px; height: 13px; }
+.favorite-toggle[aria-pressed="true"] { border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: var(--amber); }
+.favorite-toggle[aria-pressed="true"] svg { fill: currentColor; }
+.favorites-bar .favorite-chip[aria-current="true"] { border-color: color-mix(in srgb, var(--signal) 40%, transparent); background: var(--selected); color: var(--signal); }
+.favorites-empty { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted-foreground); }
+.favorites-venues { flex-wrap: wrap; }
+.favorites-venues [data-slot="button"] { gap: 5px; }
+.favorites-venues small { font-size: 10px; opacity: .7; }
+.favorites-bar .favorites-venues [aria-pressed="true"] { border-color: transparent; background: var(--selected); color: var(--signal); }
+.favorites-error { margin: 0; }
+@media (max-width: 900px) { .favorites-bar [data-slot="button"] { height: 34px; min-height: 34px; } }
+/* Anomaly delivery profile: follow the price-alert profile, or carry its own. */
+.anomaly-delivery { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.anomaly-delivery-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.anomaly-delivery-head strong { font-weight: 500; font-size: 14px; }
+.anomaly-delivery form fieldset { display: grid; gap: 12px; margin: 0; padding: 0; border: 0; }
+.anomaly-delivery .text-button { padding: 0; height: auto; min-height: 0; }
+.delivery-scope-note { margin: 4px 0 0; }

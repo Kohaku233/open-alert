@@ -188,3 +188,70 @@
 /* Phones: keep close + change on one line; full OHL appears from tablet width up. */
 @media (max-width: 520px) { .chart-legend-ohl { display: none; } }
 @media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } }
+
+/* Timeframes: starred intervals as pills, a full menu, and a TradingView-style typed entry. */
+.timeframe-favorites { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.native-chart-bar .timeframe-favorites .is-transient { border: 1px dashed var(--line); }
+.native-chart-bar [data-slot="button"].timeframe-more { width: 28px; padding: 0; justify-content: center; }
+.timeframe-more svg { width: 14px; height: 14px; }
+.timeframe-more[aria-expanded="true"] { color: var(--signal); background: var(--selected); }
+[data-slot="popover-content"].timeframe-popover { width: min(340px, calc(100vw - 24px)); padding: 12px; display: grid; gap: 10px; border-color: var(--line); border-radius: 14px; background: var(--card); }
+.timeframe-custom { display: flex; gap: 6px; }
+.timeframe-custom input,
+.timeframe-typed input {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--field);
+  font: 12px/1 var(--mono-font);
+  letter-spacing: .04em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.timeframe-custom input::placeholder { text-transform: none; color: var(--muted-foreground); }
+.timeframe-custom input:focus-visible,
+.timeframe-typed input:focus-visible { outline: none; border-color: var(--signal); }
+.timeframe-custom [data-slot="button"] { height: 32px; padding: 0 12px; border-radius: 999px; font: 11px/1 var(--mono-font); }
+.timeframe-hint, .timeframe-error { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted-foreground); }
+.timeframe-error { color: var(--danger); }
+.timeframe-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; max-height: 300px; margin: 0; padding: 8px 0 0; overflow-y: auto; list-style: none; border-top: 1px solid var(--line); }
+.timeframe-list li { display: flex; align-items: center; min-width: 0; border-radius: 8px; }
+.timeframe-list li.is-current { background: var(--selected); }
+.timeframe-list [data-slot="button"] { height: 30px; min-height: 30px; border: 0; background: none; }
+.timeframe-list .timeframe-pick { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; padding: 0 8px; }
+.timeframe-pick b { min-width: 30px; font: 400 12px/1 var(--mono-font); text-align: left; color: var(--text); }
+.timeframe-list li.is-current .timeframe-pick b { color: var(--signal); }
+.timeframe-pick span { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted-foreground); }
+.timeframe-list .timeframe-star { width: 28px; padding: 0; justify-content: center; color: var(--muted-foreground); }
+.timeframe-star svg { width: 13px; height: 13px; }
+.timeframe-star[aria-pressed="true"] { color: var(--amber); }
+.timeframe-star[aria-pressed="true"] svg { fill: currentColor; }
+.timeframe-typed {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  gap: 8px;
+  width: 220px;
+  padding: 14px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--control-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .35);
+  animation: timeframe-typed-in .16s ease-out both;
+}
+.timeframe-typed-label { font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
+.timeframe-typed input { height: 40px; font-size: 18px; text-align: center; }
+.timeframe-typed small { font-size: 11px; line-height: 1.45; color: var(--muted-foreground); }
+.timeframe-typed small.is-error { color: var(--danger); }
+@keyframes timeframe-typed-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 6px)); } }
+@media (prefers-reduced-motion: reduce) { .timeframe-typed { animation: none; } }
+@media (max-width: 900px) {
+  .native-chart-bar [data-slot="button"].timeframe-more { width: 36px; }
+  .timeframe-list [data-slot="button"] { height: 36px; min-height: 36px; }
+}

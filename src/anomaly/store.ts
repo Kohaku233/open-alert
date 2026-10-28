@@ -1,4 +1,6 @@
 import type { SqlDatabase } from '../contracts/db.js';
+import { notificationOptionsSchema } from '../contracts/domain.js';
+import type { NotificationOptions } from '../contracts/domain.js';
 import type { Category, Direction, Session, WindowKey } from './rules.js';
 
 /** Node-only feature tables. They are deliberately outside the shared migration
@@ -12,7 +14,13 @@ export async function ensureAnomalySchema(db: SqlDatabase): Promise<void> {
     { sql: 'CREATE INDEX IF NOT EXISTS anomaly_events_at ON anomaly_events(at)' },
     { sql: `CREATE TABLE IF NOT EXISTS anomaly_deliveries (group_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES "user"(id), at ${int} NOT NULL, entities_json TEXT NOT NULL, outcome TEXT NOT NULL CHECK(outcome IN('sent','failed','uncertain')), code TEXT, PRIMARY KEY(group_id,user_id))` },
     { sql: 'CREATE INDEX IF NOT EXISTS anomaly_deliveries_user ON anomaly_deliveries(user_id,at)' },
+    { sql: `CREATE TABLE IF NOT EXISTS market_favorites (user_id TEXT NOT NULL REFERENCES "user"(id), base TEXT NOT NULL, preferred TEXT, position ${int} NOT NULL, PRIMARY KEY(user_id,base))` },
   ]);
+  // Added after first release: the anomaly pushes' own Pushover profile (null = follow price alerts).
+  const columns = pg
+    ? await db.query<{ name: string }>("SELECT column_name AS name FROM information_schema.columns WHERE table_name='anomaly_settings'")
+    : await db.query<{ name: string }>("SELECT name FROM pragma_table_info('anomaly_settings')");
+  if (!columns.some(c => c.name === 'notification_json')) await db.execute('ALTER TABLE anomaly_settings ADD COLUMN notification_json TEXT');
 }
 
 export interface AnomalySettings {
@@ -20,8 +28,14 @@ export interface AnomalySettings {
   /** Simple-return floors; crypto is measured net of BTC. */
   minMoveCrypto: number; minMoveTradfi: number;
   priority: -1 | 0 | 1 | 2; dailyLimit: number;
+  /** Own sound, priority and emergency policy; null keeps the price-alert profile with `priority`. */
+  notification: NotificationOptions | null;
 }
-export const DEFAULT_ANOMALY_SETTINGS: Readonly<AnomalySettings> = Object.freeze({ enabled: false, crypto: true, tradfi: true, minMoveCrypto: 0.25, minMoveTradfi: 0.03, priority: 1, dailyLimit: 10 });
+export const DEFAULT_ANOMALY_SETTINGS: Readonly<AnomalySettings> = Object.freeze({ enabled: false, crypto: true, tradfi: true, minMoveCrypto: 0.25, minMoveTradfi: 0.03, priority: 1, dailyLimit: 10, notification: null });
+/** The profile an anomaly push is sent with. */
+export function anomalyNotification(settings: AnomalySettings, priceAlerts: NotificationOptions): NotificationOptions {
+  return settings.notification ?? { ...priceAlerts, priority: settings.priority };
+}
 export interface VenueHit { venue: 'binance' | 'okx' | 'mexc'; instrument: string; symbol: string; price: number; move: number; z: number; volumeMultiple: number; window: WindowKey }
 /** The move pushed to one user for one entity; the basis of that user's cooldown. */
 export interface DeliveryMark { entity: string; at: number; direction: Direction; move: number }
@@ -30,14 +44,18 @@ export interface AnomalyEvent {
   window: WindowKey; session: Session; move: number; relativeMove: number; z: number; volumeMultiple: number;
   marketCap: number | null; venues: VenueHit[];
 }
-interface SettingsRow { enabled: number; crypto: number; tradfi: number; min_move_crypto: number; min_move_tradfi: number; priority: number; daily_limit: number; generation: number }
+interface SettingsRow { enabled: number; crypto: number; tradfi: number; min_move_crypto: number; min_move_tradfi: number; priority: number; daily_limit: number; notification_json: string | null; generation: number }
 interface EventRow { id: string; group_id: string; at: number; entity: string; label: string; category: Category; direction: Direction; win: WindowKey; session: Session; move: number; relative_move: number; z: number; volume_multiple: number; market_cap: number | null; venues_json: string }
-const settingsOf = (r: SettingsRow): AnomalySettings => ({ enabled: r.enabled === 1, crypto: r.crypto === 1, tradfi: r.tradfi === 1, minMoveCrypto: r.min_move_crypto, minMoveTradfi: r.min_move_tradfi, priority: r.priority as AnomalySettings['priority'], dailyLimit: r.daily_limit });
+function profileOf(json: string | null): NotificationOptions | null {
+  if (!json) return null;
+  try { const parsed = notificationOptionsSchema.safeParse(JSON.parse(json)); return parsed.success ? parsed.data : null; } catch { return null; }
+}
+const settingsOf = (r: SettingsRow): AnomalySettings => ({ enabled: r.enabled === 1, crypto: r.crypto === 1, tradfi: r.tradfi === 1, minMoveCrypto: r.min_move_crypto, minMoveTradfi: r.min_move_tradfi, priority: r.priority as AnomalySettings['priority'], dailyLimit: r.daily_limit, notification: profileOf(r.notification_json) });
 const eventOf = (r: EventRow): AnomalyEvent => ({ id: r.id, groupId: r.group_id, at: r.at, entity: r.entity, label: r.label, category: r.category, direction: r.direction, window: r.win, session: r.session, move: r.move, relativeMove: r.relative_move, z: r.z, volumeMultiple: r.volume_multiple, marketCap: r.market_cap, venues: JSON.parse(r.venues_json) as VenueHit[] });
 export class AnomalyConflict extends Error { constructor() { super('generation_conflict'); this.name = 'AnomalyConflict'; } }
 
 export function createAnomalyStore(db: SqlDatabase) {
-  const columns = 'enabled,crypto,tradfi,min_move_crypto,min_move_tradfi,priority,daily_limit,generation';
+  const columns = 'enabled,crypto,tradfi,min_move_crypto,min_move_tradfi,priority,daily_limit,notification_json,generation';
   async function getSettings(userId: string): Promise<{ settings: AnomalySettings; generation: number }> {
     const row = (await db.query<SettingsRow>(`SELECT ${columns} FROM anomaly_settings WHERE user_id=?`, [userId]))[0];
     return row ? { settings: settingsOf(row), generation: row.generation } : { settings: { ...DEFAULT_ANOMALY_SETTINGS }, generation: 0 };
@@ -46,9 +64,11 @@ export function createAnomalyStore(db: SqlDatabase) {
     const current = await getSettings(userId);
     if (current.generation !== expectedGeneration) throw new AnomalyConflict();
     const next = { ...current.settings, ...patch }, b = (v: boolean) => v ? 1 : 0;
-    const values = [b(next.enabled), b(next.crypto), b(next.tradfi), next.minMoveCrypto, next.minMoveTradfi, next.priority, next.dailyLimit];
+    // The legacy priority column mirrors the profile; it cannot hold the silent (-2) level.
+    if (patch.notification) next.priority = Math.max(-1, patch.notification.priority) as AnomalySettings['priority'];
+    const values = [b(next.enabled), b(next.crypto), b(next.tradfi), next.minMoveCrypto, next.minMoveTradfi, next.priority, next.dailyLimit, next.notification ? JSON.stringify(next.notification) : null];
     // Generation CAS: the insert only succeeds for a never-saved row, the update only from the expected generation.
-    const result = await db.execute(`INSERT INTO anomaly_settings(user_id,${columns},updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled,crypto=excluded.crypto,tradfi=excluded.tradfi,min_move_crypto=excluded.min_move_crypto,min_move_tradfi=excluded.min_move_tradfi,priority=excluded.priority,daily_limit=excluded.daily_limit,generation=excluded.generation,updated_at=excluded.updated_at WHERE anomaly_settings.generation=?`,
+    const result = await db.execute(`INSERT INTO anomaly_settings(user_id,${columns},updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled,crypto=excluded.crypto,tradfi=excluded.tradfi,min_move_crypto=excluded.min_move_crypto,min_move_tradfi=excluded.min_move_tradfi,priority=excluded.priority,daily_limit=excluded.daily_limit,notification_json=excluded.notification_json,generation=excluded.generation,updated_at=excluded.updated_at WHERE anomaly_settings.generation=?`,
       [userId, ...values, expectedGeneration + 1, now, expectedGeneration]);
     if (result.changes !== 1) throw new AnomalyConflict();
     return { settings: next, generation: expectedGeneration + 1 };
@@ -82,6 +102,17 @@ export function createAnomalyStore(db: SqlDatabase) {
   async function prune(before: number) {
     await db.atomic([{ sql: 'DELETE FROM anomaly_events WHERE at<?', params: [before] }, { sql: 'DELETE FROM anomaly_deliveries WHERE at<?', params: [before] }]);
   }
-  return { getSettings, patchSettings, subscribers, insertEvents, recentEvents, recordDelivery, deliveriesSince, prune };
+  async function favorites(userId: string): Promise<Favorite[]> {
+    return (await db.query<{ base: string; preferred: string | null }>('SELECT base,preferred FROM market_favorites WHERE user_id=? ORDER BY position,base', [userId])).map(r => ({ base: r.base, preferred: r.preferred }));
+  }
+  /** Replace the whole ordered list in one transaction. */
+  async function setFavorites(userId: string, list: readonly Favorite[]): Promise<Favorite[]> {
+    await db.atomic([{ sql: 'DELETE FROM market_favorites WHERE user_id=?', params: [userId] },
+      ...list.map((f, i) => ({ sql: 'INSERT INTO market_favorites(user_id,base,preferred,position) VALUES(?,?,?,?)', params: [userId, f.base, f.preferred, i] }))]);
+    return favorites(userId);
+  }
+  return { getSettings, patchSettings, subscribers, insertEvents, recentEvents, recordDelivery, deliveriesSince, prune, favorites, setFavorites };
 }
+/** A starred underlying (e.g. BTC) across every venue, plus the market last opened for it. */
+export interface Favorite { base: string; preferred: string | null }
 export type AnomalyStore = ReturnType<typeof createAnomalyStore>;
