@@ -14,11 +14,16 @@ import { CANDLE_TIMEFRAMES } from '../markets/candles.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
+import { AnomalyConflict } from '../anomaly/store.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
 type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
 const generation = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), dailyLimit: z.number().int().min(1).max(20).optional(), notification: notificationOptionsSchema.optional() }).refine(v=>Object.keys(v).length>1);
+// Floors may only be raised above the system minimum (10% crypto net of BTC, 2% TradFi).
+const anomalySettingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), crypto: z.boolean().optional(), tradfi: z.boolean().optional(),
+  minMoveCrypto: z.number().min(0.10).max(1).optional(), minMoveTradfi: z.number().min(0.02).max(0.5).optional(),
+  priority: z.union([z.literal(-1),z.literal(0),z.literal(1),z.literal(2)]).optional(), dailyLimit: z.number().int().min(1).max(50).optional() }).refine(v=>Object.keys(v).length>1);
 const channelSchema = putChannelSchema;
 const pageSchema = z.strictObject({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().min(1).max(200).optional()});
 const messages: Record<ApiErrorCode,string> = {
@@ -101,6 +106,7 @@ export function createApi(d:ApiDependencies) {
     if(error instanceof HttpError)problem=error;
     else if(error instanceof DisabledAccountError)problem=new HttpError(403,'forbidden');
     else if(error instanceof RepositoryConflict)problem=new HttpError(error.code==='not_found'?404:409,error.code);
+    else if(error instanceof AnomalyConflict)problem=new HttpError(409,'generation_conflict');
     else problem=new HttpError(503,'service_unavailable');
     if(problem.status===429&&!c.res.headers.has('Retry-After'))c.header('Retry-After','10');
     return c.json({ok:false as const,error:{code:problem.code,message:messages[problem.code],...(problem.fields?{fields:problem.fields}:{})},requestId:c.get('requestId')??crypto.randomUUID()},problem.status);
@@ -210,6 +216,18 @@ export function createApi(d:ApiDependencies) {
     catch{throw new HttpError(503,'service_unavailable');}
   });
   app.get('/api/alerts',async c=>ok(c,{alerts:await hydrateAll(uid(c),await d.repositories.alerts.listForUser(uid(c)))}));
+  const anomaly=()=>{if(!d.anomaly)throw new HttpError(503,'service_unavailable');return d.anomaly;};
+  async function anomalyView(userId:string){
+    const a=anomaly(),[{settings,generation},events,deliveries,channel]=await Promise.all([a.store.getSettings(userId),a.store.recentEvents(40),a.store.deliveriesSince(Math.floor(Date.now()/86400000)*86400000,userId),d.repositories.channels.get(userId)]);
+    return {settings,generation,events,today:deliveries.length,channelConfigured:channelProfile(channel,d.config.sharedPushoverAppToken).configured,monitor:a.status()};
+  }
+  app.get('/api/anomaly',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,await anomalyView(uid(c)));});
+  app.patch('/api/anomaly/settings',async c=>{
+    const a=anomaly(),{expectedGeneration,...patch}=await json(c,anomalySettingsSchema);
+    if(patch.enabled){const channel=await d.repositories.channels.get(uid(c));if(!channelProfile(channel,d.config.sharedPushoverAppToken).configured)throw new HttpError(409,'channel_unconfigured');}
+    await a.store.patchSettings(uid(c),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());
+    return ok(c,await anomalyView(uid(c)));
+  });
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),alert)},201);});
   app.patch('/api/alerts/:id',async c=>{const {expectedGeneration,...patch}=await json(c,patchAlertSchema);const current=await mutableAlert(uid(c),c.req.param('id'),expectedGeneration);if(patch.instrument!==undefined||patch.enabled===true)await market(patch.instrument??current.instrument);const a=await d.repositories.alerts.patch(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),a)});});
   app.delete('/api/alerts/:id',async c=>{const body=await json(c,rearmAlertSchema);await d.repositories.alerts.remove(uid(c),c.req.param('id'),body.expectedGeneration,Date.now());await wake(c);return ok(c,{deleted:true});});

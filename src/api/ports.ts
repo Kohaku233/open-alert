@@ -39,6 +39,11 @@ export interface ApiDependencies {
   candles?: {
     get(market: Market, timeframe: import('../markets/candles.js').CandleTimeframe, before?: number): Promise<import('../markets/candles.js').CandlePage>;
   };
+  /** Contract anomaly monitor; Node runtime only. */
+  anomaly?: {
+    store: import('../anomaly/store.js').AnomalyStore;
+    status(): import('../anomaly/engine.js').AnomalyStatus;
+  };
   runtime: { snapshot(): Promise<RuntimeSnapshot>; observe?(): Promise<ObservabilitySnapshot> };
   notifications: NotificationPort;
   wake(signal?: AbortSignal): Promise<void>;

@@ -157,6 +157,13 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
         const candles=Array.from({length:300},(_,i)=>{const time=end-(300-i)*tf,base=(state.quotePrice??60000)*(1+Math.sin(time/tf/9)*0.01);return [time,base,base*1.003,base*0.997,base*(1+Math.cos(time/tf/5)*0.002),10+i%7];});
         return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles,done:false});
       }
+      if (path === '/api/anomaly' && method === 'GET') return ok(anomalyView(state));
+      if (path === '/api/anomaly/settings' && method === 'PATCH') {
+        const a=anomalyState(state),{expectedGeneration,...patch}=body;(state.anomalyPatches??=[]).push(body);
+        if(expectedGeneration!==a.generation)return fail('generation_conflict',409);
+        if(patch.enabled&&!state.status.channel.userKeyPresent)return fail('channel_unconfigured',409);
+        a.settings={...a.settings,...patch};a.generation++;return ok(anomalyView(state));
+      }
       if (path === '/api/markets' && method === 'GET') {
         if(state.catalogFail)return route.fulfill({status:503,contentType:'text/html',headers:{'CF-Ray':'mock-catalog-HKG'},body:'<h1>Worker exceeded resource limits</h1>'});
         return ok({ markets: state.markets, updatedAt: Date.now(), stale: false });
@@ -221,8 +228,22 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
   });
   return { page, context, state };
 }
+// Mock anomaly monitor: one cross-venue stock event and one crypto event.
+function anomalyState(state) {
+  if (!state.anomaly) {
+    const at=Date.now()-36e5, okx=state.markets[0]?.instrument ?? 'okx:BTC/USDT:USDT';
+    state.anomaly={generation:0,settings:{enabled:false,crypto:true,tradfi:true,minMoveCrypto:0.25,minMoveTradfi:0.03,priority:1,dailyLimit:10},events:[
+      {id:'ev-1',groupId:'g-1',at,entity:'tradfi:SKHYNIX',label:'SK Hynix',category:'tradfi',direction:'down',window:'1h',session:'weekend',move:-0.071,relativeMove:-0.071,z:-5.2,volumeMultiple:8.4,marketCap:null,venues:[{venue:'binance',instrument:okx,symbol:'SKHYNIXUSDT',move:-0.071},{venue:'okx',instrument:okx,symbol:'SKHYNIX-USDT-SWAP',move:-0.069}]},
+      {id:'ev-2',groupId:'g-2',at:at-864e5,entity:'crypto:quack-ai',label:'Q',category:'crypto',direction:'up',window:'24h',session:'all',move:1.306,relativeMove:1.29,z:9.1,volumeMultiple:21.3,marketCap:262e6,venues:[{venue:'mexc',instrument:okx,symbol:'Q_USDT',move:1.306}]}]};
+  }
+  return state.anomaly;
+}
+function anomalyView(state) {
+  const a=anomalyState(state);
+  return {settings:a.settings,generation:a.generation,events:a.events,today:1,channelConfigured:!!state.status.channel.userKeyPresent,monitor:{state:'running',series:291,baselines:291,crypto:180,tradfi:111,withMarketCap:170,streams:{binance:true,okx:true,mexc:true},lastEvaluationAt:Date.now(),universeAt:Date.now(),marketCapAt:Date.now()}};
+}
 const nav = async (page, name) => {
- const href = ({'行情与警报':'/dashboard','Markets & alerts':'/dashboard','Markets':'/dashboard','手机通知':'/notifications','Notifications':'/notifications','我的账户':'/account','Account':'/account','管理':'/admin','Alerts':'/alerts'})[name];
+ const href = ({'行情与警报':'/dashboard','Markets & alerts':'/dashboard','Markets':'/dashboard','异动监测':'/anomaly','Anomaly monitor':'/anomaly','手机通知':'/notifications','Notifications':'/notifications','我的账户':'/account','Account':'/account','管理':'/admin','Alerts':'/alerts'})[name];
  const link=page.locator('nav:visible a[href="'+href+'"]');
  if (await link.count()) return link.click();
  await page.locator('nav:visible a[href="/account"]').click();
@@ -603,6 +624,29 @@ try {
     await m.goto(origin+'/admin'); await check('ordinary user admin view guarded', () => expect(m.getByText('此页面仅供管理员使用。')).toBeVisible());
     await check('guard issues no admin API', async () => assert.equal(mobile.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,0));
     await mobile.context.close();
+  });
+  for (const profile of ['desktop','mobile']) await journey('09b anomaly monitor settings, event feed and chart link ('+profile+')',async()=>{
+    const fixture=await setup(browser,profile,true),p=fixture.page,s=fixture.state;
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    await nav(p,'异动监测');
+    await check('anomaly page heading',()=>expect(p.getByRole('heading',{name:'异动监测',level:1})).toBeVisible());
+    await check('nav marks anomaly current',()=>expect(p.locator('nav:visible a[href="/anomaly"]')).toHaveAttribute('aria-current','page'));
+    await check('event feed lists merged venues',()=>expect(p.locator('.anomaly-event').first().locator('.anomaly-event-venues a')).toHaveCount(2));
+    await check('stock weekend session label',()=>expect(p.getByText('周末休市')).toBeVisible());
+    if(profile==='mobile')await noOverflow(p);
+    await p.screenshot({path:join(outputs,`open-alert-anomaly-${profile}-MOCK.png`),fullPage:true,animations:'disabled'});
+    await p.getByRole('switch',{name:'异动推送'}).click();
+    await check('enable sends CAS generation',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:0,enabled:true}));
+    await check('enabled badge',()=>expect(p.locator('.page-heading .status-pill')).toHaveText('推送中'));
+    await p.getByRole('switch',{name:'股票与 TradFi 合约'}).click();
+    await check('stock toggle uses next generation',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:1,tradfi:false}));
+    const crypto=p.getByLabel('币种最小涨跌 · %');await crypto.fill('5');await p.getByRole('button',{name:'保存过滤条件'}).click();
+    await check('out-of-range floor rejected locally',async()=>{assert.equal(await crypto.evaluate(i=>i.validity.rangeUnderflow),true);assert.equal(requests(s,'PATCH','/api/anomaly/settings').length,2);});
+    await crypto.fill('30');await p.getByRole('button',{name:'保存过滤条件'}).click();
+    await check('floor saved as fraction',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:2,minMoveCrypto:0.3,minMoveTradfi:0.03,dailyLimit:10}));
+    await p.locator('.anomaly-event').first().locator('.anomaly-event-venues a').first().click();
+    await check('venue link opens dashboard',()=>expect(p).toHaveURL(/\/dashboard\?market=/));
+    await fixture.context.close();
   });
   await journey('10 admin bounded pagination and invitation copy under mobile fixture', async () => {
     // Own fixture: the journey 09 document must not stay parked on /admin when the role changes.

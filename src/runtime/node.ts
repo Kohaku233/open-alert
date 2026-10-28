@@ -19,6 +19,8 @@ import { createLiveQuoteHub } from '../markets/live-quotes.js';
 import { createCandleService } from '../markets/candles.js';
 import { createRealtimeGateway, REALTIME_PATH } from './realtime.js';
 import { handleUnhandledRejection } from './rejections.js';
+import { createAnomalyEngine } from '../anomaly/engine.js';
+import { createAnomalyStore, ensureAnomalySchema } from '../anomaly/store.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
@@ -41,6 +43,16 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const binanceEndpoints=config.binanceEndpoints;
   const quotes=createMarketQuoteService({binanceEndpoints});
   const candles=createCandleService({binanceEndpoints});
+  await ensureAnomalySchema(services.db);
+  const anomalyStore=createAnomalyStore(services.db);
+  const anomaly=createAnomalyEngine({store:anomalyStore,appUrl:config.appUrl,binanceRest:binanceEndpoints==='vision'?'https://www.binance.com/fapi/v1':'https://fapi.binance.com/fapi/v1',
+    delivery:{send:async(userId,message,title,priority)=>{
+      const [channel,settings]=await Promise.all([services.repositories.channels.get(userId),services.repositories.settings.get(userId)]);
+      if(!channel||!settings||settings.disabled)return {outcome:'skipped',code:'channel_unconfigured'};
+      // Reuse the user's sound and emergency retry policy; anomaly priority is its own setting.
+      const result=await notifications.send(userId,channel,message,title,{...settings.notification,priority});
+      return {outcome:result.outcome,code:result.code};
+    }}});
   // Alert state changes reach open dashboards immediately; bound to the gateway below.
   let notifyUser:(userId:string)=>void=()=>{};
   const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),onUserActivity:userId=>notifyUser(userId),
@@ -48,7 +60,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};
-  const app=createApp({...services,notifications,quotes,candles,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const app=createApp({...services,notifications,quotes,candles,anomaly:{store:anomalyStore,status:()=>anomaly.status()},publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   const live=createLiveQuoteHub({snapshot:market=>quotes.get(market),binanceEndpoints});
   const realtime=createRealtimeGateway({trustedOrigins:config.trustedOrigins,hub:live,
     authenticate:request=>services.auth.getPrincipal(request),
@@ -58,8 +70,8 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   return {
     config,services,engine,app,realtime,
     fetch:async(request: Request,address:string|null=null)=>{const r=trustedRequest(request,address);return new URL(r.url).pathname.startsWith('/api/')?app.fetch(r):serveAssets(r);},
-    start(){if(!started){started=true;engine.start();const inspect=()=>{void observe().catch(()=>console.error('open_alert_monitor_failed'));};inspect();monitorTimer=setInterval(inspect,60000);}},
-    async stop(){clearInterval(monitorTimer);await monitorWork?.catch(()=>{});await realtime.close();await live.stop();await quotes.stop();await candles.stop();await engine.stop();services.auth.close();await services.db.close();},
+    start(){if(!started){started=true;engine.start();anomaly.start();const inspect=()=>{void observe().catch(()=>console.error('open_alert_monitor_failed'));};inspect();monitorTimer=setInterval(inspect,60000);}},
+    async stop(){clearInterval(monitorTimer);await monitorWork?.catch(()=>{});await realtime.close();await live.stop();await quotes.stop();await candles.stop();await anomaly.stop();await engine.stop();services.auth.close();await services.db.close();},
   };
 }
 export async function startNode(env: Record<string,unknown>=process.env) {

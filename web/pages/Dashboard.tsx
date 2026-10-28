@@ -61,11 +61,18 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     const [actionError, setActionError] = useState('');
     useEffect(() => {
         if (!selected && data) {
-            const initial = data.alerts[0]?.instrument ?? data.markets.find(selectableMarket)?.instrument;
+            // Push links open a specific market: /dashboard?market=<instrument>.
+            const linked = new URLSearchParams(window.location.search).get('market');
+            const initial = (linked && data.markets.some(m => m.instrument === linked) ? linked : null) ?? data.alerts[0]?.instrument ?? data.markets.find(selectableMarket)?.instrument;
             if (initial)
                 setSelected(initial);
         }
     }, [data?.markets, selected]);
+    // The dashboard stays mounted, so a later in-app link must also switch markets.
+    useEffect(() => {
+        const linked = active ? new URLSearchParams(window.location.search).get('market') : null;
+        if (linked && data?.markets.some(m => m.instrument === linked)) setSelected(linked);
+    }, [active, data?.markets]);
     const market = useRetainedMarket(data?.markets ?? [], selected);
     const quoteState = useMarketQuote(selected, active && selectableMarket(findMarket(data?.markets ?? [], selected)));
     const tick = quoteState.quote;
