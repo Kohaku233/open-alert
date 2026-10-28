@@ -145,3 +145,40 @@ test('engine merges venues and correlated symbols into one push per user, honour
     await engine.stop();
   } finally { await db.close(); }
 });
+
+test('cooldown is per user: a sub-threshold feed record never blocks a later push above that user floor; restart restores it', async () => {
+  const db = await createSQLite(':memory:', true);
+  try {
+    await db.execute('CREATE TABLE "user" (id TEXT PRIMARY KEY)'); await db.execute('CREATE TABLE user_settings (user_id TEXT PRIMARY KEY, disabled INTEGER NOT NULL DEFAULT 0)');
+    for (const id of ['strict', 'loose']) await db.execute('INSERT INTO "user"(id) VALUES(?)', [id]);
+    await ensureAnomalySchema(db);
+    const store = createAnomalyStore(db);
+    await store.patchSettings('strict', 0, { enabled: true, minMoveCrypto: 0.25 }, 1);
+    await store.patchSettings('loose', 0, { enabled: true, minMoveCrypto: 0.10 }, 1);
+    let clock = Date.UTC(2026, 9, 20, 12);
+    const sent: { userId: string; title: string }[] = [];
+    const make = () => createAnomalyEngine({ store, appUrl: 'https://x.test', now: () => clock, gatherMs: 0, connect: false,
+      delivery: { send: async (userId, _message, title) => { sent.push({ userId, title }); return { outcome: 'sent', code: null }; } } });
+    const settle = () => new Promise(r => setTimeout(r, 50));
+    const place = (engine: ReturnType<typeof make>, jump: number) => {
+      const { series, marketCaps } = engine.internals;
+      series.set('binance:BTCUSDT', liveSeries('binance:BTCUSDT', 'binance', 'BTC', 'crypto', clock, 1, 'bitcoin'));
+      series.set('binance:QUSDT', liveSeries('binance:QUSDT', 'binance', 'Q', 'crypto', clock, jump, 'quack-ai'));
+      marketCaps.set('bitcoin', 1e12); marketCaps.set('quack-ai', 262e6);
+    };
+    let engine = make();
+    place(engine, 1.15); engine.internals.tick(); await settle();
+    assert.deepEqual(sent.map(s => s.userId), ['loose'], '+15% only reaches the 10% user');
+    clock += HOUR; place(engine, 1.28); engine.internals.tick(); await settle();
+    assert.deepEqual(sent.map(s => s.userId), ['loose', 'strict'], '+28% reaches the 25% user although it is not 2x the shared +15%');
+    assert.equal((await store.recentEvents(10)).length, 2, 'every pushed move is in the shared feed');
+    await engine.stop();
+    // A restart restores each user's own cooldown from deliveries.
+    engine = make(); await engine.internals.restoreCooldowns();
+    clock += HOUR; place(engine, 1.25); engine.internals.tick(); await settle();
+    assert.equal(sent.length, 2, '+25% is below 2x of what either user last received');
+    clock += HOUR; place(engine, 0.7); engine.internals.tick(); await settle();
+    assert.deepEqual(sent.slice(2).map(s => s.userId).sort(), ['loose', 'strict'], 'a reversal bypasses every user cooldown');
+    await engine.stop();
+  } finally { await db.close(); }
+});

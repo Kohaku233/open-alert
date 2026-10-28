@@ -671,7 +671,7 @@ export const english: Record<string, string> = {
   "流动性": "Liquidity",
   "24 小时成交额 ≥ $10M；币种需 CoinGecko 可识别且流通市值 ≥ $10M": "24 h turnover ≥ $10M; crypto must be known to CoinGecko with market cap ≥ $10M",
   "冷却": "Cooldown",
-  "同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制": "Within 24 h a symbol repeats only if the move doubles; reversals always pass",
+  "按你自己收到的推送计算：同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制": "Tracked per user: within 24 h a symbol repeats only if the move doubles what you last received; reversals always pass",
   "币种最小涨跌 · %": "Crypto minimum move · %",
   "扣除 BTC 后计算，默认 25": "Net of BTC, default 25",
   "股票类最小涨跌 · %": "Stock minimum move · %",

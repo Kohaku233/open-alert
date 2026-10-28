@@ -43,3 +43,22 @@ test('Worker forwards /api/* to NODE_BACKEND_URL and pings its health on cron', 
     assert.ok(!seen.some(r => r.url.startsWith('http://backend.example')));
   } finally { globalThis.fetch = original; }
 });
+
+test('Worker retries one transient backend failure for reads only, never for mutations', async () => {
+  const worker = (await import('../src/runtime/cloudflare.js')).default;
+  const original = globalThis.fetch;
+  let calls = 0, fail = 1;
+  globalThis.fetch = (async () => { calls++; if (fail-- > 0) return new Response('Sandbox is not reachable.', { status: 502 }); return new Response('ok', { status: 200 }); }) as typeof fetch;
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+  const env = { NODE_BACKEND_URL: 'https://backend.example/', DB: {} };
+  try {
+    const read = await worker.fetch(new Request('https://cryptotool.bar/api/auth/get-session') as never, env as never, ctx as never);
+    assert.equal(read.status, 200); assert.equal(calls, 2);
+    calls = 0; fail = 5;
+    const again = await worker.fetch(new Request('https://cryptotool.bar/api/status') as never, env as never, ctx as never);
+    assert.equal(again.status, 502, 'only one retry'); assert.equal(calls, 2);
+    calls = 0; fail = 1;
+    const write = await worker.fetch(new Request('https://cryptotool.bar/api/alerts', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } }) as never, env as never, ctx as never);
+    assert.equal(write.status, 502); assert.equal(calls, 1, 'mutations are not replayed');
+  } finally { globalThis.fetch = original; }
+});

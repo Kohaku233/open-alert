@@ -99,7 +99,11 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
   const gatherMs = options.gatherMs ?? 30_000, evaluateMs = options.evaluateMs ?? 10_000;
   const series = new Map<string, Series>();
   const coinIds = new Map<string, string>(), marketCaps = new Map<string, number>();
+  /** Shared feed de-duplication only; it never decides whether a user is pushed. */
   const lastPush = new Map<string, CooldownMark>();
+  /** Per user × entity: the last move actually pushed to that user. */
+  const userMarks = new Map<string, CooldownMark>();
+  const userKey = (userId: string, entity: string) => `${userId}\u0000${entity}`;
   const sockets = new Map<AnomalyVenue, WebSocket[]>();
   const connected: Record<AnomalyVenue, boolean> = { binance: false, okx: false, mexc: false };
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -320,12 +324,10 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
     if (stopped) return;
     const at = now(); lastEvaluationAt = at;
     for (const [entity, hits] of scan(at)) {
-      const best = hits.reduce((a, b) => strength(b) > strength(a) ? b : a);
-      const s = best.series, mark: CooldownMark = { at, direction: best.signal.direction, move: s.category === 'crypto' ? best.signal.relativeMove : best.signal.move };
+      const best = hits.reduce((a, b) => strength(b) > strength(a) ? b : a), s = best.series;
       const pending = group?.entities.get(entity);
       if (pending) { mergeHits(pending.hits, hits); continue; }
-      if (!admit(lastPush.get(entity), mark)) continue;
-      lastPush.set(entity, mark);
+      // Every candidate joins the group; the shared feed and each user apply their own cooldown at flush.
       group ??= { id: crypto.randomUUID(), openedAt: at, deadline: at + gatherMs, entities: new Map() };
       group.entities.set(entity, { hits: [...hits], category: s.category, label: labelOf(s), marketCap: s.coinId ? marketCaps.get(s.coinId) ?? null : null });
     }
@@ -349,27 +351,44 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
     });
   }
   async function flush(g: Group) {
-    const events = toEvents(g);
-    await options.store.insertEvents(events);
-    console.info('open_alert_anomaly_group', JSON.stringify(events.map(e => [e.label, e.window, Number((e.move * 100).toFixed(1)), Number(e.z.toFixed(1)), e.venues.map(v => v.venue)])));
+    const events = toEvents(g), at = now();
+    const markOf = (e: AnomalyEvent): CooldownMark => ({ at, direction: e.direction, move: e.category === 'crypto' ? e.relativeMove : e.move });
     const dayStart = Math.floor(now() / 86_400_000) * 86_400_000;
+    const plans: { userId: string; settings: AnomalySettings; mine: AnomalyEvent[] }[] = [];
     for (const { userId, settings } of await options.store.subscribers()) {
-      const mine = events.filter(e => e.category === 'crypto' ? settings.crypto && Math.abs(e.relativeMove) >= settings.minMoveCrypto : settings.tradfi && Math.abs(e.move) >= settings.minMoveTradfi);
-      if (!mine.length) continue;
+      const mine = events.filter(e => (e.category === 'crypto' ? settings.crypto && Math.abs(e.relativeMove) >= settings.minMoveCrypto : settings.tradfi && Math.abs(e.move) >= settings.minMoveTradfi)
+        && admit(userMarks.get(userKey(userId, e.entity)), markOf(e)));
+      if (mine.length) plans.push({ userId, settings, mine });
+    }
+    // Feed keeps its own 24h de-duplication, but anything pushed to someone is always recorded.
+    const pushed = new Set(plans.flatMap(p => p.mine.map(e => e.id)));
+    const recorded = events.filter(e => { const ok = admit(lastPush.get(e.entity), markOf(e)); if (ok) lastPush.set(e.entity, markOf(e)); return ok || pushed.has(e.id); });
+    if (recorded.length) {
+      await options.store.insertEvents(recorded);
+      console.info('open_alert_anomaly_group', JSON.stringify(recorded.map(e => [e.label, e.window, Number((e.move * 100).toFixed(1)), Number(e.z.toFixed(1)), e.venues.map(v => v.venue)])));
+    }
+    for (const { userId, settings, mine } of plans) {
+      // Mark first: neither a slow provider nor the daily cap may re-offer the same move every gather window.
+      for (const e of mine) userMarks.set(userKey(userId, e.entity), markOf(e));
       if ((await options.store.deliveriesSince(dayStart, userId)).length >= settings.dailyLimit) { console.warn('open_alert_anomaly_daily_limit'); continue; }
       const { title, message } = formatPush(mine, options.appUrl);
       let result: Awaited<ReturnType<Delivery['send']>>;
       try { result = await options.delivery.send(userId, message, title, settings.priority); } catch { result = { outcome: 'uncertain', code: 'delivery_failed' }; }
-      if (result.outcome !== 'skipped') await options.store.recordDelivery(g.id, userId, now(), mine.map(e => e.entity), result.outcome, result.code);
+      if (result.outcome !== 'skipped') await options.store.recordDelivery(g.id, userId, now(), mine.map(e => ({ entity: e.entity, ...markOf(e) })), result.outcome, result.code);
     }
   }
 
-  async function boot() {
-    // Restore cooldowns so a restart does not repeat the last day's pushes.
+  async function restoreCooldowns() {
+    // Restore feed and per-user cooldowns so a restart does not repeat the last day's records or pushes.
     for (const e of (await options.store.recentEvents(500, now() - 24 * HOUR)).reverse()) {
       const move = e.category === 'crypto' ? e.relativeMove : e.move;
       if (admit(lastPush.get(e.entity), { at: e.at, direction: e.direction, move })) lastPush.set(e.entity, { at: e.at, direction: e.direction, move });
     }
+    for (const d of await options.store.deliveriesSince(now() - 24 * HOUR))
+      for (const m of d.marks) userMarks.set(userKey(d.userId, m.entity), { at: m.at, direction: m.direction, move: m.move });
+  }
+  async function boot() {
+    await restoreCooldowns();
     await refreshUniverse();
     await refreshMapping();
     await refreshMarketCaps();
@@ -406,7 +425,7 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
         streams: { ...connected }, lastEvaluationAt, universeAt, marketCapAt };
     },
     /** Test seams. */
-    internals: { series, coinIds, marketCaps, lastPush, tick, scan, flush, toEvents, refreshUniverse, get group() { return group; } },
+    internals: { series, coinIds, marketCaps, lastPush, userMarks, restoreCooldowns, tick, scan, flush, toEvents, refreshUniverse, get group() { return group; } },
   };
 }
 export type AnomalyEngine = ReturnType<typeof createAnomalyEngine>;

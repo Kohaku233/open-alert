@@ -96,7 +96,7 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
           <li><strong>{t('涨跌幅超过常态')}</strong><span>{t('15 分钟到 24 小时窗口内，币种达到自身 30 天波动的 6 倍，股票类达到同时段波动的 4 倍')}</span></li>
           <li><strong>{t('放量')}</strong><span>{t('窗口成交额至少是平时的 3 倍')}</span></li>
           <li><strong>{t('流动性')}</strong><span>{t('24 小时成交额 ≥ $10M；币种需 CoinGecko 可识别且流通市值 ≥ $10M')}</span></li>
-          <li><strong>{t('冷却')}</strong><span>{t('同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制')}</span></li>
+          <li><strong>{t('冷却')}</strong><span>{t('按你自己收到的推送计算：同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制')}</span></li>
         </ol>
         <form onSubmit={event => void saveFilters(event)}><fieldset disabled={busy}><div className="delivery-fields anomaly-fields">
           <Label>{t('币种最小涨跌 · %')}<Input type="number" min={10} max={100} step={1} required value={values.crypto} onChange={event => edit('crypto', event.target.value)}/><span className="small muted">{t('扣除 BTC 后计算，默认 25')}</span></Label>

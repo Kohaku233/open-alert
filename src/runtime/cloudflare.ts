@@ -117,8 +117,16 @@ function nodeBackend(env:CloudflareBindings):URL|null {
 async function proxyToNode(request:Request,backend:URL):Promise<Response> {
   const incoming=new URL(request.url);
   const target=new URL(incoming.pathname+incoming.search,backend);
-  try {return await fetch(new Request(target,request));}
-  catch {return unavailableApi(incoming.pathname);}
+  // The VPS host network occasionally drops for seconds; retry idempotent reads once, never mutations or upgrades.
+  const retryable=(request.method==='GET'||request.method==='HEAD')&&request.headers.get('Upgrade')?.toLowerCase()!=='websocket';
+  for(let attempt=0;;attempt++){
+    try {
+      const response=await fetch(new Request(target,request));
+      if(!retryable||attempt>0||![502,503,504].includes(response.status))return response;
+      await response.body?.cancel();
+    } catch {if(!retryable||attempt>0)return unavailableApi(incoming.pathname);}
+    await new Promise(resolve=>setTimeout(resolve,1500));
+  }
 }
 /** One namespace instance; alarms drive work and an independent Cron repairs lost wakes. */
 export class Coordinator {

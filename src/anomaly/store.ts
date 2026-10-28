@@ -23,6 +23,8 @@ export interface AnomalySettings {
 }
 export const DEFAULT_ANOMALY_SETTINGS: Readonly<AnomalySettings> = Object.freeze({ enabled: false, crypto: true, tradfi: true, minMoveCrypto: 0.25, minMoveTradfi: 0.03, priority: 1, dailyLimit: 10 });
 export interface VenueHit { venue: 'binance' | 'okx' | 'mexc'; instrument: string; symbol: string; price: number; move: number; z: number; volumeMultiple: number; window: WindowKey }
+/** The move pushed to one user for one entity; the basis of that user's cooldown. */
+export interface DeliveryMark { entity: string; at: number; direction: Direction; move: number }
 export interface AnomalyEvent {
   id: string; groupId: string; at: number; entity: string; label: string; category: Category; direction: Direction;
   window: WindowKey; session: Session; move: number; relativeMove: number; z: number; volumeMultiple: number;
@@ -64,13 +66,18 @@ export function createAnomalyStore(db: SqlDatabase) {
   async function recentEvents(limit: number, since = 0): Promise<AnomalyEvent[]> {
     return (await db.query<EventRow>('SELECT * FROM anomaly_events WHERE at>=? ORDER BY at DESC,id LIMIT ?', [since, limit])).map(eventOf);
   }
-  async function recordDelivery(groupId: string, userId: string, at: number, entities: readonly string[], outcome: 'sent' | 'failed' | 'uncertain', code: string | null) {
-    await db.execute('INSERT INTO anomaly_deliveries(group_id,user_id,at,entities_json,outcome,code) VALUES(?,?,?,?,?,?) ON CONFLICT(group_id,user_id) DO NOTHING', [groupId, userId, at, JSON.stringify(entities), outcome, code]);
+  async function recordDelivery(groupId: string, userId: string, at: number, marks: readonly DeliveryMark[], outcome: 'sent' | 'failed' | 'uncertain', code: string | null) {
+    await db.execute('INSERT INTO anomaly_deliveries(group_id,user_id,at,entities_json,outcome,code) VALUES(?,?,?,?,?,?) ON CONFLICT(group_id,user_id) DO NOTHING', [groupId, userId, at, JSON.stringify(marks), outcome, code]);
   }
   async function deliveriesSince(since: number, userId?: string) {
     const rows = await db.query<{ group_id: string; user_id: string; at: number; entities_json: string; outcome: string }>(
       `SELECT group_id,user_id,at,entities_json,outcome FROM anomaly_deliveries WHERE at>=?${userId ? ' AND user_id=?' : ''} ORDER BY at`, userId ? [since, userId] : [since]);
-    return rows.map(r => ({ groupId: r.group_id, userId: r.user_id, at: r.at, entities: JSON.parse(r.entities_json) as string[], outcome: r.outcome }));
+    return rows.map(r => {
+      // Rows written before per-user cooldowns hold bare entity strings; they carry no move to compare against.
+      const raw = JSON.parse(r.entities_json) as unknown[];
+      const marks = raw.filter((m): m is DeliveryMark => typeof m === 'object' && m !== null && typeof (m as DeliveryMark).entity === 'string' && Number.isFinite((m as DeliveryMark).move));
+      return { groupId: r.group_id, userId: r.user_id, at: r.at, entities: raw.map(m => typeof m === 'string' ? m : (m as DeliveryMark).entity), marks, outcome: r.outcome };
+    });
   }
   async function prune(before: number) {
     await db.atomic([{ sql: 'DELETE FROM anomaly_events WHERE at<?', params: [before] }, { sql: 'DELETE FROM anomaly_deliveries WHERE at<?', params: [before] }]);
