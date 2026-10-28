@@ -59,6 +59,7 @@
     "gsap": "3.15.0",
     "hono": "4.13.13",
     "lightweight-charts": "5.2.1",
+    "lightweight-charts-drawing": "^0.6.2",
     "lucide-react": "1.57.0",
     "nodemailer": "10.1.0",
     "pg": "8.23.1",

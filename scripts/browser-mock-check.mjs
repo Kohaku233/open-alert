@@ -934,6 +934,8 @@ try {
     await check('candles requested for the selected market',async()=>expect.poll(()=>requests(s,'GET','/api/candles').length).toBeGreaterThan(0));
     await check('chart canvas renders',()=>expect(p.locator('.native-chart canvas').first()).toBeVisible());
     await check('chart ready',()=>expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready'));
+    await check('OHLC legend shows the latest candle',()=>expect(p.getByTestId('chart-legend')).toContainText(/O.+H.+L.+C.+%/));
+    await check('candle close countdown ticks',async()=>{const first=await p.getByTestId('chart-countdown').textContent();assert.match(first,/^(\d+D )?\d{2}:\d{2}(:\d{2})?$/);await expect.poll(()=>p.getByTestId('chart-countdown').textContent(),{timeout:3000}).not.toBe(first);});
     await noOverflow(p);await p.waitForTimeout(400);await p.screenshot({path:join(outputs,`native-chart-${profile}-MOCK.png`),fullPage:profile==='mobile'});
     await p.locator('.native-chart-bar').getByRole('button',{name:'1h',exact:true}).click();
     await check('timeframe switch requests 1h',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='1h')).toBe(true));
@@ -971,12 +973,26 @@ try {
     if(profile==='desktop'){
       await p.mouse.move(box.x+box.width*0.5,box.y+box.height*0.2);
       const chip=p.locator('.chart-create-at');await expect(chip).toBeVisible();
+      await check('create chip sits on the right, clear of the price axis',async()=>{const c=await chip.boundingBox();assert(c.x>box.x+box.width/2,`chip x ${c.x}`);assert(c.x+c.width<box.x+box.width-30,'chip overlaps price scale');});
+      await check('hovering a candle updates the legend',async()=>{const before=await p.getByTestId('chart-legend').textContent();await p.mouse.move(box.x+box.width*0.3,box.y+box.height*0.5);await expect.poll(()=>p.getByTestId('chart-legend').textContent()).not.toBe(before);await p.mouse.move(box.x+box.width*0.5,box.y+box.height*0.2);});
       await chip.hover();await chip.click();
       await check('create dialog prefilled from chart price',async()=>{await expect(dialog.getByRole('heading',{name:'创建价格警报'})).toBeVisible();assert(Number(await dialog.getByLabel('价格 · USDT').inputValue())>0);});
       await check('price above market defaults to upper',()=>expect(dialog.getByRole('button',{name:/达到或高于/})).toHaveAttribute('aria-pressed','true'));
       await p.keyboard.press('Escape');
+      const tools=p.getByRole('toolbar',{name:'画线工具'});
+      await tools.getByRole('button',{name:'趋势线',exact:true}).click();
+      await check('armed tool hides the create chip and shows a hint',async()=>{await expect(p.locator('.chart-tool-hint')).toBeVisible();await p.mouse.move(box.x+box.width*0.35,box.y+box.height*0.3);await expect(p.locator('.chart-create-at')).toHaveCount(0);});
+      await p.mouse.click(box.x+box.width*0.35,box.y+box.height*0.3);await p.mouse.click(box.x+box.width*0.6,box.y+box.height*0.5);
+      await check('trend line saved per market',async()=>expect.poll(()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP')||'[]').map(d=>d.kind))).toEqual(['trend-line']));
+      await check('placing a drawing opens no alert dialog',()=>expect(dialog).toHaveCount(0));
+      await p.waitForTimeout(300);await p.screenshot({path:join(outputs,`native-drawing-${profile}-MOCK.png`)});
     }
     await check('selection survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart canvas').first()).toBeVisible();});
+    if(profile==='desktop'){
+      await check('drawings restored after reload',async()=>{await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(p.getByRole('button',{name:'清空画线'})).toBeEnabled();});
+      await p.getByRole('button',{name:'清空画线'}).click();await p.getByRole('button',{name:'再点一次清空'}).click();
+      await check('clear removes saved drawings',async()=>expect.poll(()=>p.evaluate(()=>localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP'))).toBe(null));
+    }
     await p.locator('.chart-panel').getByRole('button',{name:'TradingView',exact:true}).click();
     await check('switching back restores TradingView embed',()=>expect(p.locator('.tradingview-widget-container script')).toHaveCount(1));
     await fixture.context.close();

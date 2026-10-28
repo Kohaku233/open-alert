@@ -48,13 +48,81 @@
 .native-chart { position: absolute; inset: 0; touch-action: pan-y; }
 .native-chart.is-line-hover { cursor: ns-resize; }
 .native-chart-shell[data-selected-line="true"] .native-chart { touch-action: none; }
+.native-chart-shell[data-drawing="true"] .native-chart { touch-action: none; cursor: crosshair; }
 /* Lightweight Charts' required attribution logo; keep it legible but quiet. */
 .native-chart a[href*="tradingview"] { opacity: .45; }
+/* Drawing toolbar: icon-only segments that share the timeframe pill language. */
+.native-draw-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.native-chart-status:empty + .native-draw-tools { margin-left: auto; }
+.native-chart-bar .native-draw-tools [data-slot="button"] { width: 30px; padding: 0; justify-content: center; }
+.native-chart-bar .native-draw-tools [data-slot="button"].is-confirming { width: auto; padding: 0 10px; gap: 6px; color: var(--danger); }
+.native-draw-tools [data-slot="button"]:disabled { opacity: .35; }
+.native-draw-tools svg { width: 14px; height: 14px; }
+.native-draw-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
+/* TradingView-style OHLC legend, top-left over the plot. */
+.chart-legend {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  left: 14px;
+  right: calc(var(--price-scale-width, 60px) + 14px);
+  display: grid;
+  gap: 4px;
+  font: 11px/1.3 var(--mono-font);
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+.chart-legend-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.chart-legend-ohl { display: contents; }
+.chart-legend b { font-weight: 400; color: var(--muted-foreground); }
+.chart-legend em { font-style: normal; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.chart-legend.up em:not(.plain) { color: var(--signal); }
+.chart-legend.down em:not(.plain) { color: var(--danger); }
+.chart-legend em.plain { color: var(--text); }
+/* Candle-close countdown pinned under the last-price label on the right axis. */
+.chart-countdown {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  width: var(--price-scale-width, 60px);
+  margin-top: 12px;
+  padding: 2px 0;
+  text-align: center;
+  font: 10px/1.2 var(--mono-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--card);
+  pointer-events: none;
+}
+.chart-countdown.up { background: var(--signal); }
+.chart-countdown.down { background: var(--danger); }
+.chart-tool-hint {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  font: 11px/1 var(--mono-font);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  pointer-events: none;
+}
 .chart-drag-label,
 .chart-create-at {
   position: absolute;
   z-index: 4;
-  left: 14px;
+  right: calc(var(--price-scale-width, 60px) + 10px);
   transform: translateY(-50%);
   font: 11px/1 var(--mono-font);
   letter-spacing: .02em;
@@ -79,7 +147,7 @@
   animation: chart-chip-in .18s ease-out forwards;
 }
 .chart-create-at[data-slot="button"]:hover { border-color: var(--signal); color: var(--signal); }
-@keyframes chart-chip-in { from { opacity: 0; transform: translate(-6px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
+@keyframes chart-chip-in { from { opacity: 0; transform: translate(6px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
 .chart-slow-hint {
   position: relative;
   z-index: 3;
@@ -111,5 +179,12 @@
   .chart-kind-switch [data-slot="button"] { min-height: 36px; height: 36px; }
   .native-chart-bar [data-slot="button"] { min-height: 36px; height: 36px; }
   .native-chart-status { display: none; }
+  .native-chart-bar { flex-wrap: wrap; row-gap: 6px; }
+  .native-draw-tools { width: 100%; margin-left: 0; padding: 6px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .native-chart-bar .native-draw-tools [data-slot="button"] { width: 36px; }
+  .chart-legend { top: 8px; left: 10px; font-size: 10px; }
+  .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
 }
+/* Phones: keep close + change on one line; full OHL appears from tablet width up. */
+@media (max-width: 520px) { .chart-legend-ohl { display: none; } }
 @media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } }
