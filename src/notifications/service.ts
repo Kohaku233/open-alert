@@ -72,17 +72,22 @@ export function notificationMarketLabel(instrument: string): { label: string; qu
 }
 
 /** Scheduler and optional standalone test convenience use the SAME durable repositories. */
-export function createNotificationService(options: NotificationServiceOptions & { config: AppConfig; repositories: Repositories; provider?: ReturnType<typeof createNotifications> }) {
+export function createNotificationService(options: NotificationServiceOptions & { config: AppConfig; repositories: Repositories; provider?: ReturnType<typeof createNotifications>; hub?: import('./hub.js').NotifyHub }) {
   const { config, repositories } = options, now = options.now ?? Date.now;
   const provider = options.provider ?? createNotifications(config, options);
   async function deliver(event: OutboxRecord): Promise<DeliveryResult> {
     if (event.phase !== 'sending' || !event.claimId || event.claimFence === null) return { outcome: 'failed', code: 'delivery_not_claimed', receipt: null };
     const [settings, channel] = await Promise.all([repositories.settings.get(event.userId), repositories.channels.get(event.userId)]);
-    if (!settings || !settings.enabled || settings.disabled || settings.generation !== event.settingsGeneration || !channel || channel.generation !== event.channelGeneration) return { outcome: 'failed', code: 'channel_changed', receipt: null };
+    if (!settings || !settings.enabled || settings.disabled || settings.generation !== event.settingsGeneration || (!options.hub && (!channel || channel.generation !== event.channelGeneration))) return { outcome: 'failed', code: 'channel_changed', receipt: null };
     const direction = event.side === 'upper' ? 'at or above' : 'at or below';
     // No user-supplied URLs, receipt capability, HTML, or provider credential in the message.
     const market = notificationMarketLabel(event.instrument), unit = market.quote ? ` ${market.quote}` : '';
-    return provider.send(event.userId, channel, `${event.name}\n${market.label}: ${event.price}${unit} (${direction} ${event.threshold}${unit})\nExchange timestamp: ${new Date(event.timestamp).toISOString()}`, 'Open Alert price alert', event.notification);
+    const body = `${event.name}\n${market.label}: ${event.price}${unit} (${direction} ${event.threshold}${unit})\nExchange timestamp: ${new Date(event.timestamp).toISOString()}`;
+    if (options.hub) {
+      const result = await options.hub.dispatch(event.userId,['price_alert'],{title:'Open Alert price alert',body,severity:'critical'},event.notification,event.triggerId);
+      return { outcome: result.outcome === 'skipped' ? 'failed' : result.outcome, code: result.code, receipt: null };
+    }
+    return provider.send(event.userId, channel!, body, 'Open Alert price alert', event.notification);
   }
   async function test(userId: string) {
     const [settings, channel] = await Promise.all([repositories.settings.get(userId), repositories.channels.get(userId)]);

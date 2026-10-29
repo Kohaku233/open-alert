@@ -112,7 +112,7 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     }
     const canAdmin = model.data?.status.user.role === 'admin' && model.data.status.capabilities.canAdmin;
     const navRef = useRef<HTMLElement>(null), navIndicator = useRef<HTMLSpanElement>(null);
-    const tabs: Array<[string, string, LucideIcon]> = [['/dashboard', t("行情与警报"), Activity], ['/anomaly', t("异动监测"), Radar], ['/notifications', t("手机通知"), BellRing], ['/account', t("我的账户"), UserRound], ...(canAdmin ? [['/admin', t("管理"), ShieldCheck] as [string, string, LucideIcon]] : [])];
+    const tabs: Array<[string, string, LucideIcon]> = [['/dashboard', t("行情与警报"), Activity], ['/anomaly', t("异动监测"), Radar], ['/notifications', t("通知中心"), BellRing], ['/account', t("我的账户"), UserRound], ...(canAdmin ? [['/admin', t("管理"), ShieldCheck] as [string, string, LucideIcon]] : [])];
     useIndicatorMotion(navRef, navIndicator, '[aria-current="page"]', path + tabs.map(tab => tab[1]).join());
     const monitoring = model.data?.status.settings.enabled;
     const overall = model.data?.status.health.overall;

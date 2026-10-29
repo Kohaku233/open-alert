@@ -25,6 +25,7 @@ export interface SchedulerOptions {
   maxEvaluationsPerTick?: number; maxReservationsPerTick?: number;
   duePageSize?: number; maxDueRowsPerDrain?: number; maxDeliveriesPerDrain?: number; maxClaimsPerDrain?: number;
   /** Called after a user's trigger is reserved or its delivery result is committed. */
+  hubDelivery?: boolean;
   onUserActivity?: (userId: string) => void;
 }
 export type RuntimeSchedulerService = ReturnType<typeof createScheduler>;
@@ -220,7 +221,7 @@ export function createScheduler(options: SchedulerOptions) {
               if (rule.side === 'upper' ? latest.price >= rule.threshold : latest.price <= rule.threshold) crossing = latest;
             }
             if (!observed) missing = true;
-            if (crossing && (rule.hasPrivateAppToken || config.sharedPushoverAppToken)) {
+            if (crossing && (options.hubDelivery || rule.hasPrivateAppToken || config.sharedPushoverAppToken)) {
               if (lease.expiresAt - now() < 10_000 && !await getLease()) return;
               // stop may have arrived while a renewal was pending.
               if (stopped || !lease || lease.expiresAt <= now() || source && !source.eligible(rule.instrument)) return;
@@ -327,8 +328,8 @@ export function createScheduler(options: SchedulerOptions) {
         const deliveryStarted = performance.now();
         const result = await boundedDelivery(claimed);
         observeLatency(metrics.deliveryMs, performance.now() - deliveryStarted);
-        const phase = result.outcome === 'failed' && result.code === 'provider_rejected' ? 'queued' : result.outcome;
-        const safeCodes = new Set(['provider_rejected','provider_transport_uncertain','provider_response_uncertain','provider_deadline_uncertain','provider_uncertain','channel_unavailable','channel_changed','notification_failed','notification_input_invalid','delivery_not_claimed']);
+        const phase = result.outcome === 'failed' && result.code === 'provider_rejected' ? 'queued' : result.outcome === 'failed' && ['quiet_hours','daily_limit','no_route'].includes(result.code ?? '') ? 'cancelled' : result.outcome;
+        const safeCodes = new Set(['provider_rejected','provider_transport_uncertain','provider_response_uncertain','provider_deadline_uncertain','provider_uncertain','channel_unavailable','channel_changed','notification_failed','notification_input_invalid','delivery_not_claimed','quiet_hours','daily_limit','no_route']);
         const code = result.code === null ? null : safeCodes.has(result.code) ? result.code : 'notification_failed';
         // Never reacquire to finish an old claim. SQL finish still checks its owner/fence.
         const currentLease = lease?.fence === ownership.fence ? lease : ownership;

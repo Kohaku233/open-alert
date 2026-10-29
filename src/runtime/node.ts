@@ -21,6 +21,7 @@ import { createRealtimeGateway, REALTIME_PATH } from './realtime.js';
 import { handleUnhandledRejection } from './rejections.js';
 import { createAnomalyEngine } from '../anomaly/engine.js';
 import { anomalyNotification, createAnomalyStore, ensureAnomalySchema } from '../anomaly/store.js';
+import { createRepositories } from '../db/repositories.js';
 import { createNotifyHub, ensureHubSchema } from '../notifications/hub.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
@@ -47,6 +48,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   await ensureAnomalySchema(services.db);
   const anomalyStore=createAnomalyStore(services.db);
   await ensureHubSchema(services.db);
+  services.repositories=createRepositories(services.db,config,true);
   const hub=createNotifyHub({db:services.db,config,repositories:services.repositories});
   const migrated=await hub.migrateLegacy();if(migrated)console.info('open_alert_notify_hub_migrated',migrated);
   const anomaly=createAnomalyEngine({store:anomalyStore,appUrl:config.appUrl,binanceRest:binanceEndpoints==='vision'?'https://www.binance.com/fapi/v1':'https://fapi.binance.com/fapi/v1',
@@ -61,7 +63,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
     }}});
   // Alert state changes reach open dashboards immediately; bound to the gateway below.
   let notifyUser:(userId:string)=>void=()=>{};
-  const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications}),onUserActivity:userId=>notifyUser(userId),
+  const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications,hub}),hubDelivery:true,onUserActivity:userId=>notifyUser(userId),
     marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments,binanceEndpoints})});
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;

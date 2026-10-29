@@ -9,7 +9,7 @@ import type { AlertRecord, ChannelRecord, OutboxRecord, UserSettingsRecord } fro
 import type { ApiErrorCode, InvitationResult, InvitationSummary, SessionPrincipal } from '../contracts/api.js';
 import { EmailDeliveryError } from '../auth/email.js';
 import { wakeWithRetry } from '../runtime/wake.js';
-import { instrumentSchema, parseInstrumentIdentity, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
+import { DEFAULT_NOTIFICATION, instrumentSchema, parseInstrumentIdentity, createAlertSchema, patchAlertSchema, rearmAlertSchema, notificationOptionsSchema, testNotificationSchema, putChannelSchema } from '../contracts/domain.js';
 import { parseTimeframe, timeframeSupported } from '../contracts/timeframes.js';
 import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '../contracts/domain.js';
 import type { ApiDependencies } from './ports.js';
@@ -181,7 +181,7 @@ export function createApi(d:ApiDependencies) {
     const userId=uid(c),settings=c.get('settings');const [user,daily,channel,runtime,records]=await Promise.all([identity(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot(),d.repositories.alerts.listForUser(userId)]);
     const health=await aggregateHealth(runtime);
     const own=new Set(records.map(v=>v.instrument));
-    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});
+    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:d.hub?{...channelProfile(channel,d.config.sharedPushoverAppToken),configured:await d.hub.anomalyReachable(userId,'price_alert')}:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});
   });
   app.get('/api/markets',async c=>{
     const raw=c.req.queries();
@@ -242,13 +242,14 @@ export function createApi(d:ApiDependencies) {
   // Notification centre: many channels per user, routed per event source. Credentials never leave the server.
   const hub=()=>{if(!d.hub)throw new HttpError(503,'service_unavailable');return d.hub;};
   const noQuery=(c:Context<Env>)=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');};
-  app.get('/api/notify',async c=>{noQuery(c);const h=hub(),[channels,routes]=await Promise.all([h.channels(uid(c)),h.routes(uid(c))]);return ok(c,{channels,routes,types:CHANNEL_TYPES});});
+  app.get('/api/notify/deliveries',async c=>{noQuery(c);return ok(c,{deliveries:await hub().deliveries(uid(c))});});
+  app.get('/api/notify',async c=>{noQuery(c);const h=hub(),userId=uid(c),[channels,routes,settings,anomalySettings]=await Promise.all([h.channels(userId),h.routes(userId),d.repositories.settings.get(userId),d.anomaly?.store.getSettings(userId)]);const price=settings?.notification??DEFAULT_NOTIFICATION;const anomalyProfile=anomalySettings?.settings.notification??{...price,priority:anomalySettings?.settings.priority??1};return ok(c,{channels,routes,types:CHANNEL_TYPES,priceAttemptLimit:settings?.dailyLimit??20,profiles:{price_alert:price,anomaly_crypto:anomalyProfile,anomaly_tradfi:anomalyProfile}});});
   app.post('/api/notify/channels',async c=>{const body=await json(c,hubChannelCreateSchema);return ok(c,{channel:await hub().createChannel(uid(c),body)},201);});
   app.patch('/api/notify/channels/:id',async c=>{const {expectedGeneration,...patch}=await json(c,hubChannelPatchSchema);return ok(c,{channel:await hub().patchChannel(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)))});});
   app.delete('/api/notify/channels/:id',async c=>{await hub().removeChannel(uid(c),c.req.param('id'));return ok(c,{deleted:true});});
   app.post('/api/notify/channels/:id/test',async c=>{await json(c,testNotificationSchema);const result=await hub().test(uid(c),c.req.param('id'));
     if(result.outcome==='uncertain')throw new HttpError(504,'notification_uncertain');if(result.outcome==='skipped')throw new HttpError(409,'channel_unconfigured');if(result.outcome==='failed')throw new HttpError(502,'notification_failed');return ok(c,{outcome:'sent',at:Date.now()});});
-  app.put('/api/notify/routes',async c=>{const body=await json(c,hubRoutesSchema);return ok(c,{routes:await hub().setRoutes(uid(c),body.routes)});});
+  app.put('/api/notify/routes',async c=>{const body=await json(c,hubRoutesSchema);const routes=await hub().setRoutes(uid(c),body.routes);await wake(c);return ok(c,{routes});});
   // Starred underlyings (BTC, NVDA...) across every venue; the client opens `preferred` or any listed market.
   app.get('/api/favorites',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,{favorites:await anomaly().store.favorites(uid(c))});});
   app.put('/api/favorites',async c=>{

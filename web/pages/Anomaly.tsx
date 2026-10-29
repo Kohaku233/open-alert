@@ -9,7 +9,6 @@ import { Label } from '../components/ui/label.js';
 import { Switch } from '../components/ui/switch.js';
 import { Spinner } from '../components/ui/spinner.js';
 import { FormError } from '../components/Dialog.js';
-import { AnomalyDelivery } from '../components/AnomalyDelivery.js';
 import { t } from '../i18n.js';
 import { errorText, request } from '../api.js';
 import type { WorkspaceModel } from '../model.js';
@@ -29,13 +28,13 @@ function sessionLabel(e: AnomalyEvent) {
   return e.session === 'weekend' ? t('周末休市') : e.session === 'off' ? t('美股盘外') : t('美股盘中');
 }
 
-export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; notify: (text: string) => void; navigate: (path: string) => void }) {
+export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (text: string) => void; navigate: (path: string) => void }) {
   const pageRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<AnomalyView | null>(null);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
-  const [draft, setDraft] = useState<{ crypto: string; tradfi: string; dailyLimit: string } | null>(null);
+  const [draft, setDraft] = useState<{ crypto: string; tradfi: string } | null>(null);
   usePageMotion(pageRef, !!view, true, 'settings');
   const load = useCallback(async (signal?: AbortSignal) => {
     try { setView(await request<AnomalyView>('/api/anomaly', 'GET', undefined, signal ? { signal } : {})); setLoadError(''); }
@@ -57,17 +56,17 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
   if (!view) return <section ref={pageRef} className="settings-page anomaly-page"><PageHeader className="page-heading"><div><span className="page-index">03 — ANOMALY</span><h1>{t('异动监测')}</h1></div></PageHeader>
     {loadError ? <Notice className="connection-error" role="alert"><p>{loadError}</p><Button onClick={() => void load()}>{t('重新读取')}</Button></Notice> : <ListSkeleton label={t('正在读取异动监测…')} rows={4}/>}</section>;
   const { settings, monitor } = view;
-  const values = draft ?? { crypto: String(Math.round(settings.minMoveCrypto * 100)), tradfi: String(Math.round(settings.minMoveTradfi * 1000) / 10), dailyLimit: String(settings.dailyLimit) };
+  const values = draft ?? { crypto: String(Math.round(settings.minMoveCrypto * 100)), tradfi: String(Math.round(settings.minMoveTradfi * 1000) / 10) };
   const ready = monitor.state === 'running' || monitor.state === 'degraded';
   async function saveFilters(event: FormEvent) {
     event.preventDefault();
-    const crypto = Number(values.crypto), tradfi = Number(values.tradfi), dailyLimit = Number(values.dailyLimit);
-    if (!(crypto >= 10 && crypto <= 100) || !(tradfi >= 2 && tradfi <= 50) || !Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 50) {
+    const crypto = Number(values.crypto), tradfi = Number(values.tradfi);
+    if (!(crypto >= 10 && crypto <= 100) || !(tradfi >= 2 && tradfi <= 50)) {
       setFormError(t('币种门槛 10–100%，股票类门槛 2–50%，每日上限 1–50 条。')); return;
     }
-    if (await save({ minMoveCrypto: crypto / 100, minMoveTradfi: tradfi / 100, dailyLimit }, t('过滤条件已保存。'))) setDraft(null);
+    if (await save({ minMoveCrypto: crypto / 100, minMoveTradfi: tradfi / 100 }, t('过滤条件已保存。'))) setDraft(null);
   }
-  const edit = (key: 'crypto' | 'tradfi' | 'dailyLimit', value: string) => setDraft({ ...values, [key]: value });
+  const edit = (key: 'crypto' | 'tradfi', value: string) => setDraft({ ...values, [key]: value });
   return <section ref={pageRef} className="settings-page anomaly-page">
     <PageHeader className="page-heading"><div><span className="page-index">03 — ANOMALY</span><h1>{t('异动监测')}</h1><p>{t('Binance、OKX、MEXC 的 USDT 永续合约出现极端行情时推送到手机。')}</p></div>
       <Badge variant="outline" className={`status-pill ${settings.enabled ? 'success' : ''}`}>{settings.enabled ? t('推送中') : t('未开启')}</Badge></PageHeader>
@@ -83,11 +82,11 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
           <label className="anomaly-toggle"><span><strong>{t('股票与 TradFi 合约')}</strong><small>{t('盘中、盘外、周末分别计算常态波动')}</small></span>
             <Switch checked={settings.tradfi} aria-label={t('股票与 TradFi 合约')} disabled={busy} onCheckedChange={checked => void save({ tradfi: checked }, t('已更新股票类推送。'))}/></label>
         </div>
-        <AnomalyDelivery settings={settings} priceAlerts={model.data?.status.settings.notification} busy={busy} save={save} onOpenPriceAlerts={() => navigate('/notifications')}/>
+        <p className="small muted">{t('接收渠道、提醒级别和免打扰统一在通知中心设置。')} <Button className="text-button" onClick={()=>navigate('/notifications')}>{t('设置推送规则')}</Button></p>
         <dl className="key-state anomaly-state"><div><dt>{t('监测范围')}</dt><dd>{monitor.series ? t('{0} 个合约 · 币种 {1} / 股票类 {2}', monitor.series, monitor.crypto, monitor.tradfi) : t('正在读取合约列表')}</dd></div>
           <div><dt>{t('行情连接')}</dt><dd>{(['binance', 'okx', 'mexc'] as const).map(v => <span key={v} className={`venue-dot ${monitor.streams[v] ? 'is-live' : ''}`}>{venueName[v]}</span>)}</dd></div>
           <div><dt>{t('波动基准')}</dt><dd>{ready ? t('{0} / {1} 已就绪', monitor.baselines, monitor.series) : t('正在载入 30 天历史 · {0} / {1}', monitor.baselines, monitor.series)}</dd></div>
-          <div><dt>{t('今日推送')}</dt><dd>{view.today} / {settings.dailyLimit} · UTC</dd></div></dl>
+          <div><dt>{t('今日推送')}</dt><dd>{view.today} · UTC</dd></div></dl>
       </Panel>
       <Panel className="settings-panel anomaly-filters"><span className="section-index">02 — FILTER</span><h2>{t('过滤条件')}</h2>
         <p className="small muted">{t('以下条件同时满足才推送：')}</p>
@@ -100,7 +99,6 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
         <form onSubmit={event => void saveFilters(event)}><fieldset disabled={busy}><div className="delivery-fields anomaly-fields">
           <Label>{t('币种最小涨跌 · %')}<Input type="number" min={10} max={100} step={1} required value={values.crypto} onChange={event => edit('crypto', event.target.value)}/><span className="small muted">{t('扣除 BTC 后计算，默认 25')}</span></Label>
           <Label>{t('股票类最小涨跌 · %')}<Input type="number" min={2} max={50} step={0.5} required value={values.tradfi} onChange={event => edit('tradfi', event.target.value)}/><span className="small muted">{t('默认 3')}</span></Label>
-          <Label>{t('每日推送上限')}<Input type="number" min={1} max={50} step={1} required value={values.dailyLimit} onChange={event => edit('dailyLimit', event.target.value)}/><span className="small muted">{t('与价格警报额度分开计算')}</span></Label>
         </div><Button variant="default" className="primary wide">{busy && <Spinner/>}{busy ? t('正在保存…') : t('保存过滤条件')}</Button></fieldset>
           <FormError message={formError}/>{draft && <Button type="button" className="text-button" disabled={busy} onClick={() => { setDraft(null); setFormError(''); }}>{t('撤销修改')}</Button>}</form>
       </Panel>

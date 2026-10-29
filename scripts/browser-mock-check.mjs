@@ -27,11 +27,25 @@ if (!process.env.PLAYWRIGHT_MODULE) {
 const { chromium, devices } = await import(pathToFileURL(playwrightPath).href);
 const { expect } = await import(pathToFileURL(join(dirname(playwrightPath), 'test.mjs')).href);
 expect.configure({ timeout: 6000 });
-const results = [], violations = [], runtimeErrors = [], externalAttempts = [];
+const results = [], violations = [], runtimeErrors = [], knownRuntimeWarnings = [], externalAttempts = [];
 let assertions = 0, apiRequests = 0, authRequests = 0, chartScripts = 0;
 const check = async (name, fn) => { assertions++; await fn(); };
 const only = process.env.OPEN_ALERT_JOURNEY ? new RegExp(process.env.OPEN_ALERT_JOURNEY) : null;
-const journey = async (name, fn) => { if (only && !only.test(name)) return; const start = Date.now(); try { await fn(); results.push({ name, passed: true, durationMs: Date.now() - start }); console.log(`PASS ${name}`); } catch (error) { results.push({ name, passed: false, error: error.stack }); throw error; } };
+const allJourneys = [], selectedJourneys = [];
+const journey = async (name, fn) => {
+  allJourneys.push(name);
+  if (only && !only.test(name)) return;
+  selectedJourneys.push(name);
+  const start = Date.now();
+  try {
+    await fn();
+    results.push({ name, passed: true, durationMs: Date.now() - start });
+    console.log(`PASS ${name}`);
+  } catch (error) {
+    results.push({ name, passed: false, error: error.stack });
+    throw error;
+  }
+};
 const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
 assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
 assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
@@ -67,7 +81,15 @@ async function setup(browser, profile, authenticated = false, { chart = 'trading
   if (chart) await context.addInitScript(kind => { try { if (!localStorage.getItem('open-alert-chart')) localStorage.setItem('open-alert-chart', kind); } catch {} }, chart);
   const page = await context.newPage(); page.setDefaultTimeout(6000);
   page.on('pageerror', error => runtimeErrors.push(`${profile}: ${error.message}`));
-  page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource|ERR_FAILED/.test(message.text())) runtimeErrors.push(`${profile}: ${message.text()}`); });
+  page.on('console', message => {
+    if (message.type() !== 'error') return;
+    const text = message.text();
+    if (/WebSocket connection to 'ws:\/\/[^']+\/api\/live' failed: Error during WebSocket handshake: Unexpected response code: 404/.test(text)) {
+      knownRuntimeWarnings.push(`${profile}: ${text}`);
+      return;
+    }
+    if (!/Failed to load resource|ERR_FAILED/.test(text)) runtimeErrors.push(`${profile}: ${text}`);
+  });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) {
@@ -160,13 +182,20 @@ async function setup(browser, profile, authenticated = false, { chart = 'trading
         return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles,done:false});
       }
       if (path === '/api/anomaly' && method === 'GET') return ok(anomalyView(state));
+      if (path === '/api/notify/deliveries' && method === 'GET') return ok({deliveries:notifyState(state).deliveries});
       if (path === '/api/notify' && method === 'GET') return ok(notifyView(state));
-      if (path === '/api/notify/channels' && method === 'POST') { const n=notifyState(state);(state.notifyPosts??=[]).push({type:body.type,name:body.name,fields:Object.keys(body.config)}); const c={id:'ch-'+(state.nextId++),type:body.type,name:body.name,enabled:true,legacy:false,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary:{tokenSource:body.config.appToken?'private':'shared',userKey:'…'+body.config.userKey.slice(-4)}};n.channels.push(c);return ok({channel:c},201); }
+      if (path === '/api/notify/channels' && method === 'POST') {
+        const n=notifyState(state), config=body.config??{};
+        (state.notifyPosts??=[]).push({type:body.type,name:body.name,fields:Object.keys(config)});
+        const summary=body.type==='discord'?{webhook:'…'+String(config.webhookUrl??'').split('/').at(-1).slice(-6)}:{tokenSource:config.appToken?'private':'shared',userKey:'…'+String(config.userKey??'').slice(-4)};
+        const c={id:'ch-'+(state.nextId++),type:body.type,name:body.name,enabled:true,legacy:false,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary};
+        n.channels.push(c);return ok({channel:c},201);
+      }
       if (/^\/api\/notify\/channels\/[^/]+(\/test)?$/.test(path)) {
         const n=notifyState(state),id=decodeURIComponent(path.split('/')[4]),c=n.channels.find(x=>x.id===id); if(!c)return fail('not_found',404);
-        if (path.endsWith('/test') && method === 'POST') { assert.equal(body.confirm,true); c.lastOutcome='sent'; c.lastAt=Date.now(); (state.notifyTests??=[]).push(id); return ok({outcome:'sent',at:Date.now()}); }
+        if (path.endsWith('/test') && method === 'POST') { assert.equal(body.confirm,true); const at=Date.now(); c.lastOutcome='sent'; c.lastAt=at; (state.notifyTests??=[]).push(id); n.deliveries.unshift({id:'delivery-'+(state.nextId++),at,source:'test',channelName:c.name,title:'Open Alert notification test',outcome:'sent',code:null}); return ok({outcome:'sent',at}); }
         if (method === 'PATCH') { (state.notifyPatches??=[]).push(body); if(body.expectedGeneration!==c.generation)return fail('generation_conflict'); if(body.name!==undefined)c.name=body.name; if(body.enabled!==undefined)c.enabled=body.enabled; c.generation++; return ok({channel:c}); }
-        if (method === 'DELETE') { if(c.legacy)return fail('invalid_request',400); n.channels=n.channels.filter(x=>x!==c); n.routes=n.routes.filter(r=>r.channelId!==id); return ok({deleted:true}); }
+        if (method === 'DELETE') { n.channels=n.channels.filter(x=>x!==c); n.routes=n.routes.filter(r=>r.channelId!==id); return ok({deleted:true}); }
       }
       if (path === '/api/notify/routes' && method === 'PUT') { const n=notifyState(state);(state.notifyRoutePuts??=[]).push(body); n.routes=body.routes; return ok({routes:notifyView(state).routes}); }      if (path === '/api/favorites' && method === 'GET') return ok({favorites:state.favorites??=[]});
       if (path === '/api/favorites' && method === 'PUT') { (state.favoritePuts??=[]).push(body); state.favorites=body.favorites; return ok({favorites:state.favorites}); }
@@ -251,11 +280,11 @@ function anomalyState(state) {
   return state.anomaly;
 }
 function notifyState(state) {
-  state.notify??={channels:[{id:'legacy-pushover:u',type:'pushover',name:'Pushover',enabled:true,legacy:true,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary:{tokenSource:'shared',userKey:'…abcd'}}],routes:['anomaly_crypto','anomaly_tradfi'].map(source=>({source,channelId:'legacy-pushover:u',enabled:true,options:{notification:null,quiet:null}}))};
-  state.notify.channels[0].configured=!!state.status.channel.userKeyPresent;
+  state.notify??={channels:[{id:'legacy-pushover:u',type:'pushover',name:'Pushover',enabled:true,legacy:false,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary:{tokenSource:'shared',userKey:'…abcd'}}],routes:['price_alert','anomaly_crypto','anomaly_tradfi'].map(source=>({source,channelId:'legacy-pushover:u',enabled:true,options:{notification:null,quiet:null,dailyLimit:10}})),deliveries:[]};
+  if (state.notify.channels[0]) state.notify.channels[0].configured=!!state.status.channel.userKeyPresent;
   return state.notify;
 }
-function notifyView(state) { const n=notifyState(state); return {channels:n.channels,routes:[{source:'price_alert',channelId:'legacy-pushover:u',enabled:true,options:{notification:null,quiet:null}},...n.routes],types:['pushover']}; }function anomalyView(state) {
+function notifyView(state) { const n=notifyState(state); return {channels:n.channels,routes:n.routes,types:['pushover','discord'],profiles:{price_alert:{priority:2,retry:30,expire:1500,sound:'siren'},anomaly_crypto:{priority:1,retry:30,expire:1500,sound:'cosmic'},anomaly_tradfi:{priority:1,retry:30,expire:1500,sound:'cosmic'}}}; }function anomalyView(state) {
   const a=anomalyState(state);
   return {settings:a.settings,generation:a.generation,events:a.events,today:1,channelConfigured:!!state.status.channel.userKeyPresent,monitor:{state:'running',series:291,baselines:291,crypto:180,tradfi:111,withMarketCap:170,streams:{binance:true,okx:true,mexc:true},lastEvaluationAt:Date.now(),universeAt:Date.now(),marketCapAt:Date.now()}};
 }
@@ -332,9 +361,14 @@ try {
     await check('queued delete lock', () => expect(pending.getByRole('button', { name: '删除', exact: true })).toBeDisabled());
     await check('uncertain copy', () => expect(row(page,'MOCK 投递不确定')).toContainText('可能已经送达，请先查看手机'));
     await nav(page,'手机通知');
-    await check('channel pending lock', () => expect(page.getByRole('button', { name: '保存通知渠道' })).toBeDisabled());
-    await check('settings pending lock', () => expect(page.getByRole('button', { name: '保存提醒设置' })).toBeDisabled());
-    await check('test pending lock', () => expect(page.getByRole('button', { name: '发送测试通知' })).toBeDisabled());
+    await check('notification rewrite has exactly three sections and no legacy forms',async()=>{
+      await expect(page.locator('.notify-panel')).toHaveCount(3);
+      await expect(page.getByRole('heading',{name:'通知渠道',exact:true})).toBeVisible();
+      await expect(page.getByRole('heading',{name:'推送规则',exact:true})).toBeVisible();
+      await expect(page.getByRole('heading',{name:'发送记录',exact:true})).toBeVisible();
+      await expect(page.getByRole('button',{name:'保存通知渠道',exact:true})).toHaveCount(0);
+      await expect(page.getByRole('button',{name:'保存提醒设置',exact:true})).toHaveCount(0);
+    });
     await nav(page,'行情与警报');
     await check('page navigation preserves frame', async () => assert(await chart.evaluate(node => node === document.querySelector('.tradingview-widget-container iframe'))));
     await page.screenshot({ path: join(outputs,'open-alert-ui-desktop-MOCK.png'), fullPage: true });
@@ -445,45 +479,45 @@ try {
     await check('rearm generation sent', async () => assert.equal(requests(state,'POST','/api/alerts/mock-uncertain/rearm').at(-1).expectedGeneration,2));
     await check('CRUD preserves chart', async () => assert(await chart.evaluate(node => node.isConnected)));
   });
-  await journey('05 channel retention, secret clearing and explicit test confirmation', async () => {
-    await nav(page,'手机通知'); await page.getByRole('button',{name:'保存通知渠道'}).click();
-    await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知渠道已保存'})).toBeVisible();
-    await check('blank keys omitted', async () => assert.deepEqual(requests(state,'PUT','/api/channels').at(-1).fields,['provider']));
-    await check('save sends no test', async () => assert.equal(requests(state,'POST','/api/test-notification').length,0));
-    await page.getByLabel('替换用户密钥（留空保留）').fill(key); await chooseSelect(page,'应用令牌来源','private'); await page.getByLabel(/^个人应用令牌/).fill(token); await page.getByRole('button',{name:'保存通知渠道'}).click();
-    await check('key cleared after save', () => expect(page.getByLabel('替换用户密钥（留空保留）')).toHaveValue(''));
-    await check('no reflected raw secrets', async () => { const text = await page.locator('body').innerText(); assert(!text.includes(key)&&!text.includes(token)); });
-    await chooseSelect(page,'应用令牌来源','shared'); await page.getByRole('button',{name:'保存通知渠道'}).click();
-    await expect(page.locator('dd').filter({hasText:'使用部署共享令牌'})).toBeVisible();
-    await check('explicit null token', async () => assert.equal(requests(state,'PUT','/api/channels').at(-1).appTokenMode,'clear'));
-    await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
-    await check('cancel sends no test', async () => assert.equal(requests(state,'POST','/api/test-notification').length,0));
-    state.failNext={path:'/api/test-notification',method:'POST',code:'notification_uncertain',status:504};
-    await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('test uncertainty shown', () => expect(page.getByRole('dialog').getByRole('alert')).toContainText('可能已经送达'));
-    await check('test deliberate confirm body', async () => assert.equal(requests(state,'POST','/api/test-notification').at(-1).confirm,true));
-    await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
-    await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('confirmed fixture test success', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
+  await journey('05 normal channel editing, retention and explicit notification-centre test confirmation', async () => {
+    await nav(page,'手机通知');
+    const list=page.getByRole('list',{name:'通知渠道'});
+    const initial=list.getByRole('listitem').filter({hasText:'Pushover'});
+    await check('migrated channel is normal and deletable',async()=>{await expect(initial).toHaveCount(1);await expect(initial.getByRole('button',{name:'编辑'})).toBeVisible();await expect(initial.getByRole('button',{name:'删除'})).toBeVisible();});
+    await initial.getByRole('button',{name:'编辑'}).click();
+    const dialog=page.getByRole('dialog');
+    await check('channel edit uses the new dialog',()=>expect(dialog.getByRole('heading',{name:'编辑通知渠道'})).toBeVisible());
+    await dialog.getByLabel('名称').fill('主手机');await dialog.getByRole('button',{name:'保存渠道'}).click();
+    await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知渠道已保存。未发送测试通知。'})).toBeVisible();
+    const editRequest=state.requests.filter(r=>r.method==='PATCH'&&r.path.startsWith('/api/notify/channels/')).at(-1);
+    await check('edit sends the current generation and no blank config',async()=>{assert.deepEqual(editRequest.fields,['expectedGeneration','name']);assert.equal(editRequest.expectedGeneration,0);assert.equal(state.notify.channels[0].name,'主手机');});
+    await check('channel save sends no notification test',async()=>assert.equal(state.requests.filter(r=>r.method==='POST'&&r.path.endsWith('/test')).length,0));
+    await check('no reflected raw secrets or legacy form',async()=>{const text=await page.locator('body').innerText();assert(!text.includes(key)&&!text.includes(token));await expect(page.getByRole('button',{name:'保存通知渠道',exact:true})).toHaveCount(0);});
+    const primary=list.getByRole('listitem').filter({hasText:'主手机'});
+    await primary.getByRole('button',{name:'测试'}).click();await dialog.getByRole('button',{name:'取消',exact:true}).click();
+    await check('cancel sends no notification-centre test',async()=>assert.equal(state.requests.filter(r=>r.method==='POST'&&r.path.endsWith('/test')).length,0));
+    state.failNext={path:'/api/notify/channels/legacy-pushover%3Au/test',method:'POST',code:'notification_uncertain',status:504};
+    await primary.getByRole('button',{name:'测试'}).click();await dialog.getByRole('button',{name:'确认发送测试'}).click();
+    await check('notification-centre uncertainty is explicit',()=>expect(dialog.getByRole('alert')).toContainText('可能已经送达'));
+    await check('test uses a deliberate confirmation body',async()=>assert.equal(state.requests.filter(r=>r.method==='POST'&&r.path.endsWith('/test')).at(-1).confirm,true));
+    await dialog.getByRole('button',{name:'取消',exact:true}).click();
+    await primary.getByRole('button',{name:'测试'}).click();await dialog.getByRole('button',{name:'确认发送测试'}).click();
+    await check('confirmed notification-centre test succeeds and is logged',async()=>{await expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已发到 主手机'})).toBeVisible();await expect(page.getByRole('heading',{name:'发送记录'})).toBeVisible();await expect(page.locator('.notify-delivery-list')).toContainText('Open Alert notification test');});
   });
-  await journey('06 settings CAS, bounded rate error, monitoring busy lock and stop confirmation', async () => {
-    await page.getByLabel('每日通知尝试上限').fill('18'); state.failNext={path:'/api/settings',method:'PATCH',code:'generation_conflict',status:409,bump:true};
-    await page.getByRole('button',{name:'保存提醒设置'}).click();
-    await check('CAS conflict visible', () => expect(page.getByRole('alert')).toContainText('数据已在其他页面更新'));
-    await page.getByRole('button',{name:'重新读取当前设置'}).click(); await page.getByLabel('每日通知尝试上限').fill('18');
-    await page.getByRole('button',{name:'保存提醒设置'}).click(); await expect(page.locator('[data-sonner-toast]').filter({hasText:'通知设置已保存'})).toBeVisible();
-    await check('fresh settings generation', async () => assert.equal(requests(state,'PATCH','/api/settings').at(-1).expectedGeneration,1));
-    // This reused page freezes time after GSAP cached native RAF. Test cooldowns with
-    // reduced motion here; the real-clock GSAP journeys below cover normal exits.
+  await journey('06 notification-centre request cooldown, monitoring busy lock and stop confirmation', async () => {
+    // Keep the cooldown on a real center mutation. A blocked POST is never queued or replayed.
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.clock.install(); await page.clock.pauseAt(new Date());
-    state.failNext={path:'/api/test-notification',method:'POST',code:'rate_limited',status:429,headers:{'Retry-After':'10'}};
+    const channel=state.notify.channels.find(c=>c.name==='主手机');
+    const testPath=`/api/notify/channels/${encodeURIComponent(channel.id)}/test`;
+    state.failNext={path:testPath,method:'POST',code:'rate_limited',status:429,headers:{'Retry-After':'10'}};
     const businessCount = () => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes').length;
     const countBefore429 = businessCount();
-    await page.getByRole('button',{name:'发送测试通知',exact:true}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('429 retry shown', () => expect(page.getByRole('dialog').getByRole('alert')).toContainText('重试等待：10'));
-    await check('429 mutation error sends no immediate refresh', async () => assert.equal(businessCount(),countBefore429+1));
-    const blockedCount = businessCount(), testsBeforeWait = requests(state,'POST','/api/test-notification').length;
+    const primary=page.getByRole('list',{name:'通知渠道'}).getByRole('listitem').filter({hasText:'主手机'});
+    await primary.getByRole('button',{name:'测试'}).click(); await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
+    await check('center 429 retry shown', () => expect(page.getByRole('dialog').getByRole('alert')).toContainText('重试等待：10'));
+    await check('center 429 sends no immediate refresh', async () => assert.equal(businessCount(),countBefore429+1));
+    const blockedCount = businessCount(), testsBeforeWait = state.requests.filter(r=>r.method==='POST'&&r.path===testPath).length;
     await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
     await page.keyboard.press('Escape');
     await page.locator('.connection-error').getByRole('button',{name:'重新读取状态'}).click();
@@ -493,10 +527,10 @@ try {
     await check('remaining wait uses existing model clock', () => expect(page.locator('.connection-error')).toContainText('重试等待：1 秒'));
     await page.clock.runFor(1000);
     await check('expiry automatically restores exactly one combined snapshot', async () => { await expect(page.locator('.connection-error')).toHaveCount(0); assert.equal(businessCount(),blockedCount+1); });
-    await check('expiry never automatically replays POST', async () => assert.equal(requests(state,'POST','/api/test-notification').length,testsBeforeWait));
-    await page.getByRole('button',{name:'发送测试通知',exact:true}).click();
+    await check('expiry never automatically replays center test POST', async () => assert.equal(state.requests.filter(r=>r.method==='POST'&&r.path===testPath).length,testsBeforeWait));
+    await primary.getByRole('button',{name:'测试'}).click();
     await page.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('expired POST requires explicit manual retry', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已交给 Pushover'})).toBeVisible());
+    await check('expired center POST requires explicit manual retry', () => expect(page.locator('[data-sonner-toast]').filter({hasText:'测试通知已发到 主手机'})).toBeVisible());
     await page.clock.resume();
     await page.emulateMedia({reducedMotion:'no-preference'});
     await nav(page,'行情与警报');
@@ -677,13 +711,8 @@ try {
     const crypto=p.getByLabel('币种最小涨跌 · %');await crypto.fill('5');await p.getByRole('button',{name:'保存过滤条件'}).click();
     await check('out-of-range floor rejected locally',async()=>{assert.equal(await crypto.evaluate(i=>i.validity.rangeUnderflow),true);assert.equal(requests(s,'PATCH','/api/anomaly/settings').length,2);});
     await crypto.fill('30');await p.getByRole('button',{name:'保存过滤条件'}).click();
-    await check('floor saved as fraction',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:2,minMoveCrypto:0.3,minMoveTradfi:0.03,dailyLimit:10}));
-    await p.getByRole('group',{name:'异动推送的提醒方式'}).getByRole('button',{name:'单独设置'}).click();
-    await p.getByLabel('铃声标识').fill('cosmic');await p.getByRole('button',{name:'保存提醒方式'}).click();
-    await check('own anomaly profile saved separately',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)?.notification).toEqual({priority:1,retry:30,expire:1500,sound:'cosmic'}));
-    await check('price-alert settings untouched',async()=>assert.equal(requests(s,'PATCH','/api/settings').length,0));
-    await p.getByRole('group',{name:'异动推送的提醒方式'}).getByRole('button',{name:'跟随价格警报'}).click();
-    await check('follow resets to price-alert profile',async()=>expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:4,notification:null}));
+    await check('floor saved as fraction without a page-level daily cap',async()=>{await expect.poll(()=>(s.anomalyPatches??[]).at(-1)).toEqual({expectedGeneration:2,minMoveCrypto:0.3,minMoveTradfi:0.03});await expect(p.getByLabel('每日推送上限')).toHaveCount(0);});
+    await check('notification profiles stay in the route centre',async()=>{assert.equal(requests(s,'PATCH','/api/settings').length,0);assert.equal(s.anomalyPatches?.at(-1)?.notification,undefined);});
     await p.locator('.anomaly-event').first().locator('.anomaly-event-venues a').first().click();
     await check('venue link opens dashboard',()=>expect(p).toHaveURL(/\/dashboard\?market=/));
     await fixture.context.close();
@@ -693,9 +722,20 @@ try {
     await p.goto(origin+'/dashboard');await expect(p.getByRole('switch').first()).toBeVisible();
     await nav(p,'手机通知');
     const list=p.getByRole('list',{name:'通知渠道'});
-    await check('legacy channel listed',()=>expect(list.getByRole('listitem')).toHaveCount(1));
-    await check('legacy channel cannot be deleted',()=>expect(list.getByRole('button',{name:'删除'})).toHaveCount(0));
-    await check('price alert route is locked',()=>expect(p.getByRole('region',{name:'价格警报'}).getByRole('switch')).toHaveCount(0));
+    await check('legacy channel is normal and deletable',async()=>{await expect(list.getByRole('listitem')).toHaveCount(1);await expect(list.getByRole('button',{name:'删除'})).toHaveCount(1);});
+    await check('all three rule cards are routable',async()=>{
+      for(const source of ['价格警报','币种异动','股票异动']){
+        const region=p.getByRole('region',{name:source});await expect(region).toBeVisible();await expect(region.getByRole('switch',{name:source+'发到 Pushover',exact:true})).toHaveCount(1);
+      }
+    });
+    await check('three notification sections and no legacy forms',async()=>{
+      await expect(p.locator('.notify-panel')).toHaveCount(3);
+      await expect(p.getByRole('heading',{name:'通知渠道',exact:true})).toBeVisible();
+      await expect(p.getByRole('heading',{name:'推送规则',exact:true})).toBeVisible();
+      await expect(p.getByRole('heading',{name:'发送记录',exact:true})).toBeVisible();
+      await expect(p.getByRole('button',{name:'保存通知渠道',exact:true})).toHaveCount(0);
+      await expect(p.getByRole('button',{name:'保存提醒设置',exact:true})).toHaveCount(0);
+    });
     await p.getByRole('button',{name:'添加渠道'}).click();
     const dialog=p.getByRole('dialog');
     await dialog.getByLabel('名称').fill('备用手机');await dialog.getByLabel('Pushover 用户密钥').fill('short');await dialog.getByRole('button',{name:'添加渠道'}).click();
@@ -703,6 +743,9 @@ try {
     await dialog.getByLabel('Pushover 用户密钥').fill('u'.repeat(30));await dialog.getByRole('button',{name:'添加渠道'}).click();
     await check('channel created without exposing key in evidence',async()=>{await expect(dialog).toHaveCount(0);assert.deepEqual(s.notifyPosts,[{type:'pushover',name:'备用手机',fields:['userKey','appToken']}]);});
     await check('new channel listed',()=>expect(list.getByRole('listitem')).toHaveCount(2));
+    const priceRules=p.getByRole('region',{name:'价格警报'});
+    await priceRules.getByLabel('每日上限').fill('7');
+    await priceRules.getByRole('switch',{name:'价格警报发到 备用手机'}).click();
     await p.getByRole('switch',{name:'币种异动发到 备用手机'}).click();
     await p.getByRole('switch',{name:'股票异动免打扰'}).click();
     await p.getByRole('region',{name:'股票异动'}).getByLabel('开始').fill('22:30');
@@ -710,20 +753,25 @@ try {
     if(profile==='mobile')await noOverflow(p);
     await p.screenshot({path:join(outputs,`open-alert-notify-center-${profile}-MOCK.png`),fullPage:true,animations:'disabled'});
     await p.getByRole('button',{name:'保存推送路由'}).click();
-    await check('routes saved with new channel and quiet hours',async()=>{await expect.poll(()=>(s.notifyRoutePuts??[]).length).toBe(1);const r=s.notifyRoutePuts[0].routes;
+    await check('routes save all sources with per-route caps and quiet hours',async()=>{await expect.poll(()=>(s.notifyRoutePuts??[]).length).toBe(1);const r=s.notifyRoutePuts[0].routes;
       assert(r.some(x=>x.source==='anomaly_crypto'&&x.channelId.startsWith('ch-')&&x.enabled));
+      assert(r.filter(x=>x.source==='price_alert').length===2);
+      assert(r.filter(x=>x.source==='price_alert').every(x=>x.options.dailyLimit===7));
       const q=r.filter(x=>x.source==='anomaly_tradfi');assert(q.length===2&&q.every(x=>x.options.quiet?.from==='22:30'&&x.options.quiet.to==='07:00'&&Number.isInteger(x.options.quiet.offsetMinutes)));
-      assert(!r.some(x=>x.source==='price_alert'));});
+      assert(r.every(x=>Number.isInteger(x.options.dailyLimit)&&x.options.dailyLimit>=1&&x.options.dailyLimit<=50));});
     const added=list.getByRole('listitem').filter({hasText:'备用手机'});
     await added.getByRole('button',{name:'测试'}).click();await p.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
-    await check('test confirmed and recorded',async()=>{await expect.poll(()=>(s.notifyTests??[]).length).toBe(1);await expect(added).toContainText('最近发送成功');});
-    await added.getByRole('button',{name:'重命名'}).click();await p.getByRole('dialog').getByLabel('名称').fill('iPad');await p.getByRole('dialog').getByRole('button',{name:'保存名称'}).click();
+    await check('test confirmed and recorded in delivery history',async()=>{await expect.poll(()=>(s.notifyTests??[]).length).toBe(1);await expect(added).toContainText('最近发送成功');await expect(p.locator('.notify-delivery-list')).toContainText('Open Alert notification test');});
+    await added.getByRole('button',{name:'编辑'}).click();await p.getByRole('dialog').getByLabel('名称').fill('iPad');await p.getByRole('dialog').getByRole('button',{name:'保存渠道'}).click();
     await check('rename uses CAS generation',async()=>{await expect.poll(()=>(s.notifyPatches??[]).at(-1)).toEqual({expectedGeneration:0,name:'iPad'});});
     const renamed=list.getByRole('listitem').filter({hasText:'iPad'});
     await renamed.getByRole('switch',{name:'启用 iPad'}).click();
     await check('disable uses next generation',async()=>expect.poll(()=>(s.notifyPatches??[]).at(-1)).toEqual({expectedGeneration:1,enabled:false}));
     await renamed.getByRole('button',{name:'删除'}).click();await p.getByRole('dialog').getByRole('button',{name:'删除渠道'}).click();
     await check('channel deleted with its routes',async()=>{await expect(list.getByRole('listitem')).toHaveCount(1);assert(!s.notify.routes.some(r=>r.channelId.startsWith('ch-')));});
+    const initial=list.getByRole('listitem').filter({hasText:'Pushover'});
+    await initial.getByRole('button',{name:'删除'}).click();await p.getByRole('dialog').getByRole('button',{name:'删除渠道'}).click();
+    await check('migrated channel can also be deleted',async()=>{await expect(list.getByRole('listitem')).toHaveCount(0);assert(!s.notify.routes.some(r=>r.channelId==='legacy-pushover:u'));});
     await fixture.context.close();
   });  await journey('10 admin bounded pagination and invitation copy under mobile fixture', async () => {
     // Own fixture: the journey 09 document must not stay parked on /admin when the role changes.
@@ -1251,7 +1299,7 @@ try {
     if (await p.locator('.mobile-dock').isVisible()) { await p.locator('.mobile-dock a[href="/alerts"]').click(); } await p.getByRole('button',{name:'Notes & limits'}).click();
     await expect(p.locator('.disclosure-content')).toBeVisible();
     await nav(p,'Notifications');
-    await expect(p.getByRole('heading',{name:/^Pushover connection/})).toBeVisible();
+    await expect(p.getByRole('heading',{name:'Notification centre',level:1})).toBeVisible();
     await noOverflow(p);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-notifications-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
     await nav(p,'Markets & alerts');
@@ -1376,7 +1424,7 @@ try {
     await expect.poll(()=>requests(s,'GET','/api/status').length).toBeGreaterThan(readsBefore);
     await check('background refresh does not replay entrances or reset the chart',async()=>{assert.equal(await p.locator('.route-surface').getAttribute('data-motion-runs'),runsBefore);assert.equal(await p.evaluate(()=>window.__mockChartConfigs.length),chartBefore);});
     await nav(p,'Notifications');
-    await expect(p.getByRole('heading',{name:/^Pushover connection/})).toBeVisible();
+    await expect(p.getByRole('heading',{name:'Notification centre',level:1})).toBeVisible();
     await expect(p.locator('.settings-page')).toHaveAttribute('data-motion-state','settled');
     await check('navigation underline tracks the actual active link',async()=>{
       if (await p.locator('.mobile-dock').isVisible()) {
@@ -1407,9 +1455,11 @@ try {
 } catch(error) { console.error(error.stack); process.exitCode=1; }
 finally {
   if(browser) await browser.close(); server.closeAllConnections(); await new Promise(r=>server.close(r)); clearTimeout(deadline);
-  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover delivery and OKX feed not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:results.length===30&&results.every(r=>r.passed)&&!process.exitCode};
+  const expectedJourneys = only ? selectedJourneys.length : allJourneys.length;
+  const evidence={mode:'MOCK',timedOut,scope:'Actual production React/Vite UI with intercepted API and chart embed; no real provider/server integration',profiles:['desktop Chromium 1440×1000','iPhone 15 Chromium emulation 390×844'],assertions,expectedJourneys,journeys:results,apiRequests,authRequests,chartScripts,runtimeErrors,knownRuntimeWarnings,violations,externalAttempts,limitations:['Real backend runtime/DB/session signature integration not tested','Google OAuth and external email delivery not tested','Pushover, Discord and OKX feed delivery not tested','TradingView embed substituted with a clearly labelled MOCK frame','Mobile Chromium emulation is not actual Safari'],passed:expectedJourneys>0&&results.length===expectedJourneys&&results.every(r=>r.passed)&&runtimeErrors.length===0&&violations.length===0&&!process.exitCode};
+  if (!evidence.passed) process.exitCode=1;
   await writeFile(join(outputs,'open-alert-browser-check-results-MOCK.json'),JSON.stringify(evidence,null,2)+'\n');
-  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/30 journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; schema violations=${violations.length}`);
+  console.log(`MOCK result: ${results.filter(r=>r.passed).length}/${expectedJourneys} journeys, ${assertions} assertions; ${apiRequests} API requests; runtime errors=${runtimeErrors.length}; known live-WS 404 warnings=${knownRuntimeWarnings.length}; schema violations=${violations.length}`);
 }
 
 }

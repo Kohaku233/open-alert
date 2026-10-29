@@ -354,7 +354,7 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
   async function flush(g: Group) {
     const events = toEvents(g), at = now();
     const markOf = (e: AnomalyEvent): CooldownMark => ({ at, direction: e.direction, move: e.category === 'crypto' ? e.relativeMove : e.move });
-    const dayStart = Math.floor(now() / 86_400_000) * 86_400_000;
+
     const plans: { userId: string; settings: AnomalySettings; mine: AnomalyEvent[] }[] = [];
     for (const { userId, settings } of await options.store.subscribers()) {
       const mine = events.filter(e => (e.category === 'crypto' ? settings.crypto && Math.abs(e.relativeMove) >= settings.minMoveCrypto : settings.tradfi && Math.abs(e.move) >= settings.minMoveTradfi)
@@ -371,7 +371,7 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
     for (const { userId, settings, mine } of plans) {
       // Mark first: neither a slow provider nor the daily cap may re-offer the same move every gather window.
       for (const e of mine) userMarks.set(userKey(userId, e.entity), markOf(e));
-      if ((await options.store.deliveriesSince(dayStart, userId)).length >= settings.dailyLimit) { console.warn('open_alert_anomaly_daily_limit'); continue; }
+
       const { title, message } = formatPush(mine, options.appUrl);
       let result: Awaited<ReturnType<Delivery['send']>>;
       try { result = await options.delivery.send(userId, message, title, settings, [...new Set(mine.map(e => e.category))]); } catch { result = { outcome: 'uncertain', code: 'delivery_failed' }; }

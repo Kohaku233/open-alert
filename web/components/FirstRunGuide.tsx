@@ -13,7 +13,7 @@ export function FirstRunGuide({ channelConfigured, alertCount, monitoring, canCr
   const [collapsed, setCollapsed] = useState(false);
   const root = useRef<HTMLElement>(null);
   const steps = [
-    { key: 'channel', done: channelConfigured, title: t('连接手机通知'), body: t('保存你的 Pushover 用户密钥。保存时只校验凭据，不会发送消息。'), action: t('配置 Pushover'), run: onConfigure, enabled: true },
+    { key: 'channel', done: channelConfigured, title: t('连接手机通知'), body: t('添加 Pushover 或 Discord 渠道，并在推送规则中接收价格警报。'), action: t('配置通知'), run: onConfigure, enabled: true },
     { key: 'alert', done: alertCount > 0, title: t('设置第一条价格警报'), body: t('选择交易所、交易对和目标价。后台按该交易所的最新成交价判断，图表只作参考。'), action: t('创建第一条警报'), run: onCreate, enabled: canCreate },
     { key: 'arm', done: monitoring, title: t('开启监控总开关'), body: t('新账户默认关闭。开启后每条警报触发一次并锁定，关闭页面也会继续监控。'), action: t('开启监控'), run: onEnable, enabled: canEnable },
   ];
