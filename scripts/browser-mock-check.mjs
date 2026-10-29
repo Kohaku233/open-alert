@@ -105,7 +105,7 @@ async function setup(browser, profile, authenticated = false, { chart = 'trading
     const method = req.method(), path = url.pathname;
     const body = req.postData() ? req.postDataJSON() : undefined;
     // Request evidence deliberately excludes raw OTP/key/token/bearer values.
-    const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, threshold: body?.threshold, timeframe: url.searchParams.get('timeframe') ?? undefined, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
+    const evidence = { method, path, fields: body ? Object.keys(body) : [], expectedGeneration: body?.expectedGeneration, confirm: body?.confirm, threshold: body?.threshold, instrument: url.searchParams.get('instrument') ?? body?.instrument, timeframe: url.searchParams.get('timeframe') ?? undefined, appTokenMode: body && Object.hasOwn(body, 'appToken') ? body.appToken === null ? 'clear' : 'replace' : 'retain' };
     state.requests.push(evidence);
     const send = (data, status = 200, headers = {}) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(data) });
     const ok = (data, status = 200) => send({ ok: true, data, ...(method!=='GET'&&state.wakePending?{effects:{schedulerWake:'pending'}}:{}), ...(!state.omitRequestIds ? {requestId:'mock-request'} : {}) }, status);
@@ -336,6 +336,14 @@ async function signOut(page) { await accountControls(page); await page.getByRole
 
 const row = (page, name) => page.locator('.alert-row').filter({ has: page.getByText(name, { exact: true }) });
 const requests = (state, method, path) => state.requests.filter(r => r.method === method && r.path === path);
+const sourceSelect = page => page.getByRole('combobox',{name:'行情来源',exact:true});
+const sourceLabel = (market,currentBase=market.base) => {
+  const canonical=/^(binance|okx|mexc):(spot|swap):/.exec(market.instrument);
+  const venue=market.venue??canonical?.[1]??(/^[A-Z0-9]{1,24}-USDT-SWAP$/.test(market.instrument)?'okx':null);
+  const type=market.type??canonical?.[2]??'swap';
+  const name=venue==='binance'?'Binance':venue?.toUpperCase();
+  return `${name} · ${type==='spot'?'现货':'USDT 永续'}${market.base!==currentBase?` · ${market.base}`:''}`;
+};
 const businessRequests = state => state.requests.filter(r=>!r.path.startsWith('/api/auth/') && r.path!=='/api/auth-capabilities' && r.path!=='/api/public-quotes');
 // A paused virtual clock also freezes the session SDK's first timer, so a fresh document needs one virtual tick to boot.
 const tick = page => page.clock.runFor(1);
@@ -416,60 +424,181 @@ try {
     await check('deleted row gone', () => expect(row(page,'MOCK 已编辑')).toHaveCount(0));
     await check('delete generation sent', async () => assert.equal(requests(state,'DELETE','/api/alerts/mock-created-1').at(-1).expectedGeneration,1));
   });
-  await journey('03b shadcn market keyboard, venue identity, disabled results and focus return', async () => {
-    const originalMarkets=state.markets;
+  await journey('03b asset picker, dashboard source FieldSelect, disabled sources and focus return', async () => {
+    if (!await page.getByRole('switch').count()) {
+      await page.goto(origin+'/login');
+      await page.getByLabel('邮箱地址').fill('mock@example.test');
+      await page.getByRole('button',{name:'发送验证码',exact:true}).click();
+      await page.getByLabel('邮件中的验证码').fill('123456');
+      await page.getByRole('button',{name:'验证并继续',exact:true}).click();
+      await expect(page.getByRole('switch')).toBeVisible();
+    }
+    const originalMarkets=state.markets,originalAlerts=structuredClone(state.alerts),originalPrices=structuredClone(state.status.prices);
     const template=originalMarkets[0];
-    state.markets=[...originalMarkets,
-      {...template,instrument:'binance:swap:BTCUSDT',venue:'binance',type:'swap',nativeId:'BTCUSDT',symbol:'BTC/USDT:USDT',settle:'USDT',tradingViewSymbol:'BINANCE:BTCUSDT.P'},
-      {...template,instrument:'binance:spot:BTCUSDT',venue:'binance',type:'spot',nativeId:'BTCUSDT',symbol:'BTC/USDT',settle:null,tradingViewSymbol:'BINANCE:BTCUSDT'},
-      {...template,instrument:'mexc:swap:BTC_USDT',venue:'mexc',type:'swap',nativeId:'BTC_USDT',symbol:'BTC/USDT:USDT',available:false},
+    const binanceSwap={...template,instrument:'binance:swap:BTCUSDT',venue:'binance',type:'swap',nativeId:'BTCUSDT',symbol:'BTC/USDT:USDT',settle:'USDT',tradingViewSymbol:'BINANCE:BTCUSDT.P'};
+    const binanceSpot={...template,instrument:'binance:spot:BTCUSDT',venue:'binance',type:'spot',nativeId:'BTCUSDT',symbol:'BTC/USDT',settle:null,tradingViewSymbol:'BINANCE:BTCUSDT'};
+    const unavailableMexc={...template,instrument:'mexc:swap:BTC_USDT',venue:'mexc',type:'swap',nativeId:'BTC_USDT',symbol:'BTC/USDT:USDT',available:false};
+    state.markets=[...originalMarkets,binanceSwap,binanceSpot,unavailableMexc,
       ...Array.from({length:45},(_,i)=>({...template,instrument:`binance:spot:ASSET${i}USDT`,venue:'binance',type:'spot',nativeId:`ASSET${i}USDT`,base:`ASSET${i}`,symbol:`ASSET${i}/USDT`,settle:null,tradingViewSymbol:undefined}))];
     await refreshNavigation(page);
-    const trigger=page.getByRole('combobox',{name:'查看市场',exact:true});
+    const trigger=page.getByRole('combobox',{name:'查看市场',exact:true}),source=sourceSelect(page);
     const originalSelection=await trigger.textContent();
+    await check('legacy OKX selection renders its canonical source without resetting the quote',async()=>{
+      const legacy=originalMarkets.find(market=>market.instrument==='BTC-USDT-SWAP');
+      await expect(source).toContainText(sourceLabel(legacy));
+      await expect.poll(()=>requests(state,'GET','/api/quote').at(-1)?.instrument).toBe('BTC-USDT-SWAP');
+      await expect(page.locator('.price-block')).toContainText(/后台参考成交|报价更新暂停/);
+    });
+    await check('source FieldSelect stays visible below the closed asset picker',async()=>{
+      await expect(source).toBeVisible();await expect(trigger).toHaveAttribute('aria-expanded','false');
+      assert.equal(await source.evaluate(node=>node.closest('[data-slot="popover-content"]')===null),true);
+      const assetBox=await trigger.boundingBox(),sourceBox=await source.boundingBox();
+      assert(assetBox&&sourceBox);assert(sourceBox.y>=assetBox.y+assetBox.height-1,JSON.stringify({assetBox,sourceBox}));
+      assert(Math.abs(sourceBox.x-assetBox.x)<2,JSON.stringify({assetBox,sourceBox}));
+      assert(sourceBox.height>=44&&sourceBox.height<=45,`desktop source height ${sourceBox.height}`);
+      assert.equal(await source.getAttribute('title'),null);
+    });
     await trigger.click();
     const search=page.getByRole('combobox',{name:'搜索市场',exact:true});
     await check('search auto-focus',()=>expect(search).toBeFocused());
-    await check('bounded market results',()=>expect(page.locator('[cmdk-item]')).toHaveCount(40));
+    await check('bounded asset results',()=>expect(page.locator('[cmdk-item]')).toHaveCount(40));
     await search.fill('BTC');
     await chooseSelect(page,'交易所','binance');await chooseSelect(page,'市场类型','swap');
-    await check('canonical futures result isolated',()=>expect(page.locator('[cmdk-item]')).toHaveCount(1));
-    await check('one row per asset lists the filtered venue only',()=>expect(page.locator('[cmdk-item][data-asset="BTC"] .market-venue')).toHaveCount(1));
-    await check('filters preserve selection',()=>expect(trigger).toHaveText(originalSelection));
+    const filteredBtc=page.locator('[cmdk-item][data-asset="BTC"]');
+    await check('asset filters retain one aggregated asset row',async()=>{
+      await expect(page.locator('[cmdk-item]')).toHaveCount(1);
+      await expect(filteredBtc.locator('.market-venue-summary')).toContainText('Binance');
+    });
+    await check('filters preserve selected asset',()=>expect(trigger).toHaveText(originalSelection));
     await search.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
-    await check('keyboard selects Binance futures',()=>expect(trigger).toContainText('BTC / USDTBinance · USDT 永续'));
-    await check('selection closes popover and returns focus',()=>expect(trigger).toBeFocused());
-    await trigger.click();await chooseSelect(page,'市场类型','spot');
-    await page.locator('[cmdk-item][data-instrument="binance:spot:BTCUSDT"]').click();
-    await check('spot retains distinct identity',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
-    await trigger.click();await chooseSelect(page,'交易所','mexc');await chooseSelect(page,'市场类型','swap');
-    await check('unavailable result disabled',()=>expect(page.locator('[cmdk-item][data-asset="BTC"]')).toHaveAttribute('aria-disabled','true'));
-    await search.focus();await page.keyboard.press('Enter');
-    await check('disabled option cannot replace selected spot',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
-    await chooseSelect(page,'交易所','all');await chooseSelect(page,'市场类型','all');await search.fill('BTC');
+    await check('asset keyboard selection keeps a symbol-only trigger',async()=>{
+      await expect(trigger).toContainText('BTC / USDT');assert.doesNotMatch(await trigger.innerText(),/Binance|OKX|MEXC/);
+    });
+    await check('default Binance perpetual is selected as the exact source',()=>expect(source).toContainText(sourceLabel(binanceSwap)));
+    await check('selection closes picker and returns focus',()=>expect(trigger).toBeFocused());
+    await source.focus();await page.keyboard.press('Enter');
+    await check('source options are keyboard reachable with exact labels',async()=>{
+      await expect(page.getByRole('option',{name:sourceLabel(binanceSwap)})).toHaveAttribute('data-state','checked');
+      await expect(page.getByRole('option')).toHaveCount(4);
+    });
+    await page.keyboard.press('Escape');await check('source Escape returns its own focus',()=>expect(source).toBeFocused());
+    await chooseSelect(page,'行情来源','BTC-USDT-SWAP');
+    await check('source changes to exact OKX perpetual identity',()=>expect(source).toContainText('OKX · USDT 永续'));
+    await chooseSelect(page,'行情来源','binance:spot:BTCUSDT');
+    await check('source changes to exact Binance spot identity',()=>expect(source).toContainText(sourceLabel(binanceSpot)));
+    await source.click();
+    await check('unavailable source remains listed but disabled',async()=>{
+      await expect(page.getByRole('option',{name:sourceLabel(unavailableMexc)})).toBeDisabled();
+      await expect(page.getByRole('option')).toHaveCount(4);
+    });
+    await page.keyboard.press('Escape');
+    await trigger.click();await chooseSelect(page,'交易所','all');await chooseSelect(page,'市场类型','all');await search.fill('BTC');
     const btc=page.locator('[cmdk-item][data-asset="BTC"]');
-    await check('venues aggregate on one asset row',async()=>{await expect(page.locator('[cmdk-item]')).toHaveCount(1);await expect(btc.locator('.market-venue')).toHaveCount(4);await expect(btc.locator('.market-venue[data-instrument="mexc:swap:BTC_USDT"]')).toBeDisabled();});
-    await page.waitForTimeout(250);await page.screenshot({path:join(outputs,'market-picker-aggregated-MOCK.png')});
-    await btc.locator('.market-result-symbol').click();
-    await check('asset row opens Binance perpetual by default',()=>expect(trigger).toContainText('BTC / USDTBinance · USDT 永续'));
-    await trigger.click();await search.fill('BTC');await btc.locator('.market-venue[data-instrument="BTC-USDT-SWAP"]').click();
-    await check('venue pill opens that exact market',()=>expect(trigger).toContainText('BTC / USDTOKX · USDT 永续'));
-    await trigger.click();await search.fill('ETH');await page.locator('[cmdk-item][data-asset="ETH"] .market-result-symbol').click();
-    await check('asset without Binance falls back to a listed venue',()=>expect(trigger).toContainText('ETH / USDTOKX · USDT 永续'));
-    await trigger.click();await search.fill('BTC');await btc.getByRole('button',{name:'收藏 BTC',exact:true}).click();
-    await check('star in the list saves the whole asset',async()=>expect.poll(()=>state.favoritePuts?.at(-1)?.favorites).toEqual([{base:'BTC',preferred:'binance:swap:BTCUSDT'}]));
+    await check('asset row aggregates read-only venue names',async()=>{
+      await expect(page.locator('[cmdk-item]')).toHaveCount(1);
+      await expect(btc.locator('.market-venue-summary')).toContainText('Binance');
+      await expect(btc.locator('.market-venue-summary')).toContainText('MEXC');
+    });
+    await page.waitForTimeout(250);await page.screenshot({path:join(outputs,'market-source-assets-MOCK.png')});
+    await btc.getByRole('button',{name:'收藏 BTC',exact:true}).click();
+    await check('star in the asset list saves the whole asset',async()=>expect.poll(()=>state.favoritePuts?.at(-1)?.favorites).toEqual([{base:'BTC',preferred:'binance:swap:BTCUSDT'}]));
     await search.fill('');
     await check('starred assets lead the list',async()=>{await expect(page.locator('[cmdk-group-heading]').first()).toHaveText('收藏');await expect(page.locator('[cmdk-item]').first()).toHaveAttribute('data-asset','BTC');});
     await btc.getByRole('button',{name:'取消收藏 BTC',exact:true}).click();
     await check('unstar removes the asset',async()=>expect.poll(()=>state.favoritePuts?.at(-1)?.favorites).toEqual([]));
     await search.fill('NO_MATCH_123');await check('empty results provide recovery',()=>expect(page.getByText('没有匹配的市场。试试币种名称，或清除交易所和类型筛选。')).toBeVisible());
-    await page.keyboard.press('Escape');await check('Escape returns market trigger focus',()=>expect(trigger).toBeFocused());
-    state.markets=originalMarkets;await refreshNavigation(page);
+    await page.keyboard.press('Escape');await check('Escape returns asset trigger focus',()=>expect(trigger).toBeFocused());
+    await trigger.click();await search.fill('ETH');await page.locator('[cmdk-item][data-asset="ETH"] .market-result-symbol').click();
+    await check('asset without Binance falls back to its available source',async()=>{
+      await expect(trigger).toContainText('ETH / USDT');await expect(source).toContainText('OKX · USDT 永续');
+    });
+    await trigger.click();await search.fill('BTC');await page.locator('[cmdk-item][data-asset="BTC"] .market-result-symbol').click();
+    const statusBefore=requests(state,'GET','/api/status').length;
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(()=>requests(state,'GET','/api/status').length).toBeGreaterThan(statusBefore);
+    await check('source and asset selection stay stable through a rerender',async()=>{
+      await expect(trigger).toContainText('BTC / USDT');await expect(source).toContainText(sourceLabel(binanceSwap));
+      await expect(source).toBeVisible();assert.equal(await source.evaluate(node=>node.closest('[data-slot="popover-content"]')===null),true);
+    });
+    await page.getByRole('button',{name:'创建警报',exact:true}).click();
+    const dialog=page.getByRole('dialog',{name:'创建价格警报'});
+    await dialog.getByRole('combobox',{name:'警报市场'}).click();
+    await page.getByRole('combobox',{name:'搜索市场',exact:true}).fill('BTC');
+    await check('AlertEditor keeps exact venue chips and current source selection',async()=>{
+      const venue=page.locator('.ui-market-popover .market-venue[data-instrument="binance:swap:BTCUSDT"]');
+      await expect(venue).toHaveCount(1);await expect(venue).toHaveAttribute('aria-pressed','true');
+      assert((await page.locator('.ui-market-popover .market-venue').count())>1);
+    });
+    await page.keyboard.press('Escape');await expect(page.locator('.ui-market-popover')).toHaveCount(0);await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
+    state.markets=[binanceSpot];
+    state.alerts=originalAlerts.map(alert=>({...alert,instrument:binanceSpot.instrument}));
+    state.status.prices=originalPrices.map(price=>({...price,instrument:binanceSpot.instrument}));
+    await refreshNavigation(page);
+    await check('a single available venue still exposes an enabled source selector',async()=>{
+      await expect(source).toBeEnabled();await expect(source).toContainText(sourceLabel(binanceSpot));
+    });
+    state.markets=originalMarkets;state.alerts=originalAlerts.map(alert=>structuredClone(alert));state.status.prices=originalPrices;
+    await refreshNavigation(page);
     await page.getByRole('button',{name:'创建警报',exact:true}).click();
     await page.getByRole('dialog').getByLabel('警报名称').focus();await page.keyboard.press('Shift+Tab');
     await check('modal Tab remains trapped',async()=>assert(await page.getByRole('dialog').evaluate(d=>d.contains(document.activeElement))));
     await page.keyboard.press('Escape');await check('modal closing restores creating button',()=>expect(page.getByRole('button',{name:'创建警报',exact:true})).toBeFocused());
     chart = await page.locator('iframe').elementHandle();
+  });
+  for (const scenario of [
+    {name:'desktop-light',profile:'desktop',theme:'light',width:1440},
+    {name:'desktop-dark',profile:'desktop',theme:'dark',width:1440},
+    {name:'mobile-light',profile:'mobile',theme:'light',width:390},
+    {name:'mobile-dark',profile:'mobile',theme:'dark',width:390},
+    {name:'desktop-1100-light',profile:'desktop',theme:'light',width:1100},
+    {name:'desktop-1100-dark',profile:'desktop',theme:'dark',width:1100},
+  ]) await journey('03b source visual '+scenario.name,async()=>{
+    const fixture=await setup(browser,scenario.profile,true,{colorScheme:scenario.theme,reducedMotion:'reduce',chart:'tradingview'}),p=fixture.page,s=fixture.state;
+    if(scenario.profile==='desktop')await p.setViewportSize({width:scenario.width,height:1000});
+    const template=s.markets[0];
+    s.markets=[...s.markets,
+      {...template,instrument:'binance:swap:BTCUSDT',venue:'binance',type:'swap',nativeId:'BTCUSDT',symbol:'BTC/USDT:USDT',settle:'USDT',tradingViewSymbol:'BINANCE:BTCUSDT.P'},
+      {...template,instrument:'binance:spot:BTCUSDT',venue:'binance',type:'spot',nativeId:'BTCUSDT',symbol:'BTC/USDT',settle:null,tradingViewSymbol:'BINANCE:BTCUSDT'},
+      {...template,instrument:'mexc:swap:BTC_USDT',venue:'mexc',type:'swap',nativeId:'BTC_USDT',symbol:'BTC/USDT:USDT',available:false}];
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0,{timeout:15000});
+    await expect(p.locator('html')).toHaveAttribute('data-theme',scenario.theme);
+    await chooseSelect(p,'行情来源','binance:swap:BTCUSDT');
+    const source=sourceSelect(p),asset=p.getByRole('combobox',{name:'查看市场',exact:true});
+    await check('source stays inside the 248px hero at '+scenario.name,async()=>{
+      const hero=await p.locator('.signal-hero').boundingBox(),sourceBox=await source.boundingBox();
+      assert(hero&&sourceBox);assert(sourceBox.y>=hero.y&&sourceBox.y+sourceBox.height<=hero.y+hero.height+1,JSON.stringify({hero,sourceBox}));
+      if(scenario.width>900)assert(Math.abs(hero.height-248)<=1,`desktop hero height ${hero.height}`);
+      const size=44;
+      assert(sourceBox.height>=size-1&&sourceBox.height<=size+4,`source height ${sourceBox.height}`);
+      const fits=await source.evaluate(node=>({client:node.clientHeight,scroll:node.scrollHeight,text:[...node.querySelectorAll('span')].every(child=>child.getBoundingClientRect().bottom<=node.getBoundingClientRect().bottom+1)}));
+      assert(fits.client+1>=fits.scroll&&fits.text,JSON.stringify(fits));
+      await noOverflow(p);
+    });
+    await check('new source UI uses 11px-or-larger handoff type and no decorative animation at '+scenario.name,async()=>{
+      const fonts=await p.locator('.signal-hero').evaluate(root=>[
+        root.querySelector('.market-search-trigger'),root.querySelector('.market-search-selection strong'),
+        root.querySelector('.market-source-selector .ui-field-select'),
+      ].map(node=>node?parseFloat(getComputedStyle(node).fontSize):0));
+      assert(fonts.every(size=>size>=11),JSON.stringify(fonts));
+      const animation=await source.evaluate(node=>getComputedStyle(node).animationName);
+      assert.equal(animation,'none');
+      await expect(p.locator('.route-surface')).toHaveAttribute('data-motion-state','settled');
+    });
+    await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
+    await p.screenshot({path:join(outputs,`source-ui-${scenario.name}-closed-MOCK.png`),fullPage:true,animations:'disabled'});
+    await source.click();
+    await check('source options expose every exact venue without help text at '+scenario.name,async()=>{
+      await expect(p.getByRole('option')).toHaveCount(4);
+      await expect(p.getByRole('option',{name:sourceLabel(s.markets.find(m=>m.instrument==='mexc:swap:BTC_USDT'))})).toBeDisabled();
+      assert.equal(await p.locator('.market-source-selector [title]').count(),0);
+    });
+    await p.screenshot({path:join(outputs,`source-ui-${scenario.name}-source-open-MOCK.png`),fullPage:true,animations:'disabled'});
+    await p.keyboard.press('Escape');
+    await asset.click();await p.getByRole('combobox',{name:'搜索市场',exact:true}).fill('BTC');
+    await p.screenshot({path:join(outputs,`source-ui-${scenario.name}-assets-open-MOCK.png`),fullPage:true,animations:'disabled'});
+    await fixture.context.close();
   });
   await journey('03c response metadata compatibility, upstream diagnostics and no mutation replay', async () => {
     state.omitRequestIds=true;await refreshNavigation(page);
@@ -729,10 +858,24 @@ try {
     const access=p.locator('.settings-access');
     await check('normal member receives Pro invite-beta access',async()=>{
       await expect(access.locator('.settings-beta-badge')).toHaveText('Pro · 邀请测试版');
-      await expect(access.locator('.settings-beta-copy')).toContainText('所有成员均可使用完整 Pro 功能，当前不收费');
-      await expect(access.locator('.settings-features > span')).toHaveCount(7);
-      await expect(access).toContainText('1 条规则已启用');
-      await expect(access).toContainText('1 / 10');
+      await expect(access.locator('.settings-usage > div')).toHaveCount(5);
+      await expect(access.locator('.settings-usage')).toContainText('3 / 20');
+      await expect(access.locator('.settings-usage')).toContainText('1 / 8');
+      await expect(access.locator('.settings-usage')).toContainText('1 / 10');
+      await expect(access.locator('.settings-usage')).toContainText('0 / 50');
+      await expect(access.locator('.settings-usage')).toContainText('0 / 20');
+    });
+    await check('account keeps identity, raw usage and preferences without added explanation chrome',async()=>{
+      await expect(p.locator('.settings-identity')).toContainText('mock@example.test');
+      await expect(p.locator('.settings-preferences').getByRole('group',{name:'外观主题'})).toBeVisible();
+      assert.equal(await p.locator('.settings-beta-copy,.settings-features,.settings-updated,.settings-shortcuts,.settings-feedback').count(),0);
+      for(const text of [
+        '邀请测试期间，所有成员均可使用完整 Pro 功能，当前不收费。本轮测试未设置到期时间。',
+        '1 条规则已启用','按交易所与市场类型分别计数','在通知中心管理','跨交易所的标的收藏',
+        '含失败与重试，按 UTC 零点重置','异动通知的每日上限分别在通知中心设置。测试期间的容量上限用于控制服务负载。',
+        '警报、收藏和通知渠道仅属于当前账户。','外观和语言保存在当前浏览器中。',
+        '工作区设置','一起完善测试版','遇到问题或有功能建议，可以整理后发给邀请你的人。','复制反馈模板',
+      ]) assert.equal(await p.getByText(text,{exact:true}).count(),0,text);
     });
     await check('no billing or upgrade controls',async()=>{
       const control=/升级|购买|订阅|付费方案|billing|upgrade|subscribe|manage plan/i;
@@ -746,21 +889,22 @@ try {
       assert.equal(await p.getByRole('button',{name:/进入管理台/}).count(),0);
       assert.equal(await p.getByRole('navigation').getByRole('link',{name:'管理',exact:true}).count(),0);
     });
-    await check('member preferences and notification shortcut are available',async()=>{
-      await expect(p.locator('.settings-preferences').getByRole('group',{name:'外观主题'})).toBeVisible();
-      await expect(p.locator('.settings-shortcuts').getByRole('button',{name:/通知中心/})).toBeVisible();
-    });
     if(profile==='mobile')await noOverflow(p);
     await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
-    await p.screenshot({path:join(outputs,`open-alert-settings-${profile}-member-MOCK.png`),fullPage:true,animations:'disabled'});
+    await p.emulateMedia({colorScheme:'light'});await expect(p.locator('html')).toHaveAttribute('data-theme','light',{timeout:20000});
+    await p.screenshot({path:join(outputs,`open-alert-settings-${profile}-member-light-MOCK.png`),fullPage:true,animations:'disabled'});
+    await p.emulateMedia({colorScheme:'dark'});await expect(p.locator('html')).toHaveAttribute('data-theme','dark',{timeout:20000});
+    await p.screenshot({path:join(outputs,`open-alert-settings-${profile}-member-dark-MOCK.png`),fullPage:true,animations:'disabled'});
     await languageChoice(p,'EN');
     await check('English navigation and account heading use Settings naming',async()=>{
       await expect(p.getByRole('heading',{name:'Settings',level:1})).toBeVisible();
       await expect(p.getByRole('heading',{name:'Account details',level:2})).toBeVisible();
       await expect(p.locator('nav:visible a[href="/settings"]')).toHaveText(/Settings/);
+      assert.equal(await p.getByRole('heading',{name:'Workspace settings',exact:true}).count(),0);
+      assert.equal(await p.getByRole('button',{name:'Copy feedback template',exact:true}).count(),0);
     });
     await languageChoice(p,'中文');
-    await p.locator('.settings-shortcuts').getByRole('button',{name:/通知中心/}).click();
+    await nav(p,'手机通知');
     await expect(p).toHaveURL(origin+'/notifications');
     await nav(p,'设置');await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
     const adminReads=member.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length;
@@ -769,9 +913,12 @@ try {
     await check('member admin route stays guarded',async()=>assert.equal(member.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,adminReads));
     await p.goto(origin+'/account?setup=admin');
     await expect(p).toHaveURL(origin+'/settings?setup=admin');
-    await check('legacy account redirect preserves query and exposes setup only there',async()=>{
+    await check('legacy account redirect preserves query without deployment bootstrap UI',async()=>{
       await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
-      await expect(p.getByRole('heading',{name:'设置初始管理员'})).toBeVisible();
+      assert.equal(await p.locator('.settings-bootstrap').count(),0);
+      assert.equal(await p.getByRole('heading',{name:'设置初始管理员',exact:true}).count(),0);
+      assert.equal(await p.getByLabel('一次性引导令牌',{exact:true}).count(),0);
+      assert.equal(await p.getByRole('button',{name:'设为初始管理员',exact:true}).count(),0);
     });
     await member.context.close();
 
@@ -787,15 +934,25 @@ try {
       assert.equal(await a.locator('.runtime-panel,.admin-runtime,.settings-bootstrap').count(),0);
     });
     if(profile==='mobile')await noOverflow(a);
-    await a.screenshot({path:join(outputs,`open-alert-settings-${profile}-admin-MOCK.png`),fullPage:true,animations:'disabled'});
+    await a.emulateMedia({colorScheme:'light'});await expect(a.locator('html')).toHaveAttribute('data-theme','light',{timeout:20000});
+    await a.screenshot({path:join(outputs,`open-alert-settings-${profile}-admin-light-MOCK.png`),fullPage:true,animations:'disabled'});
+    await a.emulateMedia({colorScheme:'dark'});await expect(a.locator('html')).toHaveAttribute('data-theme','dark',{timeout:20000});
+    await a.screenshot({path:join(outputs,`open-alert-settings-${profile}-admin-dark-MOCK.png`),fullPage:true,animations:'disabled'});
     if(profile==='desktop')await a.getByRole('navigation').getByRole('link',{name:'管理',exact:true}).click();
     else await a.getByRole('button',{name:/进入管理台/}).click();
     await expect(a).toHaveURL(origin+'/admin');
-    await check('administrator runtime details live only in the guarded admin page',async()=>{
+    await check('administrator runtime omits notification-provider and deployment chrome',async()=>{
       await expect(a.getByRole('heading',{name:'管理',level:1})).toBeVisible();
-      await expect(a.locator('.admin-runtime').getByRole('heading',{name:'后台运行状态'})).toBeVisible();
-      await expect(a.locator('.admin-runtime')).toContainText('数据库');
-      await expect(a.locator('.admin-runtime')).toContainText('通知投递');
+      const runtime=a.locator('.admin-runtime');
+      await expect(runtime.getByRole('heading',{name:'后台运行状态'})).toBeVisible();
+      assert.deepEqual(await runtime.locator('dt').allTextContents(),['数据库','后台监控','交易所行情','邮件服务']);
+      assert.equal(await runtime.getByText('通知投递',{exact:true}).count(),0);
+      assert.equal(await runtime.getByText('通知服务',{exact:true}).count(),0);
+      assert.equal(await runtime.getByText('provider_not_checked',{exact:true}).count(),0);
+      assert.equal(await runtime.locator('code').count(),0);
+      assert.equal(await a.locator('.deployment-panel').count(),0);
+      assert.equal(await a.getByRole('heading',{name:'部署配置',exact:true}).count(),0);
+      assert.equal(await a.getByRole('button',{name:'查看部署配置说明',exact:true}).count(),0);
     });
     await admin.context.close();
   });
@@ -1130,21 +1287,46 @@ try {
     }));
     s.status.prices=[];
     await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    const asset= p.getByRole('combobox',{name:'查看市场',exact:true}),source=sourceSelect(p);
+    await asset.click();await p.getByRole('combobox',{name:'搜索市场',exact:true}).fill('BTC');
+    await check('six exact markets remain one searchable BTC asset',async()=>{
+      await expect(p.locator('[cmdk-item][data-asset="BTC"]')).toHaveCount(1);
+      await expect(p.locator('[cmdk-item][data-asset="BTC"] .market-venue-summary')).toContainText('Binance');
+      await expect(p.locator('[cmdk-item][data-asset="BTC"] .market-venue-summary')).toContainText('OKX');
+      await expect(p.locator('[cmdk-item][data-asset="BTC"] .market-venue-summary')).toContainText('MEXC');
+    });
+    await p.locator('[cmdk-item][data-asset="BTC"] .market-result-symbol').click();
+    await check('asset selection defaults to the Binance source while the picker shows only the symbol',async()=>{
+      await expect(asset).toContainText('BTC / USDT');assert.doesNotMatch(await asset.innerText(),/Binance|OKX|MEXC/);
+      await expect(source).toContainText(sourceLabel(s.markets.find(market=>market.instrument==='binance:swap:BTCUSDT')));
+    });
+    const statusBefore=requests(s,'GET','/api/status').length;
+    await p.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(()=>requests(s,'GET','/api/status').length).toBeGreaterThan(statusBefore);
+    await check('source identity survives background rerenders',()=>expect(source).toContainText(sourceLabel(s.markets.find(market=>market.instrument==='binance:swap:BTCUSDT'))));
     for(const market of s.markets){
-      await p.getByRole('combobox',{name:'查看市场',exact:true}).click();
-      await chooseSelect(p,'交易所',market.venue);await chooseSelect(p,'市场类型',market.type);
-      await p.locator(`[cmdk-item][data-instrument="${market.instrument}"]`).click();
+      await chooseSelect(p,'行情来源',market.instrument);
+      await check(`${market.instrument} source selector keeps its exact label`,()=>expect(source).toContainText(sourceLabel(market)));
+      await check(`${market.instrument} quote request uses the exact instrument`,async()=>expect.poll(()=>requests(s,'GET','/api/quote').at(-1)?.instrument).toBe(market.instrument));
       await check(`${market.instrument} independent quote without monitored tick`,()=>expect(p.locator('.price-block')).toContainText('后台参考成交'));
       await check(`${market.instrument} exact widget mapping`,async()=>assert.equal(JSON.parse(await p.locator('.tradingview-widget-container script').textContent()).symbol,market.tradingViewSymbol));
       await check(`${market.instrument} panel scope`,()=>expect(p.locator('.alert-row')).toHaveCount(originalAlerts.filter(a=>a.instrument===market.instrument).length));
       await p.getByRole('button',{name:'创建警报',exact:true}).click();
-      await check(`${market.instrument} new alert inherits exact venue and product`,()=>expect(p.getByRole('dialog').getByRole('combobox',{name:'警报市场'})).toContainText(`${market.venue==='binance'?'Binance':market.venue.toUpperCase()} · ${market.type==='spot'?'现货':'USDT 永续'}`));
+      const dialog=p.getByRole('dialog',{name:'创建价格警报'});
+      await check(`${market.instrument} new alert inherits exact venue and product`,()=>expect(dialog.getByRole('combobox',{name:'警报市场'})).toContainText(`${market.venue==='binance'?'Binance':market.venue.toUpperCase()} · ${market.type==='spot'?'现货':'USDT 永续'}`));
+      await dialog.getByRole('combobox',{name:'警报市场'}).click();
+      await check(`${market.instrument} AlertEditor still exposes exact venue chips`,async()=>{
+        const venue=p.locator(`.ui-market-popover .market-venue[data-instrument="${market.instrument}"]`);
+        await expect(venue).toHaveCount(1);await expect(venue).toHaveAttribute('aria-pressed','true');
+        await expect(p.locator('.ui-market-popover .market-venues button')).toHaveCount(6);
+      });
+      await p.keyboard.press('Escape');await expect(p.locator('.ui-market-popover')).toHaveCount(0);await expect(dialog).toBeVisible();
       if(market.venue==='mexc'&&market.type==='swap'){
-        await p.getByRole('dialog').getByLabel('警报名称').fill('MOCK MEXC perpetual');
-        await p.getByRole('dialog').getByLabel('价格 · USDT').fill('65000');
-        await p.getByRole('dialog').getByRole('button',{name:'创建警报',exact:true}).click();await expect(p.getByRole('dialog')).toHaveCount(0);
+        await dialog.getByLabel('警报名称').fill('MOCK MEXC perpetual');
+        await dialog.getByLabel('价格 · USDT').fill('65000');
+        await dialog.getByRole('button',{name:'创建警报',exact:true}).click();await expect(dialog).toHaveCount(0);
         await check('saved alert preserves exact MEXC perpetual instrument',async()=>assert.equal(s.alerts.at(-1).instrument,'mexc:swap:BTC_USDT'));
-      }else{await p.keyboard.press('Escape');}
+      }else{await p.keyboard.press('Escape');await expect(dialog).toHaveCount(0);}
     }
     await check('switching never mutates existing alert identities/generations',async()=>assert.deepEqual(s.alerts.slice(0,originalAlerts.length),originalAlerts));
     await p.getByRole('tab',{name:'全部警报',exact:true}).click();

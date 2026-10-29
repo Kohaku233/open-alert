@@ -20,6 +20,7 @@ import { setChartKind, useChartKind } from '../chartPreference.js';
 import { AlertEditor } from '../components/AlertEditor.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { MarketPicker } from '../components/MarketPicker.js';
+import { MarketSourceSelector } from '../components/MarketSourceSelector.js';
 import { FirstRunGuide } from '../components/FirstRunGuide.js';
 import { useMarketQuote } from '../useMarketQuote.js';
 import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
@@ -160,7 +161,8 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
 
     <section className="market-header signal-hero" aria-label={t("当前市场信号")}>
       <div className="signal-hero-main">
-        <MarketPicker compact label={t("查看市场")} markets={data.markets} value={selected} onChange={setSelected} disabled={busy} stale={data.marketStale} error={error} onRetry={() => void model.refresh()}/>
+        <div className="market-selection"><MarketPicker compact assetOnly label={t("查看市场")} markets={data.markets} value={selected} onChange={setSelected} disabled={busy} stale={data.marketStale} error={error} onRetry={() => void model.refresh()}/>
+          <MarketSourceSelector markets={data.markets} value={selected} onChange={setSelected} disabled={busy}/></div>
         <div className="price-block"><strong><span className="price-value" style={{fontSize:priceText.length > 10 ? `${Math.max(24, 540 / priceText.length)}px` : undefined}}><PriceDigits text={priceText} price={tick?.price} instrument={selected}/></span><small className="price-unit"> {marketQuote(selected, market)}</small></strong><span><i className={`quote-pip ${fresh ? 'is-fresh' : ''}`}/>{tick ? `${fresh ? t("后台参考成交") : t("报价更新暂停")} · ${new Date(tick.timestamp ?? tick.observedAt).toLocaleTimeString(undefined, {hour12:false})}` : quoteState.error ? t("报价暂时不可用") : 'ACQUIRING SIGNAL'}<small className="mobile-price-unit"> · {marketQuote(selected, market)}</small></span></div>
       </div>
       <SignalTrace instrument={selected} tick={tick} alerts={marketAlerts} fresh={fresh}/>

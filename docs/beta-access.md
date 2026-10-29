@@ -8,8 +8,8 @@ Existing capacity limits remain in force: alerts and distinct market slots use d
 
 `GET /api/account` returns the current user's identity, access policy and measured usage. It uses the normal authenticated, disabled-account and rate-limit guards, accepts no query parameters, and never returns credentials, billing instruments or operator diagnostics. Unsupported runtime-specific counts are null, not a fabricated zero.
 
-`/settings` is the user settings page. `/account` redirects there and preserves the query string. It presents account details, Pro beta access/usage, local browser preferences, notification/monitoring links and a copyable feedback template. Feedback is not submitted automatically.
+`/settings` is the user settings page. `/account` redirects there and preserves the query string. It presents account details, the Pro beta badge, measured usage and local browser preferences.
 
-Runtime component details are on the administrator page. First-deployment administrator bootstrap remains available only through the deliberate `/settings?setup=admin` entry and still requires the verified account, deployment token and server-side bootstrap checks.
+Runtime component details are on the administrator page. The deployment guide, notification-provider health row and browser administrator-bootstrap form are removed from the product UI. The existing token-protected server bootstrap API remains unchanged for operator setup.
 
 No payment checkout, billing schema or automatic beta expiry is enabled by this release.

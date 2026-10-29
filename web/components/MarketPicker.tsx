@@ -18,10 +18,11 @@ type Row = AssetGroup & { shown: DirectoryMarket[]; target: DirectoryMarket | un
 
 /** Searches by underlying asset: one row per asset, its venues on the right. Choosing the row opens
  * Binance when it lists the asset (else the first venue that does); a venue chip opens that exact market. */
-export function MarketPicker({ compact = false, labelOutside = false, label, markets, value, onChange, disabled = false, stale = false, error = '', onRetry }: {
+export function MarketPicker({ compact = false, labelOutside = false, assetOnly = false, label, markets, value, onChange, disabled = false, stale = false, error = '', onRetry }: {
     label: string;
     compact?: boolean;
     labelOutside?: boolean;
+    assetOnly?: boolean;
     markets: readonly DirectoryMarket[];
     value: string;
     onChange: (instrument: string) => void;
@@ -86,14 +87,14 @@ export function MarketPicker({ compact = false, labelOutside = false, label, mar
           {canStar && <Button type="button" variant="ghost" className="market-star" aria-pressed={isStarred} disabled={favorites.saving}
             aria-label={isStarred ? t('取消收藏 {0}', group.base) : t('收藏 {0}', group.base)} title={isStarred ? t('取消收藏 {0}', group.base) : t('收藏 {0}（所有交易所）', group.base)}
             onPointerDown={event => event.stopPropagation()} onClick={event => { stop(event); toggleFavorite(group.base, group.target?.instrument ?? null); }}><Star aria-hidden="true"/></Button>}
-          <span className="market-result-symbol"><strong>{group.base}<em> / USDT</em></strong><small>{group.target ? `${venueLabels[marketIdentity(group.target.instrument, group.target).venue!]} · ${typeLabels[marketIdentity(group.target.instrument, group.target).type!]}` : t('暂不可用')}</small></span>
-          <span className="market-venues">{group.shown.map(market => {
+          <span className="market-result-symbol"><strong>{group.base}<em> / USDT</em></strong>{!assetOnly&&<small>{group.target ? `${venueLabels[marketIdentity(group.target.instrument, group.target).venue!]} · ${typeLabels[marketIdentity(group.target.instrument, group.target).type!]}` : t('暂不可用')}</small>}</span>
+          {assetOnly?<span className="market-venue-summary">{[...new Set(group.shown.map(m=>marketIdentity(m.instrument,m).venue))].map(v=>v?venueLabels[v]:'').join(' · ')}</span>:<span className="market-venues">{group.shown.map(market => {
             const m = marketIdentity(market.instrument, market), live = selectableMarket(market), here = sameMarket(market.instrument, value);
             return <Button key={market.instrument} type="button" variant="ghost" className="market-venue" data-instrument={market.instrument} aria-pressed={here} disabled={!live}
               aria-label={marketLabel(market.instrument, market) + (live ? '' : t(' · 不可用'))} title={`${m.nativeId}${live ? '' : t(' · 不可用')}`}
               onPointerDown={event => event.stopPropagation()} onClick={event => { stop(event); if (live) choose(market.instrument); }}>
               {venueLabels[m.venue!]}<small>{m.type === 'swap' ? t('永续') : t('现货')}</small></Button>;
-          })}</span>
+          })}</span>}
           <Check className={current ? 'market-check' : 'market-check invisible'} aria-hidden="true" />
         </CommandItem>;
     }
@@ -102,7 +103,7 @@ export function MarketPicker({ compact = false, labelOutside = false, label, mar
     <Popover open={open && !disabled} onOpenChange={next => { if (!disabled || !next) setOpen(next); }}>
       <PopoverTrigger asChild><Button id={`${id}-trigger`} type="button" className="market-search-trigger" role="combobox" title={marketLabel(value, selected)} aria-label={label} aria-expanded={open && !disabled} disabled={disabled}>
         {!labelOutside && <span className="market-search-label">{label}</span>}
-        <span className={`market-search-selection ${compact ? 'compact-market-identity' : ''}`}>{value ? compact ? <><strong>{identity.base || identity.nativeId}<em> / {identity.quote || '—'}</em></strong><small>{identity.venue ? venueLabels[identity.venue!] : ''} · {identity.type ? typeLabels[identity.type!] : ''}</small></> : marketLabel(value, selected) : t("请选择市场")}{unavailable && <span className="amber-text">{t(" · 不可用，已保留")}</span>}</span>
+        <span className={`market-search-selection ${compact ? 'compact-market-identity' : ''}`}>{value ? compact ? <><strong>{identity.base || identity.nativeId}<em> / {identity.quote || '—'}</em></strong>{!assetOnly&&<small>{identity.venue ? venueLabels[identity.venue!] : ''} · {identity.type ? typeLabels[identity.type!] : ''}</small>}</> : marketLabel(value, selected) : t("请选择市场")}{unavailable && <span className="amber-text">{t(" · 不可用，已保留")}</span>}</span>
         <ChevronDown className="market-trigger-chevron" aria-hidden="true" />
       </Button></PopoverTrigger>
       <PopoverContent className="ui-market-popover" align="start" aria-label={t("搜索市场")} onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }}>
@@ -118,7 +119,7 @@ export function MarketPicker({ compact = false, labelOutside = false, label, mar
             {others.length > 0 && <CommandGroup heading={starred.length ? t('全部标的') : undefined} className="market-group">{others.map(group => row(group, false))}</CommandGroup>}
             {!starred.length && !others.length && <EmptyState className="market-search-empty">{markets.length ? t("没有匹配的市场。试试币种名称，或清除交易所和类型筛选。") : t("市场目录暂时为空。请重新读取状态。")}</EmptyState>}
           </CommandList>
-          <div className="market-search-help"><p className="small muted">{t("点标的打开默认交易所（优先 Binance），点右侧交易所直接切换；星标收藏整个标的。不可用的市场不能选择。")}</p>
+          <div className="market-search-help">
           <FormError message={error ? t("目录刷新未完成：") + error : favorites.error}/>
           {onRetry && <Button type="button" disabled={disabled} onClick={onRetry}>{t("重新读取市场目录")}</Button>}
           {stale && <p className="small amber-text">{t("市场目录已过期。保存时由服务端再次确认可用性。")}</p>}</div>

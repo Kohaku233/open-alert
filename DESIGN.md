@@ -155,6 +155,8 @@ This replaces the previous Signal Almanac identity. Design authority is the READ
 
 **Key Characteristics:**
 
+Current SaaS surface constraints (2026-10-29, explicit user corrections): the older self-hosting screen descriptions below are historical visual references, not permission to restore removed product sections. The product UI has no deployment-configuration card or browser administrator-bootstrap form. Runtime health is administrator-only and excludes the notification-provider row; `provider_not_checked` must not appear as a default health warning. Settings contains account details, the Pro beta badge with numeric usage, and preferences; do not add a workspace/feedback card, feature-marketing tags, prose hints or usage timestamps during a refactor. Dashboard asset search stays aggregated with favorites; the exact quote source is selected in a separate control below the asset picker. Changes must preserve the existing typography, semantic colors, 248px desktop instrument and shared GSAP lifecycle. See `docs/ui-correction-20261029.md` for provenance and affected modules.
+
 - Split-circle Breakout SVG identity with displaced upper and lower halves.
 - Charcoal and ivory structure; lime signals state and copper signals a lower threshold, pause, latch or warning.
 - Geist and Noto Sans SC interface, Geist Mono telemetry, and restrained Unbounded page indexes.
