@@ -51,28 +51,89 @@
 .native-chart-shell[data-drawing="true"] .native-chart { touch-action: none; cursor: crosshair; }
 /* Lightweight Charts' required attribution logo; keep it legible but quiet. */
 .native-chart a[href*="tradingview"] { opacity: .45; }
-/* Drawing toolbar: icon-only segments that share the timeframe pill language. */
-.native-draw-tools {
-  display: inline-flex;
+/* Drawing rail: TradingView's vertical toolbar, floating on the plot's left edge. Each group shows its
+   last-used tool with a chevron flyout; starred tools are pinned below the groups. */
+.draw-rail {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 2px;
-  flex: none;
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
+  max-height: calc(100% - 44px);
+  padding: 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .22);
+  animation: draw-rail-in .22s ease-out both;
 }
-.native-chart-status:empty + .native-draw-tools { margin-left: auto; }
-.native-chart-bar .native-draw-tools [data-slot="button"] { width: 30px; padding: 0; justify-content: center; }
-.native-chart-bar .native-draw-tools [data-slot="button"].is-confirming { width: auto; padding: 0 10px; gap: 6px; color: var(--danger); }
-.native-draw-tools [data-slot="button"]:disabled { opacity: .35; }
-.native-draw-tools svg { width: 14px; height: 14px; }
-.native-draw-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
-/* TradingView-style OHLC legend, top-left over the plot. */
+.draw-rail.is-collapsed { padding: 3px; }
+.draw-rail-group, .draw-rail-favorites { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.draw-rail [data-slot="button"] {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted-foreground);
+}
+.draw-rail [data-slot="button"]:hover:not(:disabled) { background: var(--field); color: var(--text); }
+.draw-rail [aria-pressed="true"] { background: var(--selected); color: var(--signal); }
+.draw-rail [data-slot="button"]:disabled { opacity: .35; }
+.draw-rail svg { width: 16px; height: 16px; }
+.draw-rail [data-slot="button"].draw-rail-more { position: absolute; right: -3px; bottom: 1px; width: 12px; height: 12px; min-height: 12px; border-radius: 4px; opacity: .55; }
+.draw-rail-more svg { width: 9px; height: 9px; }
+.draw-rail-group:hover .draw-rail-more, .draw-rail-more[aria-expanded="true"] { opacity: 1; color: var(--signal); }
+.draw-rail-divider { flex: none; width: 18px; height: 1px; margin: 3px 0; background: var(--line); }
+.draw-rail-badge { position: absolute; right: 3px; bottom: 2px; font: 700 8px/1 var(--mono-font); font-style: normal; }
+.draw-rail [data-slot="button"].is-confirming { width: auto; padding: 0 10px; gap: 6px; color: var(--danger); white-space: nowrap; }
+@keyframes draw-rail-in { from { opacity: 0; transform: translateX(-6px); } }
+[data-slot="popover-content"].draw-flyout { width: 236px; padding: 8px; border-color: var(--line); border-radius: 14px; background: var(--card); }
+.draw-flyout-title { margin: 2px 8px 6px; font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
+.draw-flyout ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.draw-flyout li { display: flex; align-items: center; border-radius: 9px; }
+.draw-flyout li:hover { background: var(--field); }
+.draw-flyout li.is-current { background: var(--selected); }
+.draw-flyout [data-slot="button"] { height: 32px; min-height: 32px; border: 0; background: none; }
+.draw-flyout .draw-flyout-pick { flex: 1; min-width: 0; justify-content: flex-start; gap: 10px; padding: 0 8px; font-size: 12px; font-weight: 400; color: var(--text); }
+.draw-flyout-pick svg { width: 15px; height: 15px; color: var(--muted-foreground); }
+.draw-flyout li.is-current .draw-flyout-pick, .draw-flyout li.is-current .draw-flyout-pick svg { color: var(--signal); }
+.draw-flyout-pick span { flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; }
+.draw-flyout-pick kbd { font: 9px/1 var(--mono-font); letter-spacing: .04em; color: var(--muted-foreground); }
+.draw-flyout .draw-flyout-star { width: 28px; padding: 0; color: var(--muted-foreground); opacity: .5; }
+.draw-flyout li:hover .draw-flyout-star, .draw-flyout-star[aria-pressed="true"] { opacity: 1; }
+.draw-flyout-star svg { width: 13px; height: 13px; }
+.draw-flyout-star[aria-pressed="true"] { color: var(--amber); }
+.draw-flyout-star[aria-pressed="true"] svg { fill: currentColor; }
+/* Inline editor for text, note and callout drawings, opened at the placed point. */
+.chart-text-edit { position: absolute; z-index: 7; transform: translate(-4px, -50%); }
+.chart-text-edit textarea {
+  width: 220px;
+  min-height: 38px;
+  padding: 8px 10px;
+  resize: none;
+  border: 1px solid var(--signal);
+  border-radius: 10px;
+  background: var(--card);
+  font: 13px/1.4 var(--body-font);
+  color: var(--text);
+  outline: none;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .3);
+}/* TradingView-style OHLC legend, top-left over the plot. */
 .chart-legend {
   position: absolute;
   z-index: 3;
   top: 10px;
-  left: 14px;
+  left: 62px;
   right: calc(var(--price-scale-width, 60px) + 14px);
   display: grid;
   gap: 4px;
@@ -180,14 +241,14 @@
   .native-chart-bar [data-slot="button"] { min-height: 36px; height: 36px; }
   .native-chart-status { display: none; }
   .native-chart-bar { flex-wrap: wrap; row-gap: 6px; }
-  .native-draw-tools { width: 100%; margin-left: 0; padding: 6px 0 0; border-left: 0; border-top: 1px solid var(--line); }
-  .native-chart-bar .native-draw-tools [data-slot="button"] { width: 36px; }
-  .chart-legend { top: 8px; left: 10px; font-size: 10px; }
+  .draw-rail { top: 8px; left: 8px; }
+  .draw-rail [data-slot="button"] { width: 36px; height: 36px; min-height: 36px; }
+  .chart-legend { top: 8px; left: 58px; font-size: 10px; }
   .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
 }
 /* Phones: keep close + change on one line; full OHL appears from tablet width up. */
 @media (max-width: 520px) { .chart-legend-ohl { display: none; } }
-@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } .draw-rail { animation: none; } }
 
 /* Timeframes: starred intervals as pills, a full menu, and a TradingView-style typed entry. */
 .timeframe-favorites { display: inline-flex; align-items: center; gap: 2px; flex: none; }

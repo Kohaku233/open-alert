@@ -1,15 +1,14 @@
 import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, createChart } from 'lightweight-charts';
 import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
 import { DrawingManager } from 'lightweight-charts-drawing';
-import type { DrawingKind } from 'lightweight-charts-drawing';
-import { Eye, EyeOff, Minus, MousePointer2, MoveUpRight, RectangleHorizontal, Rows3, Ruler, Slash, Trash2, X } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import type { Drawing, DrawingKind } from 'lightweight-charts-drawing';
 import type { CSSProperties } from 'react';
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
 import { bucketEnd, bucketStart, parseTimeframe, timeframeSupported } from '../../src/contracts/timeframes.js';
 import { TimeframeMenu } from './TimeframeMenu.js';
+import { ALL_TOOLS, DrawingToolbar } from './DrawingToolbar.js';
 import type { MarketQuote } from '../../src/markets/quotes.js';
 import { request, errorText } from '../api.js';
 import { t } from '../i18n.js';
@@ -20,14 +19,6 @@ import { Button } from './ui/button.js';
 
 const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
-const TOOLS: { kind: DrawingKind; icon: LucideIcon; label: string }[] = [
-  { kind: 'trend-line', icon: Slash, label: '趋势线' },
-  { kind: 'ray', icon: MoveUpRight, label: '射线' },
-  { kind: 'horizontal-line', icon: Minus, label: '水平线' },
-  { kind: 'rectangle', icon: RectangleHorizontal, label: '矩形' },
-  { kind: 'fib-retracement', icon: Rows3, label: '斐波那契回撤' },
-  { kind: 'price-range', icon: Ruler, label: '价格区间' },
-];
 type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 // Lightweight Charts renders UTC; shift into the viewer's zone so axis labels read as local time.
@@ -96,7 +87,9 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const toolRef = useRef<DrawingKind | null>(null);
   toolRef.current = tool;
   const [drawState, setDrawState] = useState({ count: 0, selected: 0, visible: true });
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [manager, setManager] = useState<DrawingManager | null>(null);
+  // Text tools (text, note, callout) ask the host for an editor at the placed point.
+  const [textEdit, setTextEdit] = useState<{ drawing: Drawing; x: number; y: number; value: string } | null>(null);
   const [olderState, setOlderState] = useState<'idle' | 'loading' | 'done'>('idle');
   const hoverHold = useRef(false);
   const tickSize = Number(market.tickSize) || 0.01;
@@ -128,8 +121,9 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       drawings.on('change', () => { saveDrawings(market.instrument, drawings.exportJSON()); sync(); }),
       drawings.on('selection', sync), drawings.on('visibility', sync),
       drawings.on('tool', kind => { setTool(kind); if (kind) setHover(null); }),
+      drawings.on('textEdit', (drawing, at) => setTextEdit({ drawing, x: at.x, y: at.y, value: drawing.text ?? '' })),
     ];
-    drawingsRef.current = drawings; sync(); setTool(null);
+    drawingsRef.current = drawings; setManager(drawings); sync(); setTool(null); setTextEdit(null);
     const onCrosshair = (param: MouseEventParams) => {
       setHoverIndex(param.point && param.time !== undefined ? barIndexAt(bars.current, param.time) : null);
       if (drag.current || toolRef.current) return;
@@ -141,7 +135,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     return () => {
       chart.unsubscribeCrosshairMove(onCrosshair);
       for (const off of offDrawing) off();
-      drawings.destroy(); drawingsRef.current = null;
+      drawings.destroy(); drawingsRef.current = null; setManager(null);
       lines.current.clear(); chartRef.current = null; chart.remove();
     };
   }, [market.instrument, market.tickSize]);
@@ -351,17 +345,13 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     setFrame(next);
     try { localStorage.setItem(FRAME_KEY, next); } catch { /* keep in-memory choice */ }
   }
-  function chooseTool(kind: DrawingKind | null) {
-    const drawings = drawingsRef.current;
-    if (!drawings) return;
-    drawings.setTool(drawings.tool() === kind ? null : kind);
-    setSelected(null);
+  function commitText(save: boolean) {
+    const edit = textEdit, drawings = drawingsRef.current;
+    setTextEdit(null);
+    if (!edit || !drawings || !save) return;
+    const current = drawings.get(edit.drawing.id);
+    if (current) drawings.update({ ...current, text: edit.value.trim() });
   }
-  function clearDrawings() {
-    if (!confirmClear) { setConfirmClear(true); window.setTimeout(() => setConfirmClear(false), 3000); return; }
-    drawingsRef.current?.clear(); setConfirmClear(false);
-  }
-  const removeSelected = () => { const drawings = drawingsRef.current; if (drawings) for (const id of [...drawings.selection()]) drawings.remove(id); };
   const selectedAlert = alerts.find(alert => alert.id === selected);
   // TradingView-style legend: hovered candle, else the forming one; change is against the previous close.
   const index = hoverIndex !== null && hoverIndex >= 0 ? hoverIndex : bars.current.length - 1;
@@ -371,24 +361,20 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const change = shown ? shown.close - base : 0;
   const sign = change >= 0 ? '+' : '−';
   const remaining = last ? countdown(bucketEnd(last.time, frame) - now) : '';
-  const toolLabel = TOOLS.find(item => item.kind === tool)?.label;
+  const toolLabel = ALL_TOOLS.find(item => item.kind === tool)?.label;
   return <>
     <div className="native-chart-bar" role="group" aria-label={t('K 线周期')}>
       <TimeframeMenu value={frame} onChange={chooseFrame} supported={supported} keyboardScope={shell}/>
       <span className="native-chart-status" role="status">{olderState === 'loading' ? t('正在加载更早的 K 线…') : olderState === 'done' ? t('已到交易所最早数据') : ''}</span>
-      <div className="native-draw-tools" role="toolbar" aria-label={t('画线工具')}>
-        <Button type="button" variant="ghost" aria-pressed={tool === null} aria-label={t('光标')} title={t('光标')} onClick={() => chooseTool(null)}><MousePointer2 aria-hidden="true"/></Button>
-        {TOOLS.map(({ kind, icon: Icon, label }) => <Button key={kind} type="button" variant="ghost" aria-pressed={tool === kind} aria-label={t(label)} title={t(label)} onClick={() => chooseTool(kind)}><Icon aria-hidden="true"/></Button>)}
-        <span className="native-draw-divider" aria-hidden="true"/>
-        <Button type="button" variant="ghost" aria-label={drawState.visible ? t('隐藏画线') : t('显示画线')} title={drawState.visible ? t('隐藏画线') : t('显示画线')} disabled={!drawState.count}
-          onClick={() => drawingsRef.current?.setDrawingsVisible(!drawState.visible)}>{drawState.visible ? <Eye aria-hidden="true"/> : <EyeOff aria-hidden="true"/>}</Button>
-        {drawState.selected > 0 && <Button type="button" variant="ghost" aria-label={t('删除选中画线')} title={t('删除选中画线')} onClick={removeSelected}><X aria-hidden="true"/></Button>}
-        <Button type="button" variant="ghost" className={confirmClear ? 'is-confirming' : undefined} aria-label={confirmClear ? t('再点一次清空') : t('清空画线')} title={confirmClear ? t('再点一次清空') : t('清空画线')} disabled={!drawState.count} onClick={clearDrawings}>
-          <Trash2 aria-hidden="true"/>{confirmClear && <span>{t('再点一次清空')}</span>}</Button>
-      </div>
     </div>
     <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px` } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
+      {manager && state !== 'failed' && <DrawingToolbar manager={manager} tool={tool} state={drawState} scope={shell}/>}
+      {textEdit && <form className="chart-text-edit" style={{ left: textEdit.x, top: textEdit.y }} onSubmit={event => { event.preventDefault(); commitText(true); }}>
+        <textarea autoFocus aria-label={t('画线文字')} maxLength={500} value={textEdit.value} placeholder={t('输入文字，Enter 确认')}
+          onChange={event => setTextEdit({ ...textEdit, value: event.target.value })} onBlur={() => commitText(true)}
+          onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); commitText(false); } else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); commitText(true); } }}/>
+      </form>}
       {state === 'ready' && shown && <div className={`chart-legend ${change >= 0 ? 'up' : 'down'}`} data-testid="chart-legend">
         <span className="chart-legend-row"><span className="chart-legend-ohl"><b>O</b><em>{formatQuotePrice(shown.open)}</em><b>H</b><em>{formatQuotePrice(shown.high)}</em><b>L</b><em>{formatQuotePrice(shown.low)}</em></span><b>C</b><em>{formatQuotePrice(shown.close)}</em>
           <em className="chart-legend-change">{sign}{formatQuotePrice(Math.abs(Number(change.toPrecision(8))))} ({sign}{Math.abs(change / base * 100).toFixed(2)}%)</em></span>

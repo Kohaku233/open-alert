@@ -79,7 +79,7 @@
 .ui-market-popover [role="status"]{padding:0 14px 12px;font-size:11px}
 .market-command-list{padding:4px 6px;border-top:1px solid var(--line);scroll-padding:4px}
 .market-command-item{min-height:58px;cursor:pointer;gap:12px;font-size:12px;scroll-margin:4px}
-.market-command-item[data-selected="true"]{background:var(--selected);color:var(--text)}
+.market-command-item[data-selected="true"]{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
 .market-result-symbol{flex:1;display:flex;flex-direction:column;gap:4px}
 .market-result-symbol strong{font-size:13px;font-weight:500}
 .market-result-symbol small{font:11px Consolas,monospace;color:var(--muted-foreground)}

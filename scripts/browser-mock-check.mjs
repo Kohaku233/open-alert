@@ -53,7 +53,7 @@ function nativeSession(state) {
   const user = { ...state.status.user, emailVerified: true, image: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   return { user, session: { id: 'mock-session', userId: user.id, token: 'mock-native-token', expiresAt: new Date(Date.now()+86400000).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ipAddress: '127.0.0.1', userAgent: 'MOCK' } };
 }
-async function setup(browser, profile, authenticated = false, preferences = {}) {
+async function setup(browser, profile, authenticated = false, { chart = 'tradingview', ...preferences } = {}) {
   const state = { ...F.makeBrowserFixture(), requests: [], failNext: null, stale: false, chartFail: false, nextId: 1, holdStatus: null, holdSettings: null, googleEnabled: false, emailSenderMode: 'console', otpError: null, inviteDelivery: {status:'not_attempted',reason:'resend_sandbox'}, socialError: null };
   const options = profile === 'mobile' ? { ...devices['iPhone 15'], viewport: { width: 390, height: 844 }, defaultBrowserType: undefined } : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 };
   const context = await browser.newContext({ ...options, locale: 'zh-CN', colorScheme: 'dark', ...preferences, serviceWorkers: 'block' });
@@ -63,6 +63,8 @@ async function setup(browser, profile, authenticated = false, preferences = {}) 
     const attach = () => { if (window.top !== window) return; if (!document.body) return; if (document.getElementById('mock-label')) return; const banner = document.createElement('div'); banner.id = 'mock-label'; banner.textContent = mark; banner.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;z-index:99999;text-align:center;background:#ffdd7a;color:#15222f;font:700 11px/22px sans-serif;pointer-events:none'); document.body.append(banner); };
     document.addEventListener('DOMContentLoaded', attach);
   }, { mark: label, hide: process.env.OPEN_ALERT_HIDE_MOCK_LABEL === '1' });
+  // The built-in chart is the product default; older journeys pin TradingView so their embed checks stay meaningful.
+  if (chart) await context.addInitScript(kind => { try { if (!localStorage.getItem('open-alert-chart')) localStorage.setItem('open-alert-chart', kind); } catch {} }, chart);
   const page = await context.newPage(); page.setDefaultTimeout(6000);
   page.on('pageerror', error => runtimeErrors.push(`${profile}: ${error.message}`));
   page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource|ERR_FAILED/.test(message.text())) runtimeErrors.push(`${profile}: ${message.text()}`); });
@@ -306,7 +308,7 @@ try {
     await check('HttpOnly fixture cookie', async () => assert((await context.cookies(origin)).some(c => c.name === cookieName && c.httpOnly)));
     await refreshNavigation(page);
     await check('reload session persists', () => expect(page.getByRole('heading', { name: '行情与警报',exact:true })).toBeVisible());
-    await check('no browser token storage', async () => assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[],[]]));
+    await check('no browser token storage', async () => assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage).filter(k => k !== 'open-alert-chart'), Object.keys(sessionStorage)]), [[],[]]));
   });
   let chart;
   await journey('02 queued/sending locks, uncertainty and desktop MOCK capture', async () => {
@@ -363,6 +365,7 @@ try {
     await search.fill('BTC');
     await chooseSelect(page,'交易所','binance');await chooseSelect(page,'市场类型','swap');
     await check('canonical futures result isolated',()=>expect(page.locator('[cmdk-item]')).toHaveCount(1));
+    await check('one row per asset lists the filtered venue only',()=>expect(page.locator('[cmdk-item][data-asset="BTC"] .market-venue')).toHaveCount(1));
     await check('filters preserve selection',()=>expect(trigger).toHaveText(originalSelection));
     await search.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
     await check('keyboard selects Binance futures',()=>expect(trigger).toContainText('BTC / USDTBinance · USDT 永续'));
@@ -371,9 +374,25 @@ try {
     await page.locator('[cmdk-item][data-instrument="binance:spot:BTCUSDT"]').click();
     await check('spot retains distinct identity',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
     await trigger.click();await chooseSelect(page,'交易所','mexc');await chooseSelect(page,'市场类型','swap');
-    await check('unavailable result disabled',()=>expect(page.locator('[cmdk-item][data-instrument="mexc:swap:BTC_USDT"]')).toHaveAttribute('aria-disabled','true'));
+    await check('unavailable result disabled',()=>expect(page.locator('[cmdk-item][data-asset="BTC"]')).toHaveAttribute('aria-disabled','true'));
     await search.focus();await page.keyboard.press('Enter');
     await check('disabled option cannot replace selected spot',()=>expect(trigger).toContainText('BTC / USDTBinance · 现货'));
+    await chooseSelect(page,'交易所','all');await chooseSelect(page,'市场类型','all');await search.fill('BTC');
+    const btc=page.locator('[cmdk-item][data-asset="BTC"]');
+    await check('venues aggregate on one asset row',async()=>{await expect(page.locator('[cmdk-item]')).toHaveCount(1);await expect(btc.locator('.market-venue')).toHaveCount(4);await expect(btc.locator('.market-venue[data-instrument="mexc:swap:BTC_USDT"]')).toBeDisabled();});
+    await page.waitForTimeout(250);await page.screenshot({path:join(outputs,'market-picker-aggregated-MOCK.png')});
+    await btc.locator('.market-result-symbol').click();
+    await check('asset row opens Binance perpetual by default',()=>expect(trigger).toContainText('BTC / USDTBinance · USDT 永续'));
+    await trigger.click();await search.fill('BTC');await btc.locator('.market-venue[data-instrument="BTC-USDT-SWAP"]').click();
+    await check('venue pill opens that exact market',()=>expect(trigger).toContainText('BTC / USDTOKX · USDT 永续'));
+    await trigger.click();await search.fill('ETH');await page.locator('[cmdk-item][data-asset="ETH"] .market-result-symbol').click();
+    await check('asset without Binance falls back to a listed venue',()=>expect(trigger).toContainText('ETH / USDTOKX · USDT 永续'));
+    await trigger.click();await search.fill('BTC');await btc.getByRole('button',{name:'收藏 BTC',exact:true}).click();
+    await check('star in the list saves the whole asset',async()=>expect.poll(()=>state.favoritePuts?.at(-1)?.favorites).toEqual([{base:'BTC',preferred:'binance:swap:BTCUSDT'}]));
+    await search.fill('');
+    await check('starred assets lead the list',async()=>{await expect(page.locator('[cmdk-group-heading]').first()).toHaveText('收藏');await expect(page.locator('[cmdk-item]').first()).toHaveAttribute('data-asset','BTC');});
+    await btc.getByRole('button',{name:'取消收藏 BTC',exact:true}).click();
+    await check('unstar removes the asset',async()=>expect.poll(()=>state.favoritePuts?.at(-1)?.favorites).toEqual([]));
     await search.fill('NO_MATCH_123');await check('empty results provide recovery',()=>expect(page.getByText('没有匹配的市场。试试币种名称，或清除交易所和类型筛选。')).toBeVisible());
     await page.keyboard.press('Escape');await check('Escape returns market trigger focus',()=>expect(trigger).toBeFocused());
     state.markets=originalMarkets;await refreshNavigation(page);
@@ -931,11 +950,12 @@ try {
     await fixture.context.close();
   });
   for (const profile of ['desktop','mobile']) await journey('17 built-in chart: switch, history paging, drag to retarget and create at price ('+profile+')',async()=>{
-    const fixture=await setup(browser,profile,true),p=fixture.page,s=fixture.state;
+    const fixture=await setup(browser,profile,true,{chart:null}),p=fixture.page,s=fixture.state;
     s.markets=s.markets.map(m=>({...m,venue:'okx',type:'swap',nativeId:m.instrument,symbol:`${m.base}/USDT:USDT`,settle:'USDT'}));
     await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
     if(profile==='mobile'){await p.getByRole('button',{name:/参考图表/}).click();}
     const chart=p.locator('.chart-panel');
+    await check('fresh users get the built-in chart first',async()=>{await expect(p.locator('.native-chart')).toHaveCount(1);await expect(p.locator('.tradingview-widget-container')).toHaveCount(0);await expect(chart.locator('.chart-kind-switch [data-slot="button"]').first()).toHaveText('内置图表');});
     await chart.getByRole('button',{name:'内置图表',exact:true}).click();
     await check('choice persisted locally',async()=>assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-chart')),'native'));
     await check('tradingview embed removed',()=>expect(p.locator('.tradingview-widget-container')).toHaveCount(0));
@@ -988,6 +1008,13 @@ try {
       await check('price above market defaults to upper',()=>expect(dialog.getByRole('button',{name:/达到或高于/})).toHaveAttribute('aria-pressed','true'));
       await p.keyboard.press('Escape');
       const tools=p.getByRole('toolbar',{name:'画线工具'});
+      await check('drawing rail floats on the left of the plot',async()=>{const r=await tools.boundingBox();assert(r.x<box.x+box.width*0.1&&r.height>r.width,'rail '+JSON.stringify(r));});
+      await tools.getByRole('button',{name:'更多线条'}).click();const flyout=p.locator('.draw-flyout');
+      await check('group flyout lists TradingView line tools',()=>expect(flyout.locator('.draw-flyout-pick',{hasText:'平行通道'})).toBeVisible());
+      await flyout.getByRole('button',{name:'收藏工具 水平线'}).click();
+      await check('starred tool pinned to the rail',async()=>{await expect(tools.getByRole('group',{name:'收藏的工具'}).getByRole('button',{name:'水平线',exact:true})).toBeVisible();assert.deepEqual(await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-draw-favorites'))),['horizontal-line']);});
+      await p.waitForTimeout(250);await p.screenshot({path:join(outputs,'native-draw-flyout-'+profile+'-MOCK.png')});
+      await p.keyboard.press('Escape');await expect(flyout).toHaveCount(0);
       await tools.getByRole('button',{name:'趋势线',exact:true}).click();
       await check('armed tool hides the create chip and shows a hint',async()=>{await expect(p.locator('.chart-tool-hint')).toBeVisible();await p.mouse.move(box.x+box.width*0.35,box.y+box.height*0.3);await expect(p.locator('.chart-create-at')).toHaveCount(0);});
       await p.mouse.click(box.x+box.width*0.35,box.y+box.height*0.3);await p.mouse.click(box.x+box.width*0.6,box.y+box.height*0.5);
@@ -1019,9 +1046,12 @@ try {
     await check('menu closes after applying',()=>expect(menu).toHaveCount(0));
     await p.getByRole('button',{name:'更多周期'}).click();await expect(menu).toBeVisible();await p.waitForTimeout(300);
     await p.screenshot({path:join(outputs,'native-timeframes-'+profile+'-MOCK.png')});await p.keyboard.press('Escape');await expect(menu).toHaveCount(0);
-    await p.getByRole('button',{name:/^收藏 BTC/}).click();
+    if(profile==='mobile')await check('phones start with the drawing rail collapsed',()=>expect(p.getByRole('button',{name:'展开画线工具'})).toBeVisible());
+    await p.getByRole('combobox',{name:'查看市场',exact:true}).click();
+    await p.locator('[cmdk-item][data-asset="BTC"]').getByRole('button',{name:'收藏 BTC',exact:true}).click();
     await check('star saves the underlying asset',async()=>expect.poll(()=>s.favoritePuts?.at(-1)?.favorites).toEqual([{base:'BTC',preferred:'BTC-USDT-SWAP'}]));
-    await check('starred chip listed',()=>expect(p.locator('.favorites-list').getByRole('button',{name:'BTC',exact:true})).toBeVisible());
+    await check('starred asset listed first under 收藏',()=>expect(p.locator('[cmdk-group-heading]').first()).toHaveText('收藏'));
+    await p.keyboard.press('Escape');
     await noOverflow(p);
     await check('selection survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart canvas').first()).toBeVisible();});
     if(profile==='desktop'){
@@ -1131,7 +1161,7 @@ try {
       await expect(p.locator('[data-slot="boot-stage"]')).toBeVisible();
       assert.equal(await p.locator('[data-slot="page-skeleton"]').count(),0);
       assert.equal(await p.locator('[data-slot="skeleton"]').count(),0);
-      assert.equal(await p.evaluate(()=>localStorage.length),0);
+      assert.deepEqual(await p.evaluate(()=>Object.keys(localStorage).filter(k=>k!=='open-alert-chart')),[]);
     });
     await noOverflow(p);
     await p.screenshot({path:join(outputs,'appearance-'+profile+'-loading-light-MOCK.png'),fullPage:profile==='desktop',animations:'disabled'});
@@ -1212,7 +1242,7 @@ try {
         await expect(fixture.page.getByRole('heading',{name:expected==='en'?'Sign in or create an account':'登录或注册'})).toBeVisible();
         await expect(fixture.page.locator('[data-slot="boot-stage"]')).toHaveCount(0);
       });
-      await check('client language '+locale,async()=>{await expect(fixture.page.locator('html')).toHaveAttribute('lang',expected);assert.equal(await fixture.page.evaluate(()=>localStorage.length),0);});
+      await check('client language '+locale,async()=>{await expect(fixture.page.locator('html')).toHaveAttribute('lang',expected);assert.deepEqual(await fixture.page.evaluate(()=>Object.keys(localStorage).filter(k=>k!=='open-alert-chart')),[]);});
       if(expected==='en') {
         await expect(fixture.page.getByRole('heading',{name:'Sign in or create an account'})).toBeVisible();
         await fixture.page.screenshot({path:join(outputs,'appearance-desktop-login-light-MOCK.png'),fullPage:true,animations:'disabled'});

@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from 'react';
 
-/** Which chart the market panel shows. TradingView stays the default; the built-in
- * chart is served by our backend, so it also works where TradingView is blocked. */
+/** Which chart the market panel shows. The built-in chart is the default: it is served by our backend,
+ * so it also works where TradingView is blocked. A stored TradingView choice is kept. */
 export type ChartKind = 'tradingview' | 'native';
 const key = 'open-alert-chart';
 const listeners = new Set<() => void>();
 function read(): ChartKind {
-  try { return localStorage.getItem(key) === 'native' ? 'native' : 'tradingview'; } catch { return 'tradingview'; }
+  try { return localStorage.getItem(key) === 'tradingview' ? 'tradingview' : 'native'; } catch { return 'native'; }
 }
 let current = read();
 if (typeof window !== 'undefined') window.addEventListener('storage', event => {
