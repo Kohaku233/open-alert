@@ -71,10 +71,10 @@ export function Anomaly({ model, notify, navigate }: { model: WorkspaceModel; no
   return <section ref={pageRef} className="settings-page anomaly-page">
     <PageHeader className="page-heading"><div><span className="page-index">03 — ANOMALY</span><h1>{t('异动监测')}</h1><p>{t('Binance、OKX、MEXC 的 USDT 永续合约出现极端行情时推送到手机。')}</p></div>
       <Badge variant="outline" className={`status-pill ${settings.enabled ? 'success' : ''}`}>{settings.enabled ? t('推送中') : t('未开启')}</Badge></PageHeader>
-    {!view.channelConfigured && <Notice className="warning"><p>{t('还没有配置 Pushover，异动无法推送。')}</p><Button onClick={() => navigate('/notifications')}>{t('去配置手机通知')}</Button></Notice>}
+    {!view.channelConfigured && <Notice className="warning"><p>{t('没有已启用的推送渠道接收异动，暂时无法推送。')}</p><Button onClick={() => navigate('/notifications')}>{t('去通知中心设置')}</Button></Notice>}
     <div className="settings-grid anomaly-grid">
       <Panel className="settings-panel anomaly-switches"><span className="section-index">01 — SIGNAL</span><h2>{t('推送开关')}</h2>
-        <p className="small muted">{t('与价格警报的监控总开关相互独立，使用同一个 Pushover 账户。')}</p>
+        <p className="small muted">{t('与价格警报的监控总开关相互独立，推送渠道在手机通知页的路由里选择。')}</p>
         <div className="anomaly-toggles">
           <label className="anomaly-toggle is-primary"><span><strong>{t('异动推送')}</strong><small>{settings.enabled ? t('满足规则即推送，多交易所合并为一条') : t('只记录，不推送')}</small></span>
             <Switch checked={settings.enabled} aria-label={t('异动推送')} disabled={busy || (!settings.enabled && !view.channelConfigured)} onCheckedChange={checked => void save({ enabled: checked }, checked ? t('异动推送已开启。') : t('异动推送已关闭。'))}/></label>

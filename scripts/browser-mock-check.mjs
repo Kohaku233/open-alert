@@ -160,7 +160,15 @@ async function setup(browser, profile, authenticated = false, { chart = 'trading
         return ok({instrument:url.searchParams.get('instrument'),timeframe:url.searchParams.get('timeframe'),candles,done:false});
       }
       if (path === '/api/anomaly' && method === 'GET') return ok(anomalyView(state));
-      if (path === '/api/favorites' && method === 'GET') return ok({favorites:state.favorites??=[]});
+      if (path === '/api/notify' && method === 'GET') return ok(notifyView(state));
+      if (path === '/api/notify/channels' && method === 'POST') { const n=notifyState(state);(state.notifyPosts??=[]).push({type:body.type,name:body.name,fields:Object.keys(body.config)}); const c={id:'ch-'+(state.nextId++),type:body.type,name:body.name,enabled:true,legacy:false,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary:{tokenSource:body.config.appToken?'private':'shared',userKey:'…'+body.config.userKey.slice(-4)}};n.channels.push(c);return ok({channel:c},201); }
+      if (/^\/api\/notify\/channels\/[^/]+(\/test)?$/.test(path)) {
+        const n=notifyState(state),id=decodeURIComponent(path.split('/')[4]),c=n.channels.find(x=>x.id===id); if(!c)return fail('not_found',404);
+        if (path.endsWith('/test') && method === 'POST') { assert.equal(body.confirm,true); c.lastOutcome='sent'; c.lastAt=Date.now(); (state.notifyTests??=[]).push(id); return ok({outcome:'sent',at:Date.now()}); }
+        if (method === 'PATCH') { (state.notifyPatches??=[]).push(body); if(body.expectedGeneration!==c.generation)return fail('generation_conflict'); if(body.name!==undefined)c.name=body.name; if(body.enabled!==undefined)c.enabled=body.enabled; c.generation++; return ok({channel:c}); }
+        if (method === 'DELETE') { if(c.legacy)return fail('invalid_request',400); n.channels=n.channels.filter(x=>x!==c); n.routes=n.routes.filter(r=>r.channelId!==id); return ok({deleted:true}); }
+      }
+      if (path === '/api/notify/routes' && method === 'PUT') { const n=notifyState(state);(state.notifyRoutePuts??=[]).push(body); n.routes=body.routes; return ok({routes:notifyView(state).routes}); }      if (path === '/api/favorites' && method === 'GET') return ok({favorites:state.favorites??=[]});
       if (path === '/api/favorites' && method === 'PUT') { (state.favoritePuts??=[]).push(body); state.favorites=body.favorites; return ok({favorites:state.favorites}); }
       if (path === '/api/anomaly/settings' && method === 'PATCH') {
         const a=anomalyState(state),{expectedGeneration,...patch}=body;(state.anomalyPatches??=[]).push(body);
@@ -242,7 +250,12 @@ function anomalyState(state) {
   }
   return state.anomaly;
 }
-function anomalyView(state) {
+function notifyState(state) {
+  state.notify??={channels:[{id:'legacy-pushover:u',type:'pushover',name:'Pushover',enabled:true,legacy:true,generation:0,lastOutcome:null,lastCode:null,lastAt:null,updatedAt:Date.now(),configured:true,summary:{tokenSource:'shared',userKey:'…abcd'}}],routes:['anomaly_crypto','anomaly_tradfi'].map(source=>({source,channelId:'legacy-pushover:u',enabled:true,options:{notification:null,quiet:null}}))};
+  state.notify.channels[0].configured=!!state.status.channel.userKeyPresent;
+  return state.notify;
+}
+function notifyView(state) { const n=notifyState(state); return {channels:n.channels,routes:[{source:'price_alert',channelId:'legacy-pushover:u',enabled:true,options:{notification:null,quiet:null}},...n.routes],types:['pushover']}; }function anomalyView(state) {
   const a=anomalyState(state);
   return {settings:a.settings,generation:a.generation,events:a.events,today:1,channelConfigured:!!state.status.channel.userKeyPresent,monitor:{state:'running',series:291,baselines:291,crypto:180,tradfi:111,withMarketCap:170,streams:{binance:true,okx:true,mexc:true},lastEvaluationAt:Date.now(),universeAt:Date.now(),marketCapAt:Date.now()}};
 }
@@ -675,7 +688,44 @@ try {
     await check('venue link opens dashboard',()=>expect(p).toHaveURL(/\/dashboard\?market=/));
     await fixture.context.close();
   });
-  await journey('10 admin bounded pagination and invitation copy under mobile fixture', async () => {
+  for (const profile of ['desktop','mobile']) await journey('09c notification centre channels, routing and quiet hours ('+profile+')',async()=>{
+    const fixture=await setup(browser,profile,true),p=fixture.page,s=fixture.state;
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch').first()).toBeVisible();
+    await nav(p,'手机通知');
+    const list=p.getByRole('list',{name:'通知渠道'});
+    await check('legacy channel listed',()=>expect(list.getByRole('listitem')).toHaveCount(1));
+    await check('legacy channel cannot be deleted',()=>expect(list.getByRole('button',{name:'删除'})).toHaveCount(0));
+    await check('price alert route is locked',()=>expect(p.getByRole('region',{name:'价格警报'}).getByRole('switch')).toHaveCount(0));
+    await p.getByRole('button',{name:'添加渠道'}).click();
+    const dialog=p.getByRole('dialog');
+    await dialog.getByLabel('名称').fill('备用手机');await dialog.getByLabel('Pushover 用户密钥').fill('short');await dialog.getByRole('button',{name:'添加渠道'}).click();
+    await check('invalid key rejected locally',async()=>{await expect(dialog.getByRole('alert')).toContainText('30 位');assert.equal((s.notifyPosts??[]).length,0);});
+    await dialog.getByLabel('Pushover 用户密钥').fill('u'.repeat(30));await dialog.getByRole('button',{name:'添加渠道'}).click();
+    await check('channel created without exposing key in evidence',async()=>{await expect(dialog).toHaveCount(0);assert.deepEqual(s.notifyPosts,[{type:'pushover',name:'备用手机',fields:['userKey','appToken']}]);});
+    await check('new channel listed',()=>expect(list.getByRole('listitem')).toHaveCount(2));
+    await p.getByRole('switch',{name:'币种异动发到 备用手机'}).click();
+    await p.getByRole('switch',{name:'股票异动免打扰'}).click();
+    await p.getByRole('region',{name:'股票异动'}).getByLabel('开始').fill('22:30');
+    await check('unsaved badge',()=>expect(p.getByText('未保存')).toBeVisible());
+    if(profile==='mobile')await noOverflow(p);
+    await p.screenshot({path:join(outputs,`open-alert-notify-center-${profile}-MOCK.png`),fullPage:true,animations:'disabled'});
+    await p.getByRole('button',{name:'保存推送路由'}).click();
+    await check('routes saved with new channel and quiet hours',async()=>{await expect.poll(()=>(s.notifyRoutePuts??[]).length).toBe(1);const r=s.notifyRoutePuts[0].routes;
+      assert(r.some(x=>x.source==='anomaly_crypto'&&x.channelId.startsWith('ch-')&&x.enabled));
+      const q=r.filter(x=>x.source==='anomaly_tradfi');assert(q.length===2&&q.every(x=>x.options.quiet?.from==='22:30'&&x.options.quiet.to==='07:00'&&Number.isInteger(x.options.quiet.offsetMinutes)));
+      assert(!r.some(x=>x.source==='price_alert'));});
+    const added=list.getByRole('listitem').filter({hasText:'备用手机'});
+    await added.getByRole('button',{name:'测试'}).click();await p.getByRole('dialog').getByRole('button',{name:'确认发送测试'}).click();
+    await check('test confirmed and recorded',async()=>{await expect.poll(()=>(s.notifyTests??[]).length).toBe(1);await expect(added).toContainText('最近发送成功');});
+    await added.getByRole('button',{name:'重命名'}).click();await p.getByRole('dialog').getByLabel('名称').fill('iPad');await p.getByRole('dialog').getByRole('button',{name:'保存名称'}).click();
+    await check('rename uses CAS generation',async()=>{await expect.poll(()=>(s.notifyPatches??[]).at(-1)).toEqual({expectedGeneration:0,name:'iPad'});});
+    const renamed=list.getByRole('listitem').filter({hasText:'iPad'});
+    await renamed.getByRole('switch',{name:'启用 iPad'}).click();
+    await check('disable uses next generation',async()=>expect.poll(()=>(s.notifyPatches??[]).at(-1)).toEqual({expectedGeneration:1,enabled:false}));
+    await renamed.getByRole('button',{name:'删除'}).click();await p.getByRole('dialog').getByRole('button',{name:'删除渠道'}).click();
+    await check('channel deleted with its routes',async()=>{await expect(list.getByRole('listitem')).toHaveCount(1);assert(!s.notify.routes.some(r=>r.channelId.startsWith('ch-')));});
+    await fixture.context.close();
+  });  await journey('10 admin bounded pagination and invitation copy under mobile fixture', async () => {
     // Own fixture: the journey 09 document must not stay parked on /admin when the role changes.
     const fixture=await setup(browser,'mobile',true), p=fixture.page, s=fixture.state;
     s.status.user.role='admin'; s.status.capabilities.canAdmin=true; await p.goto(origin+'/admin');
