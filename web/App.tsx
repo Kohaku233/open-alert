@@ -22,9 +22,9 @@ import { Admin } from './pages/Admin.js';
 import { Anomaly } from './pages/Anomaly.js';
 import { FormError } from './components/Dialog.js';
 import { useIndicatorMotion } from './motion.js';
-import { Activity, BellRing, ShieldCheck, UserRound, List, Radar }  from 'lucide-react';
+import { Activity, BellRing, ShieldCheck, Settings2, List, Radar }  from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-const routes = ['/dashboard', '/alerts', '/anomaly', '/notifications', '/account', '/admin'];
+const routes = ['/dashboard', '/alerts', '/anomaly', '/notifications', '/settings', '/account', '/admin'];
 function LanguageSwitch() {
     const language = useLanguage();
     const root = useRef<HTMLDivElement>(null), indicator = useRef<HTMLSpanElement>(null);
@@ -58,6 +58,11 @@ function AppRoutes() {
     useEffect(() => {
         if (session.isPending || (session.error && !sessionKnown))
             return;
+        if (session.data && path === '/account') {
+            window.history.replaceState({}, '', '/settings' + window.location.search);
+            setPath('/settings');
+            return;
+        }
         if (session.data && (!routes.includes(path) || path === '/login')) {
             window.history.replaceState({}, '', '/dashboard');
             setPath('/dashboard');
@@ -87,7 +92,7 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     const model = useWorkspace(onUnauthorized);
     const [logoutBusy, setLogoutBusy] = useState(false);
     const [logoutError, setLogoutError] = useState('');
-    const bootLabel = path === '/account' ? t("正在读取账户信息…") : path === '/notifications' ? t("正在读取通知设置…") : path === '/anomaly' ? t("正在读取异动监测…") : t("正在读取你的警报与行情…");
+    const bootLabel = path === '/settings' || path === '/account' ? t("正在读取账户信息…") : path === '/notifications' ? t("正在读取通知设置…") : path === '/anomaly' ? t("正在读取异动监测…") : t("正在读取你的警报与行情…");
     useBootClaim(bootLabel, !model.data && !model.error);
     async function logout() {
         if (logoutBusy)
@@ -112,17 +117,16 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
     }
     const canAdmin = model.data?.status.user.role === 'admin' && model.data.status.capabilities.canAdmin;
     const navRef = useRef<HTMLElement>(null), navIndicator = useRef<HTMLSpanElement>(null);
-    const tabs: Array<[string, string, LucideIcon]> = [['/dashboard', t("行情与警报"), Activity], ['/anomaly', t("异动监测"), Radar], ['/notifications', t("通知中心"), BellRing], ['/account', t("我的账户"), UserRound], ...(canAdmin ? [['/admin', t("管理"), ShieldCheck] as [string, string, LucideIcon]] : [])];
+    const tabs: Array<[string, string, LucideIcon]> = [['/dashboard', t("行情与警报"), Activity], ['/anomaly', t("异动监测"), Radar], ['/notifications', t("通知中心"), BellRing], ['/settings', t("设置"), Settings2], ...(canAdmin ? [['/admin', t("管理"), ShieldCheck] as [string, string, LucideIcon]] : [])];
     useIndicatorMotion(navRef, navIndicator, '[aria-current="page"]', path + tabs.map(tab => tab[1]).join());
     const monitoring = model.data?.status.settings.enabled;
-    const overall = model.data?.status.health.overall;
     return <div className="workspace-shell" data-route={path}>
     <header className="masthead app-rail">
       <Brand navigate={navigate}/>
 
       <nav ref={navRef} className="app-nav" aria-label={t("主导航")}><span ref={navIndicator} className="nav-indicator" aria-hidden="true"/>{tabs.map(([href, label, NavIcon]) => <a key={href} href={href} aria-current={(path === href || path === '/alerts' && href === '/dashboard') ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href!); }}><NavIcon className="nav-icon" aria-hidden="true"/><span>{label}</span></a>)}</nav>
       <div className="rail-footer">
-        <div className="rail-status"><span className={`rail-status-dot ${monitoring ? 'is-live' : ''} ${overall && overall !== 'healthy' ? 'is-warn' : ''}`} aria-hidden="true"/><span>SYS · {model.wakePending ? t("后台同步待确认") : overall ? healthLabel(overall) : t("正在读取运行状态")} · 5s</span></div>
+        <div className="rail-status"><span className={`rail-status-dot ${monitoring ? 'is-live' : ''}`} aria-hidden="true"/><span>{model.wakePending ? t("后台同步待确认") : monitoring ? t("监控已启用") : t("监控已暂停")}</span></div>
         <AccountMenu name={model.data?.status.user.name || model.data?.status.user.email.split('@')[0] || t('已登录')} email={model.data?.status.user.email || ''} navigate={navigate} logout={() => void logout()} busy={logoutBusy}/>
 
       </div>
@@ -132,14 +136,10 @@ function Workspace({ path, navigate, notify, onUnauthorized }: {
       <Dashboard model={model} active={path === '/dashboard' || path === '/alerts' || !routes.includes(path)} alertsOnly={path === '/alerts'} notify={notify} navigate={navigate}/>
       {path === '/anomaly' && <Anomaly model={model} notify={notify} navigate={navigate}/>}
       {path === '/notifications' && <Notifications model={model} notify={notify} navigate={navigate}/>}
-      {path === '/account' && <Account model={model} notify={notify} navigate={navigate} logout={() => void logout()} logoutBusy={logoutBusy}/>}
+      {path === '/settings' && <Account model={model} notify={notify} navigate={navigate} logout={() => void logout()} logoutBusy={logoutBusy}/>}
       {path === '/admin' && <Admin model={model} notify={notify}/>}
     </main><nav className="mobile-dock" aria-label={t('移动导航')}>
-      {([['/dashboard', '行情', Activity], ['/alerts', '警报', List], ['/anomaly', '异动', Radar], ['/notifications', '通知', BellRing], ['/account', '账户', UserRound]] as const).map(([href, label, Glyph]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href); }}><Glyph aria-hidden="true"/><span>{t(label)}</span></a>)}
+      {([['/dashboard', '行情', Activity], ['/alerts', '警报', List], ['/anomaly', '异动', Radar], ['/notifications', '通知', BellRing], ['/settings', '设置', Settings2]] as const).map(([href, label, Glyph]) => <a key={href} href={href} aria-current={path === href ? 'page' : undefined} onClick={event => { event.preventDefault(); navigate(href); }}><Glyph aria-hidden="true"/><span>{t(label)}</span></a>)}
     </nav><footer className="app-footer"><span>{t("价格哨站 · Open Alert")}</span><span>{t("后台判断价格，手机接收提醒。")}</span><span className="footer-signal" aria-hidden="true">{t("SIGNAL / 24H")}</span></footer>
   </div>;
-}
-
-function healthLabel(state: 'healthy' | 'degraded' | 'unhealthy' | 'starting') {
-    return state === 'healthy' ? t("运行正常") : state === 'degraded' ? t("部分受限") : state === 'starting' ? t("正在启动") : t("需要检查");
 }

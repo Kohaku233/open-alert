@@ -46,7 +46,7 @@ const journey = async (name, fn) => {
     throw error;
   }
 };
-const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
+const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','settings','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
 assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
 assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
 for (const name of await readdir(join(root, 'dist/web/fonts/breakout'))) if (name.endsWith('.woff2')) assets.set('/fonts/breakout/'+name, ['fonts/breakout/'+name,'font/woff2']);
@@ -154,6 +154,10 @@ async function setup(browser, profile, authenticated = false, { chart = 'trading
         if (error.raw) return route.fulfill({status:error.status,headers:error.headers,contentType:'text/html',body:'<h1>MOCK rate limit</h1>'});
         if (error.payload) return send(error.payload,error.status,error.headers);
         return fail(error.code, error.status, error.headers);
+      }
+      if (path === '/api/account' && method === 'GET') {
+        if ([...url.searchParams.keys()].length) return fail('invalid_request',400);
+        return ok(accountView(state));
       }
       if (path === '/api/status' && method === 'GET') {
         if(state.statusUnavailable)return fail('service_unavailable',503);
@@ -284,29 +288,47 @@ function notifyState(state) {
   if (state.notify.channels[0]) state.notify.channels[0].configured=!!state.status.channel.userKeyPresent;
   return state.notify;
 }
+function accountView(state) {
+  const channels=notifyState(state).channels.length,favorites=state.favorites?.length??0;
+  return {
+    user: structuredClone(state.status.user),
+    access: {
+      plan: 'pro', phase: 'invite_beta', source: 'beta_policy', policyVersion: 1,
+      billing: 'not_enabled', expiresAt: null,
+      features: {price_alerts:true,anomaly_crypto:true,anomaly_tradfi:true,native_charts:true,drawing_tools:true,market_favorites:true,notification_channels:true},
+      limits: {alerts:20,instruments:8,channels:10,favorites:50,priceAttemptsPerDay:state.status.settings.dailyLimit},
+    },
+    usage: {
+      observedAt:Date.now(),utcDate:state.status.daily.date,alerts:state.alerts.length,
+      activeAlerts:state.alerts.filter(alert=>alert.enabled&&!alert.triggered).length,
+      instruments:new Set(state.alerts.map(alert=>alert.instrument)).size,
+      channels,favorites,priceAttempts:state.status.daily.attempts,
+    },
+  };
+}
 function notifyView(state) { const n=notifyState(state); return {channels:n.channels,routes:n.routes,types:['pushover','discord'],profiles:{price_alert:{priority:2,retry:30,expire:1500,sound:'siren'},anomaly_crypto:{priority:1,retry:30,expire:1500,sound:'cosmic'},anomaly_tradfi:{priority:1,retry:30,expire:1500,sound:'cosmic'}}}; }function anomalyView(state) {
   const a=anomalyState(state);
   return {settings:a.settings,generation:a.generation,events:a.events,today:1,channelConfigured:!!state.status.channel.userKeyPresent,monitor:{state:'running',series:291,baselines:291,crypto:180,tradfi:111,withMarketCap:170,streams:{binance:true,okx:true,mexc:true},lastEvaluationAt:Date.now(),universeAt:Date.now(),marketCapAt:Date.now()}};
 }
 const nav = async (page, name) => {
- const href = ({'行情与警报':'/dashboard','Markets & alerts':'/dashboard','Markets':'/dashboard','异动监测':'/anomaly','Anomaly monitor':'/anomaly','手机通知':'/notifications','Notifications':'/notifications','我的账户':'/account','Account':'/account','管理':'/admin','Alerts':'/alerts'})[name];
+ const href = ({'行情与警报':'/dashboard','Markets & alerts':'/dashboard','Markets':'/dashboard','异动监测':'/anomaly','Anomaly monitor':'/anomaly','手机通知':'/notifications','Notifications':'/notifications','设置':'/settings','Settings':'/settings','我的账户':'/settings','Account':'/settings','管理':'/admin','Alerts':'/alerts'})[name];
  const link=page.locator('nav:visible a[href="'+href+'"]');
  if (await link.count()) return link.click();
- await page.locator('nav:visible a[href="/account"]').click();
+ await page.locator('nav:visible a[href="/settings"]').click();
  await page.locator('.mobile-admin-link').click();
 };
 async function accountControls(page) {
  if (await page.locator('.account-preferences:visible').count()) return;
  const chip=page.locator('.account-chip:visible');
  if (await chip.count()) { await chip.click(); return; }
- await nav(page, 'Account');
+ await nav(page, '设置');
 }
 async function languageChoice(page,language) {
  const previous = new URL(page.url()).pathname;
  if (!await page.getByRole('button',{name:language,exact:true}).isVisible()) await accountControls(page);
  await page.getByRole('button',{name:language,exact:true}).click();
  if (await page.locator('.account-menu:visible').count()) { await page.keyboard.press('Escape'); await expect(page.locator('.account-menu')).toHaveCount(0); }
- const names={'/dashboard':'Markets & alerts','/notifications':'Notifications','/account':'Account','/admin':'管理','/alerts':'Alerts'};
+ const names={'/dashboard':'Markets & alerts','/notifications':'Notifications','/settings':'Settings','/account':'Settings','/admin':'管理','/alerts':'Alerts'};
  if (new URL(page.url()).pathname !== previous && names[previous]) await nav(page,names[previous]);
 }
 
@@ -692,6 +714,90 @@ try {
     await m.goto(origin+'/admin'); await check('ordinary user admin view guarded', () => expect(m.getByText('此页面仅供管理员使用。')).toBeVisible());
     await check('guard issues no admin API', async () => assert.equal(mobile.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,0));
     await mobile.context.close();
+  });
+  for (const profile of ['desktop','mobile']) await journey('09a settings overview, Pro beta access and guarded admin ('+profile+')',async()=>{
+    const member=await setup(browser,profile,true),p=member.page;
+    await p.goto(origin+'/settings');
+    await expect(p.locator('[data-slot="boot-stage"]')).toHaveCount(0,{timeout:15000});
+    await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
+    await check('settings is canonical in desktop and mobile navigation',async()=>{
+      await expect(p.getByRole('heading',{name:'账户信息',level:2})).toBeVisible();
+      const link=p.locator('nav:visible a[href="/settings"]');
+      await expect(link).toHaveText(/设置/);await expect(link).toHaveAttribute('aria-current','page');
+      assert.equal(requests(member.state,'GET','/api/account').length,1);
+    });
+    const access=p.locator('.settings-access');
+    await check('normal member receives Pro invite-beta access',async()=>{
+      await expect(access.locator('.settings-beta-badge')).toHaveText('Pro · 邀请测试版');
+      await expect(access.locator('.settings-beta-copy')).toContainText('所有成员均可使用完整 Pro 功能，当前不收费');
+      await expect(access.locator('.settings-features > span')).toHaveCount(7);
+      await expect(access).toContainText('1 条规则已启用');
+      await expect(access).toContainText('1 / 10');
+    });
+    await check('no billing or upgrade controls',async()=>{
+      const control=/升级|购买|订阅|付费方案|billing|upgrade|subscribe|manage plan/i;
+      assert.equal(await p.getByRole('button',{name:control}).count(),0);
+      assert.equal(await p.getByRole('link',{name:control}).count(),0);
+    });
+    await check('member settings has no hidden runtime or bootstrap panel',async()=>{
+      assert.equal(await p.locator('.runtime-panel,.admin-runtime,.settings-bootstrap').count(),0);
+      assert.equal(await p.getByRole('heading',{name:'后台运行状态',exact:true}).count(),0);
+      assert.equal(await p.getByRole('heading',{name:'设置初始管理员',exact:true}).count(),0);
+      assert.equal(await p.getByRole('button',{name:/进入管理台/}).count(),0);
+      assert.equal(await p.getByRole('navigation').getByRole('link',{name:'管理',exact:true}).count(),0);
+    });
+    await check('member preferences and notification shortcut are available',async()=>{
+      await expect(p.locator('.settings-preferences').getByRole('group',{name:'外观主题'})).toBeVisible();
+      await expect(p.locator('.settings-shortcuts').getByRole('button',{name:/通知中心/})).toBeVisible();
+    });
+    if(profile==='mobile')await noOverflow(p);
+    await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(80);
+    await p.screenshot({path:join(outputs,`open-alert-settings-${profile}-member-MOCK.png`),fullPage:true,animations:'disabled'});
+    await languageChoice(p,'EN');
+    await check('English navigation and account heading use Settings naming',async()=>{
+      await expect(p.getByRole('heading',{name:'Settings',level:1})).toBeVisible();
+      await expect(p.getByRole('heading',{name:'Account details',level:2})).toBeVisible();
+      await expect(p.locator('nav:visible a[href="/settings"]')).toHaveText(/Settings/);
+    });
+    await languageChoice(p,'中文');
+    await p.locator('.settings-shortcuts').getByRole('button',{name:/通知中心/}).click();
+    await expect(p).toHaveURL(origin+'/notifications');
+    await nav(p,'设置');await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
+    const adminReads=member.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length;
+    await p.goto(origin+'/admin');
+    await expect(p.getByText('此页面仅供管理员使用。')).toBeVisible();
+    await check('member admin route stays guarded',async()=>assert.equal(member.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,adminReads));
+    await p.goto(origin+'/account?setup=admin');
+    await expect(p).toHaveURL(origin+'/settings?setup=admin');
+    await check('legacy account redirect preserves query and exposes setup only there',async()=>{
+      await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
+      await expect(p.getByRole('heading',{name:'设置初始管理员'})).toBeVisible();
+    });
+    await member.context.close();
+
+    const admin=await setup(browser,profile,true);admin.state.status.user.role='admin';admin.state.status.capabilities.canAdmin=true;
+    const a=admin.page;await a.goto(origin+'/settings');
+    await expect(a.locator('[data-slot="boot-stage"]')).toHaveCount(0,{timeout:15000});
+    await expect(a.getByRole('heading',{name:'设置',level:1})).toBeVisible();
+    await check('administrator still receives normal Pro access and admin entry',async()=>{
+      await expect(a.locator('.settings-beta-badge')).toHaveText('Pro · 邀请测试版');
+      await expect(a.locator('.settings-identity')).toContainText('管理员');
+      if(profile==='desktop')await expect(a.getByRole('navigation').getByRole('link',{name:'管理',exact:true})).toBeVisible();
+      else await expect(a.getByRole('button',{name:/进入管理台/})).toBeVisible();
+      assert.equal(await a.locator('.runtime-panel,.admin-runtime,.settings-bootstrap').count(),0);
+    });
+    if(profile==='mobile')await noOverflow(a);
+    await a.screenshot({path:join(outputs,`open-alert-settings-${profile}-admin-MOCK.png`),fullPage:true,animations:'disabled'});
+    if(profile==='desktop')await a.getByRole('navigation').getByRole('link',{name:'管理',exact:true}).click();
+    else await a.getByRole('button',{name:/进入管理台/}).click();
+    await expect(a).toHaveURL(origin+'/admin');
+    await check('administrator runtime details live only in the guarded admin page',async()=>{
+      await expect(a.getByRole('heading',{name:'管理',level:1})).toBeVisible();
+      await expect(a.locator('.admin-runtime').getByRole('heading',{name:'后台运行状态'})).toBeVisible();
+      await expect(a.locator('.admin-runtime')).toContainText('数据库');
+      await expect(a.locator('.admin-runtime')).toContainText('通知投递');
+    });
+    await admin.context.close();
   });
   for (const profile of ['desktop','mobile']) await journey('09b anomaly monitor settings, event feed and chart link ('+profile+')',async()=>{
     const fixture=await setup(browser,profile,true),p=fixture.page,s=fixture.state;
@@ -1223,7 +1329,7 @@ try {
     await settleBootClock(p);
     await check(profile+' reload restores code step without persisting code or replaying mail',async()=>{await expect(p.getByRole('heading',{name:'验证邮箱',exact:true})).toBeVisible();await expect(p.getByLabel('邮件中的验证码')).toHaveValue('');assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);const stored=await p.evaluate(()=>sessionStorage.getItem('open-alert-email-login-v1'));assert(!stored.includes('123'));});
     await expect(p.getByRole('button',{name:/秒后重发/,exact:false})).toBeDisabled();
-    await p.goto(origin+'/account'); await tick(p);
+    await p.goto(origin+'/settings'); await tick(p);
     await settleBootClock(p);
     await check(profile+' navigation returns to same verification step',async()=>{await expect(p).toHaveURL(origin+'/login');await expect(p.getByLabel('邮件中的验证码')).toBeVisible();assert.equal(requests(s,'POST','/api/auth/email-otp/send-verification-otp').length,1);});
     await p.getByRole('button',{name:'更换邮箱',exact:true}).click();
@@ -1469,7 +1575,7 @@ async function chooseSelect(page,label,value) {
     await accountControls(page);
     await page.getByRole('group',{name:'Appearance'}).getByRole('button',{name:({light:'Light',dark:'Dark',system:'System'})[value],exact:true}).click();
     if (await page.locator('.account-menu:visible').count()) { await page.keyboard.press('Escape'); await expect(page.locator('.account-menu')).toHaveCount(0); }
-    else if (page.url().endsWith('/account')) await nav(page,'Markets & alerts');
+    else if (new URL(page.url()).pathname === '/settings') await nav(page,'Markets & alerts');
     return;
   }
   await page.getByRole('combobox',{name:label,exact:true}).click();

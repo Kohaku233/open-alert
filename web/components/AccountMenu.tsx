@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BellRing, ChevronsUpDown, LogOut, UserRound } from "lucide-react";
+import { BellRing, ChevronsUpDown, LogOut, Settings2 } from "lucide-react";
 import { Button } from "./ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.js";
 import { Preferences } from "./Preferences.js";
@@ -48,8 +48,8 @@ export function AccountMenu({
         <div className="account-menu-links">
           {(
             [
-              ["/account", "我的账户", UserRound],
-              ["/notifications", "手机通知", BellRing],
+              ["/settings", "设置", Settings2],
+              ["/notifications", "通知中心", BellRing],
             ] as const
           ).map(([href, label, Glyph]) => (
             <a

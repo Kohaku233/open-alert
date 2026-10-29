@@ -15,9 +15,11 @@ import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
 import { AnomalyConflict } from '../anomaly/store.js';
+import { betaAccess } from '../access/policy.js';
+import type { ProductAccess, ProductFeature } from '../contracts/access.js';
 import { CHANNEL_TYPES, HubError, ROUTABLE_SOURCES, routeOptionsSchema } from '../notifications/hub.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
-type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; schedulerWake: 'confirmed' | 'pending' } };
+type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; productAccess: ProductAccess; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
 const generation = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), dailyLimit: z.number().int().min(1).max(20).optional(), notification: notificationOptionsSchema.optional() }).refine(v=>Object.keys(v).length>1);
@@ -174,7 +176,23 @@ export function createApi(d:ApiDependencies) {
     if(!budget.allowed){c.header('Retry-After',String(budget.retryAfter));throw new HttpError(429,'rate_limited');}
     const settings=await d.repositories.settings.get(principal.userId)??await d.repositories.settings.initialize(principal.userId,Date.now());if(settings.disabled)throw new HttpError(403,'forbidden');
     c.set('settings',settings);
+    const access=betaAccess(d.config,settings.dailyLimit);
+    c.set('productAccess',access);
+    const path=c.req.path;
+    const feature:ProductFeature|null=path.startsWith('/api/alerts')?'price_alerts':path.startsWith('/api/anomaly')?'anomaly_crypto':path.startsWith('/api/notify')?'notification_channels':path.startsWith('/api/favorites')?'market_favorites':path.startsWith('/api/candles')?'native_charts':null;
+    if(feature&&!access.features[feature])throw new HttpError(403,'forbidden');
     await next();
+  });
+  app.get('/api/account',async c=>{
+    if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');
+    const userId=uid(c),now=Date.now();
+    const [user,records,daily,channels,favorites]=await Promise.all([
+      identity(userId),d.repositories.alerts.listForUser(userId),d.repositories.settings.dailyUsage(userId,now),
+      d.hub?.channels(userId),d.anomaly?.store.favorites(userId),
+    ]);
+    return ok(c,{user,access:c.get('productAccess'),usage:{observedAt:now,utcDate:daily.date,alerts:records.length,
+      activeAlerts:records.filter(r=>r.enabled&&!r.triggered).length,instruments:new Set(records.map(r=>r.instrument)).size,
+      channels:channels?.length??null,favorites:favorites?.length??null,priceAttempts:daily.attempts}});
   });
   app.get('/api/status',async c=>{
     const include=c.req.query('include');if(include!==undefined&&(include!=='alerts'||c.req.queries('include')?.length!==1))throw new HttpError(400,'invalid_request');

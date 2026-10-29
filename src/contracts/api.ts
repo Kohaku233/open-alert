@@ -31,6 +31,7 @@ export interface AuthCapabilities {
 
 /** Application routes use this envelope; /api/auth/* retains Better Auth's native API. */
 export interface ApiRouteMap {
+  'GET /api/account': { request: never; response: import('./access.js').AccountOverview };
   'GET /api/public-quotes': { request: never; response: import('../markets/public-preview.js').PublicMarketPreview };
   'GET /api/auth-capabilities': { request: never; response: AuthCapabilities };
   'GET /api/status': { request: never; response: SystemStatus & { alerts?: Alert[] } };

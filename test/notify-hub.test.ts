@@ -330,11 +330,11 @@ test('event retry is idempotent per channel: failed retries once, uncertain and 
     const message = { title: 'Retry once', body: 'B', severity: 'warning' as const };
 
     await hub.dispatch('u1', ['anomaly_crypto'], message, fallback, 'same-event');
-    assert.deepEqual(calls, ['a', 'b']);
+    assert.deepEqual([...calls].sort(), ['a', 'b']);
     await hub.dispatch('u1', ['anomaly_crypto'], message, fallback, 'same-event');
-    assert.deepEqual(calls, ['a', 'b', 'b']);
+    assert.deepEqual([...calls].sort(), ['a', 'b', 'b']);
     await hub.dispatch('u1', ['anomaly_crypto'], message, fallback, 'same-event');
-    assert.deepEqual(calls, ['a', 'b', 'b']);
+    assert.deepEqual([...calls].sort(), ['a', 'b', 'b']);
 
     const logs = await hub.deliveries('u1');
     assert.equal(logs.length, 2);

@@ -12,6 +12,7 @@ import { api, errorText, request } from '../api.js';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { healthLabels } from '../utils.js';
 import { OperationalMonitor } from '../components/OperationalMonitor.js';
+import { AdminRuntime } from '../components/AdminRuntime.js';
 type AdminStatus = {
     activeUsers: number;
     activeAlerts: number;
@@ -111,6 +112,7 @@ export function Admin({ model, notify }: {
 
       </Panel></div>
     <section className="users-section"><div className="history-heading"><h2>{t("账户列表")}</h2><span>{t("每页最多 50 个账户")}</span></div>{loading && !users.length ? <ListSkeleton label={t("正在读取账户…")}><AccountListLoading/></ListSkeleton> : users.length ? <div className="users-list">{users.map(user => <article className="user-row" key={user.id}><div><strong>{user.email}</strong><small>{user.name || t("未设置名称")}</small></div><span className="user-role">{user.role === 'admin' ? t("管理员") : t("普通用户")}</span><span className={user.disabled ? 'amber-text' : 'success-text'}>{user.disabled ? t("已停用") : t("可用")}</span><Button disabled={model.busy || loading || !!model.error} onClick={() => { setTarget(user); setTargetError(''); }}>{user.disabled ? t("恢复账户") : t("停用账户")}</Button></article>)}</div> : <p className="muted">{t("没有可显示的账户。")}</p>}{cursor && <Button loading={loading} disabled={loading || model.busy} onClick={() => void load(cursor)}>{loading ? t("正在读取…") : t("加载更多账户")}</Button>}</section>
+    <AdminRuntime health={adminStatus?.health??null}/>
     <Disclosure className="admin-diagnostics" title={t("服务运行诊断")}><OperationalMonitor/></Disclosure>
     <DialogPresence present={!!target}>{target && <Dialog title={target.disabled ? t("恢复此账户？") : t("停用此账户？")} onClose={() => setTarget(null)} busy={model.busy}><p>{target.email}</p><p className="small muted">{target.disabled ? t("账户将恢复登录与使用。监控仍按其已保存设置运行。") : t("停用后撤销登录会话并阻止新的通知投递。已经发送的请求无法撤回。")}</p>{target.id === model.data?.status.user.id && <Notice as="p" className="warning">{t("这是当前登录的账户，停用后将无法继续管理本站。")}</Notice>}<FormError message={targetError}/><div className="confirm-actions"><Button disabled={model.busy} onClick={() => setTarget(null)}>{t("取消")}</Button><Button loading={model.busy} variant="default" className="primary" disabled={model.busy} onClick={() => void toggleUser()}>{model.busy ? t("正在处理…") : target.disabled ? t("恢复账户") : t("停用账户")}</Button></div></Dialog>}</DialogPresence>
   </section>;

@@ -394,3 +394,73 @@ test('resend uses a shared durable budget, no expiry extension and no automatic 
   assert.equal((await f.repositories.admin.getInvitation(invite.email,Date.now()))!.expiresAt,invite.expiresAt);
  }finally{await f.close();}
 });
+
+test('account overview exposes tenant-scoped invite-beta Pro access and preserves existing limits',async()=>{
+ const channelCounts=new Map<string,number>(),favoriteCounts=new Map<string,number>();
+ const f=await fixture({MAX_ALERTS_PER_USER:'3',MAX_INSTRUMENTS_PER_USER:'2',DAILY_NOTIFICATION_LIMIT:'9'},{
+  hub:{channels:async (userId:string)=>Array.from({length:channelCounts.get(userId)??0},(_,index)=>({id:`channel-${index}`}))} as unknown as NonNullable<ApiDependencies['hub']>,
+  anomaly:{store:{favorites:async (userId:string)=>Array.from({length:favoriteCounts.get(userId)??0},(_,index)=>({base:`ASSET${index}`,preferred:null}))}} as unknown as NonNullable<ApiDependencies['anomaly']>,
+ });
+ try{
+  assert.equal((await f.call('/api/account')).status,401);
+  const member=await f.login('account-member@example.com'),admin=await f.login('account-admin@example.com');
+  await f.body(await f.call('/api/admin/bootstrap','POST',{},admin.cookie,{Authorization:`Bearer ${f.config.bootstrapToken}`}));
+  assert.equal((await f.call('/api/channels','PUT',{provider:'pushover',userKey:'A'.repeat(30)},member.cookie)).status,200);
+  assert.equal((await f.call('/api/test-notification','POST',{confirm:true},member.cookie)).status,200);
+  await f.repositories.alerts.create(member.id,{...input,name:'BTC active'},Date.now());
+  await f.repositories.alerts.create(member.id,{...input,name:'ETH active',instrument:'ETH-USDT-SWAP'},Date.now());
+  await f.repositories.alerts.create(member.id,{...input,name:'BTC paused',enabled:false},Date.now());
+  const overLimit=await f.call('/api/alerts','POST',{...input,name:'over limit'},member.cookie);
+  assert.equal(overLimit.status,409);assert.equal((await overLimit.json() as any).error.code,'limit_exceeded');
+  channelCounts.set(member.id,1);favoriteCounts.set(member.id,1);
+
+  const before=Date.now(),response=await f.call('/api/account','GET',undefined,member.cookie),account=(await f.body(response)).data;
+  assert.equal(Object.keys(account).sort().join(','),'access,usage,user');
+  assert.equal(Object.keys(account.user).sort().join(','),'disabled,email,id,name,role');
+  assert.equal(account.user.id,member.id);assert.equal(account.user.email,'account-member@example.com');assert.equal(account.user.role,'user');assert.equal(account.user.disabled,false);
+  assert.deepEqual(account.access,{
+   plan:'pro',phase:'invite_beta',source:'beta_policy',policyVersion:1,billing:'not_enabled',expiresAt:null,
+   features:{price_alerts:true,anomaly_crypto:true,anomaly_tradfi:true,native_charts:true,drawing_tools:true,market_favorites:true,notification_channels:true},
+   limits:{alerts:3,instruments:2,channels:10,favorites:50,priceAttemptsPerDay:9},
+  });
+  assert.deepEqual(Object.keys(account.usage).sort(),['activeAlerts','alerts','channels','favorites','instruments','observedAt','priceAttempts','utcDate']);
+  assert.ok(account.usage.observedAt>=before&&account.usage.observedAt<=Date.now());
+  assert.equal(account.usage.utcDate,new Date(account.usage.observedAt).toISOString().slice(0,10));
+  assert.equal(account.usage.alerts,3);assert.equal(account.usage.activeAlerts,2);assert.equal(account.usage.instruments,2);
+  assert.equal(account.usage.channels,1);assert.equal(account.usage.favorites,1);assert.equal(account.usage.priceAttempts,1);
+  const serialized=JSON.stringify(account);
+  assert.doesNotMatch(serialized,/bootstrap|secret|private.key|authorization|coordinator|runtime|operator|database|smtp|resend/i);
+
+  for(const query of ['?tenant=other','?x=1','?plan=pro','?user='])assert.equal((await f.call('/api/account'+query,'GET',undefined,member.cookie)).status,400,query);
+  const adminAccount=(await f.body(await f.call('/api/account','GET',undefined,admin.cookie))).data;
+  assert.equal(adminAccount.user.id,admin.id);assert.equal(adminAccount.user.role,'admin');
+  assert.deepEqual(adminAccount.access,account.access);
+  assert.equal(adminAccount.usage.alerts,0);assert.equal(adminAccount.usage.activeAlerts,0);assert.equal(adminAccount.usage.instruments,0);
+  assert.equal(adminAccount.usage.channels,0);assert.equal(adminAccount.usage.favorites,0);assert.equal(adminAccount.usage.priceAttempts,0);
+
+  const generation=(await f.repositories.settings.get(member.id))!.generation,patches:[string,unknown][]=[
+   ['plan','enterprise'],['phase','paid'],['source','client'],['policyVersion',2],['billing','enabled'],
+   ['expiresAt',Date.now()+86400000],['features',{price_alerts:false}],['limits',{alerts:999,instruments:999,channels:999,favorites:999,priceAttemptsPerDay:999}],
+  ];
+  for(const [key,value] of patches){
+   const rejected=await f.call('/api/settings','PATCH',{expectedGeneration:generation,[key]:value},member.cookie);
+   assert.equal(rejected.status,400,key);
+  }
+  assert.equal((await f.repositories.settings.get(member.id))!.generation,generation);
+  assert.deepEqual((await f.body(await f.call('/api/account','GET',undefined,member.cookie))).data.access,account.access);
+
+  await f.db.execute('UPDATE user_settings SET disabled=1 WHERE user_id=?',[member.id]);
+  assert.equal((await f.call('/api/account','GET',undefined,member.cookie)).status,403);
+ }finally{await f.close();}
+});
+
+test('account overview reports optional channel and favorite stores as unavailable',async()=>{
+ const f=await fixture({}, {hub:undefined,anomaly:undefined} as unknown as Partial<ApiDependencies>);
+ try{
+  const user=await f.login('account-optional@example.com');
+  const account=(await f.body(await f.call('/api/account','GET',undefined,user.cookie))).data;
+  assert.equal(account.user.id,user.id);
+  assert.equal(account.usage.channels,null);assert.equal(account.usage.favorites,null);
+  assert.equal(account.access.plan,'pro');
+ }finally{await f.close();}
+});
