@@ -4,10 +4,10 @@ import {
   Activity, AlignVerticalSpaceAround, ArrowBigDown, ArrowBigUp, ArrowDownWideNarrow, ArrowRightFromLine, ArrowUpNarrowWide, ArrowUpRight, Brush, ChartSpline,
   ChevronRight, Circle, Columns2, Columns3, Egg, Eye, EyeOff, Fan, Flag, GitFork, Highlighter, Info, LineSquiggle, Lock, LockOpen, Magnet, MessageSquareQuote, Minus,
   MousePointer2, MoveDiagonal, MoveHorizontal, MoveUpRight, MoveVertical, PanelLeftClose, PencilRuler, Plus, Radius, RectangleHorizontal, Rows3, Rows4, Scaling,
-  SeparatorVertical, Slash, Spline, Star, StickyNote, Tag, Trash, Triangle, TrendingUp, Type, Waypoints, X,
+  GripVertical, SeparatorVertical, Slash, Spline, Star, StickyNote, Tag, Trash, Triangle, TrendingUp, Type, Waypoints, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { RefObject } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n.js';
 import { Button } from './ui/button.js';
@@ -47,7 +47,7 @@ export const GROUPS: Group[] = [
   ] },
 ];
 export const ALL_TOOLS = GROUPS.flatMap(group => group.tools);
-const FAVORITES_KEY = 'open-alert-draw-favorites', LAST_KEY = 'open-alert-draw-last', RAIL_KEY = 'open-alert-draw-rail', MAGNET_KEY = 'open-alert-draw-magnet', KEEP_KEY = 'open-alert-draw-keep';
+const FAVORITES_KEY = 'open-alert-draw-favorites', LAST_KEY = 'open-alert-draw-last', RAIL_KEY = 'open-alert-draw-rail', MAGNET_KEY = 'open-alert-draw-magnet', KEEP_KEY = 'open-alert-draw-keep', FAVBAR_KEY = 'open-alert-draw-favbar';
 const known = new Set(ALL_TOOLS.map(tool => tool.kind));
 function readJSON<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback; } catch { return fallback; } }
 function writeJSON(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* keep in memory */ } }
@@ -115,12 +115,13 @@ export function DrawingToolbar({ manager, tool, state, scope }: {
 
   const toolButton = (item: Tool) => { const Icon = item.icon; return <Button key={item.kind} type="button" variant="ghost" className="draw-rail-tool"
     aria-pressed={tool === item.kind} aria-label={t(item.label)} title={titled(item)} onClick={() => arm(item.kind)}><Icon aria-hidden="true"/></Button>; };
-  if (!open) return <div className="draw-rail is-collapsed" role="toolbar" aria-label={t('画线工具')} aria-orientation="vertical">
+  const favoriteTools = favorites.map(kind => ALL_TOOLS.find(item => item.kind === kind)).filter((item): item is Tool => !!item);
+  const favoriteBar = favoriteTools.length > 0 && <FavoriteToolsBar tools={favoriteTools} tool={tool} arm={arm} scope={scope}/>;
+  if (!open) return <>{favoriteBar}<div className="draw-rail is-collapsed" role="toolbar" aria-label={t('画线工具')} aria-orientation="vertical">
     <Button type="button" variant="ghost" className="draw-rail-tool" aria-expanded={false} aria-label={t('展开画线工具')} title={t('展开画线工具')} onClick={toggleRail}><PencilRuler aria-hidden="true"/></Button>
     {tool && <Button type="button" variant="ghost" className="draw-rail-tool" aria-pressed aria-label={t('光标')} title={t('光标')} onClick={() => arm(null)}><MousePointer2 aria-hidden="true"/></Button>}
-  </div>;
-  const favoriteTools = favorites.map(kind => ALL_TOOLS.find(item => item.kind === kind)).filter((item): item is Tool => !!item);
-  return <div className="draw-rail" role="toolbar" aria-label={t('画线工具')} aria-orientation="vertical">
+  </div></>;
+  return <>{favoriteBar}<div className="draw-rail" role="toolbar" aria-label={t('画线工具')} aria-orientation="vertical">
     <Button type="button" variant="ghost" className="draw-rail-tool" aria-pressed={tool === null} aria-label={t('光标')} title={t('光标')} onClick={() => arm(null)}><MousePointer2 aria-hidden="true"/></Button>
     <span className="draw-rail-divider" aria-hidden="true"/>
     {GROUPS.map(group => {
@@ -141,7 +142,6 @@ export function DrawingToolbar({ manager, tool, state, scope }: {
         </Popover>
       </div>;
     })}
-    {favoriteTools.length > 0 && <><span className="draw-rail-divider" aria-hidden="true"/><div className="draw-rail-favorites" role="group" aria-label={t('收藏的工具')}>{favoriteTools.map(toolButton)}</div></>}
     <span className="draw-rail-divider" aria-hidden="true"/>
     <Button type="button" variant="ghost" className="draw-rail-tool" aria-pressed={magnet !== 'off'} data-magnet={magnet}
       aria-label={t('磁吸：{0}', magnet === 'off' ? t('关') : magnet === 'weak' ? t('弱') : t('强'))} title={t('磁吸 K 线高低开收（点按切换 关 / 弱 / 强）')}
@@ -155,5 +155,66 @@ export function DrawingToolbar({ manager, tool, state, scope }: {
     <Button type="button" variant="ghost" className={`draw-rail-tool ${confirmClear ? 'is-confirming' : ''}`} aria-label={confirmClear ? t('再点一次清空') : t('清空画线')} title={confirmClear ? t('再点一次清空') : t('清空画线')} disabled={!state.count} onClick={clear}>
       <Trash aria-hidden="true"/>{confirmClear && <span>{t('再点一次清空')}</span>}</Button>
     <Button type="button" variant="ghost" className="draw-rail-tool" aria-expanded aria-label={t('收起画线工具')} title={t('收起画线工具')} onClick={toggleRail}><PanelLeftClose aria-hidden="true"/></Button>
+  </div></>;
+}
+
+type Spot = { x: number; y: number };
+const clamp01 = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
+function readSpot(): Spot {
+  const saved = readJSON<Partial<Spot>>(FAVBAR_KEY, {});
+  return { x: clamp01(saved.x) ?? 0.5, y: clamp01(saved.y) ?? 0 };
+}
+
+/** TradingView's floating favourites toolbar: starred tools in a small bar the user drags anywhere on the chart.
+ * The position is stored as a fraction of the free space, so it stays inside the chart when the chart resizes. */
+function FavoriteToolsBar({ tools, tool, arm, scope }: {
+  tools: Tool[]; tool: DrawingKind | null; arm: (kind: DrawingKind | null) => void; scope: RefObject<HTMLDivElement | null>;
+}) {
+  const bar = useRef<HTMLDivElement>(null);
+  const [spot, setSpot] = useState<Spot>(readSpot);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const [dragging, setDragging] = useState(false);
+  // Free space = shell size minus bar size; re-measured whenever either changes.
+  useEffect(() => {
+    const area = scope.current, el = bar.current;
+    if (!area || !el) return;
+    const measure = () => setBox({ w: Math.max(0, area.clientWidth - el.offsetWidth - 16), h: Math.max(0, area.clientHeight - el.offsetHeight - 44) });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(area); observer.observe(el);
+    return () => observer.disconnect();
+  }, [scope, tools.length]);
+  function grab(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const handle = event.currentTarget, startX = event.clientX, startY = event.clientY, from = spot;
+    handle.setPointerCapture(event.pointerId);
+    setDragging(true);
+    let latest = from;
+    const move = (e: PointerEvent) => {
+      latest = { x: clamp01(from.x + (box.w ? (e.clientX - startX) / box.w : 0))!, y: clamp01(from.y + (box.h ? (e.clientY - startY) / box.h : 0))! };
+      setSpot(latest);
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up);
+      setDragging(false); writeJSON(FAVBAR_KEY, latest);
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up); handle.addEventListener('pointercancel', up);
+  }
+  function nudge(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    const step = event.shiftKey ? 0.1 : 0.02;
+    const delta: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const d = delta[event.key];
+    if (!d) return;
+    event.preventDefault();
+    const next = { x: clamp01(spot.x + d[0])!, y: clamp01(spot.y + d[1])! };
+    setSpot(next); writeJSON(FAVBAR_KEY, next);
+  }
+  return <div ref={bar} className={`draw-favbar ${dragging ? 'is-dragging' : ''}`} role="toolbar" aria-label={t('收藏的工具')}
+    style={{ left: 8 + spot.x * box.w, top: 8 + spot.y * box.h }}>
+    <Button type="button" variant="ghost" className="draw-favbar-grip" aria-label={t('拖动收藏工具栏')} title={t('拖动收藏工具栏（方向键微调）')}
+      onPointerDown={grab} onKeyDown={nudge}><GripVertical aria-hidden="true"/></Button>
+    {tools.map(item => { const Icon = item.icon; return <Button key={item.kind} type="button" variant="ghost" className="draw-favbar-tool"
+      aria-pressed={tool === item.kind} aria-label={t(item.label)} title={titled(item)} onClick={() => arm(item.kind)}><Icon aria-hidden="true"/></Button>; })}
   </div>;
 }

@@ -825,4 +825,6 @@ export const english: Record<string, string> = {
   "找到 {0} 个标的（{1} 个市场），显示前 {2} 个。请缩小搜索或筛选范围。": "{0} assets ({1} markets) found; showing the first {2}. Narrow your search or filters.",
   "找到 {0} 个标的（{1} 个市场）。": "{0} assets ({1} markets) found.",
   "XABCD 形态": "XABCD pattern",
+  "拖动收藏工具栏": "Drag favorite tools bar",
+  "拖动收藏工具栏（方向键微调）": "Drag favorite tools bar (arrow keys to nudge)",
 };

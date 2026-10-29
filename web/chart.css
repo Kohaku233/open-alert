@@ -74,7 +74,7 @@
   animation: draw-rail-in .22s ease-out both;
 }
 .draw-rail.is-collapsed { padding: 3px; }
-.draw-rail-group, .draw-rail-favorites { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.draw-rail-group { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .draw-rail [data-slot="button"] {
   position: relative;
   width: 32px;
@@ -97,6 +97,28 @@
 .draw-rail-badge { position: absolute; right: 3px; bottom: 2px; font: 700 8px/1 var(--mono-font); font-style: normal; }
 .draw-rail [data-slot="button"].is-confirming { width: auto; padding: 0 10px; gap: 6px; color: var(--danger); white-space: nowrap; }
 @keyframes draw-rail-in { from { opacity: 0; transform: translateX(-6px); } }
+/* Starred tools: a separate horizontal bar the user drags anywhere on the chart, like TradingView's favourites bar. */
+.draw-favbar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .22);
+  animation: draw-rail-in .22s ease-out both;
+}
+.draw-favbar.is-dragging { box-shadow: 0 16px 40px rgb(0 0 0 / .32); }
+.draw-favbar [data-slot="button"] { width: 30px; height: 30px; min-height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted-foreground); }
+.draw-favbar [data-slot="button"]:hover { background: var(--field); color: var(--text); }
+.draw-favbar [aria-pressed="true"] { background: var(--selected); color: var(--signal); }
+.draw-favbar svg { width: 15px; height: 15px; }
+.draw-favbar [data-slot="button"].draw-favbar-grip { width: 18px; cursor: grab; touch-action: none; opacity: .6; }
+.draw-favbar.is-dragging .draw-favbar-grip { cursor: grabbing; opacity: 1; }
 [data-slot="popover-content"].draw-flyout { width: 236px; padding: 8px; border-color: var(--line); border-radius: 14px; background: var(--card); }
 .draw-flyout-title { margin: 2px 8px 6px; font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
 .draw-flyout ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
@@ -243,12 +265,13 @@
   .native-chart-bar { flex-wrap: wrap; row-gap: 6px; }
   .draw-rail { top: 8px; left: 8px; }
   .draw-rail [data-slot="button"] { width: 36px; height: 36px; min-height: 36px; }
+  .draw-favbar [data-slot="button"] { width: 34px; height: 34px; min-height: 34px; }
   .chart-legend { top: 8px; left: 58px; font-size: 10px; }
   .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
 }
 /* Phones: keep close + change on one line; full OHL appears from tablet width up. */
 @media (max-width: 520px) { .chart-legend-ohl { display: none; } }
-@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } .draw-rail { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } .draw-rail, .draw-favbar { animation: none; } }
 
 /* Timeframes: starred intervals as pills, a full menu, and a TradingView-style typed entry. */
 .timeframe-favorites { display: inline-flex; align-items: center; gap: 2px; flex: none; }

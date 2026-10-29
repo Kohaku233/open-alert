@@ -1,7 +1,7 @@
 import { decodeEncryptionKey } from '../config.js';
 import type { EncryptedSecret } from '../contracts/domain.js';
 
-export type SecretField = 'userKey' | 'appToken' | 'receipt';
+export type SecretField = 'userKey' | 'appToken' | 'receipt' | 'channelConfig';
 export class SecretError extends Error {
   constructor(public readonly code: 'invalid_secret' | 'invalid_encryption_key' | 'invalid_envelope' | 'secret_authentication_failed') {
     super(code); this.name = 'SecretError';
@@ -15,7 +15,7 @@ function decode(value: unknown, max: number): Uint8Array {
   return bytes;
 }
 function aad(userId: string, field: SecretField): Uint8Array<ArrayBuffer> {
-  if (typeof userId !== 'string' || !userId || userId.length > 200 || !['userKey','appToken','receipt'].includes(field)) throw new SecretError('invalid_secret');
+  if (typeof userId !== 'string' || !userId || userId.length > 200 || !['userKey','appToken','receipt','channelConfig'].includes(field)) throw new SecretError('invalid_secret');
   return new TextEncoder().encode(JSON.stringify(['open-alert','0.1.0',1,userId,field]));
 }
 async function key(value: string): Promise<CryptoKey> {
@@ -26,7 +26,7 @@ export function encryptSecret(encryptionKey: string, userId: string, field: Secr
 /** Compatibility with the interrupted implementation; new integrations use key/user/field/value. */
 export function encryptSecret(value: string, encryptionKey: string, userId: string, field: SecretField): Promise<EncryptedSecret>;
 export async function encryptSecret(a: string, b: string, c: string, d: string): Promise<EncryptedSecret> {
-  const modern = ['userKey','appToken','receipt'].includes(c);
+  const modern = ['userKey','appToken','receipt','channelConfig'].includes(c);
   const [encryptionKey, userId, field, value] = modern ? [a,b,c as SecretField,d] as const : [b,c,d as SecretField,a] as const;
   if (typeof value !== 'string' || !value || new TextEncoder().encode(value).length > 4096) throw new SecretError('invalid_secret');
   const additionalData = aad(userId,field), imported = await key(encryptionKey);

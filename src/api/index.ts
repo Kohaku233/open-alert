@@ -15,6 +15,7 @@ import type { Alert, ChannelProfile, Market, UserIdentity, UserSettings } from '
 import type { ApiDependencies } from './ports.js';
 import { catalogDirectory, marketAvailable, marketQuerySchema, marketSourceStale, searchMarkets, type MarketQuery } from './markets.js';
 import { AnomalyConflict } from '../anomaly/store.js';
+import { CHANNEL_TYPES, HubError, ROUTABLE_SOURCES, routeOptionsSchema } from '../notifications/hub.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
 type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
@@ -27,6 +28,11 @@ const anomalySettingsSchema = z.strictObject({ expectedGeneration: generation, e
 const favoritesSchema = z.strictObject({ favorites: z.array(z.strictObject({ base: z.string().regex(/^[A-Z0-9]{1,24}$/), preferred: instrumentSchema.nullable() })).max(50)
   .refine(list=>new Set(list.map(f=>f.base)).size===list.length) });
 const channelSchema = putChannelSchema;
+const channelName = z.string().trim().min(1).max(40);
+const hubChannelCreateSchema = z.strictObject({ type: z.string().refine(v=>CHANNEL_TYPES.includes(v)), name: channelName, config: z.record(z.string(), z.unknown()) });
+const hubChannelPatchSchema = z.strictObject({ expectedGeneration: generation, name: channelName.optional(), enabled: z.boolean().optional(), config: z.record(z.string(), z.unknown()).optional() }).refine(v=>Object.keys(v).length>1);
+const hubRoutesSchema = z.strictObject({ routes: z.array(z.strictObject({ source: z.enum(ROUTABLE_SOURCES), channelId: z.string().min(1).max(200), enabled: z.boolean(), options: routeOptionsSchema })).max(40)
+  .refine(list=>new Set(list.map(r=>r.source+'\u0000'+r.channelId)).size===list.length) });
 const pageSchema = z.strictObject({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().min(1).max(200).optional()});
 const messages: Record<ApiErrorCode,string> = {
   account_exists:'This email already has an account',
@@ -109,6 +115,7 @@ export function createApi(d:ApiDependencies) {
     else if(error instanceof DisabledAccountError)problem=new HttpError(403,'forbidden');
     else if(error instanceof RepositoryConflict)problem=new HttpError(error.code==='not_found'?404:409,error.code);
     else if(error instanceof AnomalyConflict)problem=new HttpError(409,'generation_conflict');
+    else if(error instanceof HubError)problem=new HttpError(({not_found:404,generation_conflict:409,limit_exceeded:409,invalid_request:400,rate_limited:429,channel_unconfigured:409,notification_failed:502} as const)[error.code],error.code);
     else problem=new HttpError(503,'service_unavailable');
     if(problem.status===429&&!c.res.headers.has('Retry-After'))c.header('Retry-After','10');
     return c.json({ok:false as const,error:{code:problem.code,message:messages[problem.code],...(problem.fields?{fields:problem.fields}:{})},requestId:c.get('requestId')??crypto.randomUUID()},problem.status);
@@ -222,15 +229,26 @@ export function createApi(d:ApiDependencies) {
   const anomaly=()=>{if(!d.anomaly)throw new HttpError(503,'service_unavailable');return d.anomaly;};
   async function anomalyView(userId:string){
     const a=anomaly(),[{settings,generation},events,deliveries,channel]=await Promise.all([a.store.getSettings(userId),a.store.recentEvents(40),a.store.deliveriesSince(Math.floor(Date.now()/86400000)*86400000,userId),d.repositories.channels.get(userId)]);
-    return {settings,generation,events,today:deliveries.length,channelConfigured:channelProfile(channel,d.config.sharedPushoverAppToken).configured,monitor:a.status()};
+    const channelConfigured=d.hub?await d.hub.anomalyReachable(userId):channelProfile(channel,d.config.sharedPushoverAppToken).configured;
+    return {settings,generation,events,today:deliveries.length,channelConfigured,monitor:a.status()};
   }
   app.get('/api/anomaly',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,await anomalyView(uid(c)));});
   app.patch('/api/anomaly/settings',async c=>{
     const a=anomaly(),{expectedGeneration,...patch}=await json(c,anomalySettingsSchema);
-    if(patch.enabled){const channel=await d.repositories.channels.get(uid(c));if(!channelProfile(channel,d.config.sharedPushoverAppToken).configured)throw new HttpError(409,'channel_unconfigured');}
+    if(patch.enabled){const channel=await d.repositories.channels.get(uid(c));const reachable=d.hub?await d.hub.anomalyReachable(uid(c)):channelProfile(channel,d.config.sharedPushoverAppToken).configured;if(!reachable)throw new HttpError(409,'channel_unconfigured');}
     await a.store.patchSettings(uid(c),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)),Date.now());
     return ok(c,await anomalyView(uid(c)));
   });
+  // Notification centre: many channels per user, routed per event source. Credentials never leave the server.
+  const hub=()=>{if(!d.hub)throw new HttpError(503,'service_unavailable');return d.hub;};
+  const noQuery=(c:Context<Env>)=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');};
+  app.get('/api/notify',async c=>{noQuery(c);const h=hub(),[channels,routes]=await Promise.all([h.channels(uid(c)),h.routes(uid(c))]);return ok(c,{channels,routes,types:CHANNEL_TYPES});});
+  app.post('/api/notify/channels',async c=>{const body=await json(c,hubChannelCreateSchema);return ok(c,{channel:await hub().createChannel(uid(c),body)},201);});
+  app.patch('/api/notify/channels/:id',async c=>{const {expectedGeneration,...patch}=await json(c,hubChannelPatchSchema);return ok(c,{channel:await hub().patchChannel(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)))});});
+  app.delete('/api/notify/channels/:id',async c=>{await hub().removeChannel(uid(c),c.req.param('id'));return ok(c,{deleted:true});});
+  app.post('/api/notify/channels/:id/test',async c=>{await json(c,testNotificationSchema);const result=await hub().test(uid(c),c.req.param('id'));
+    if(result.outcome==='uncertain')throw new HttpError(504,'notification_uncertain');if(result.outcome==='skipped')throw new HttpError(409,'channel_unconfigured');if(result.outcome==='failed')throw new HttpError(502,'notification_failed');return ok(c,{outcome:'sent',at:Date.now()});});
+  app.put('/api/notify/routes',async c=>{const body=await json(c,hubRoutesSchema);return ok(c,{routes:await hub().setRoutes(uid(c),body.routes)});});
   // Starred underlyings (BTC, NVDA...) across every venue; the client opens `preferred` or any listed market.
   app.get('/api/favorites',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,{favorites:await anomaly().store.favorites(uid(c))});});
   app.put('/api/favorites',async c=>{

@@ -15,7 +15,8 @@ export interface Series {
 }
 export interface UniverseRow { venue: AnomalyVenue; nativeId: string; base: string; category: Category; quoteVolume24h: number }
 export interface Delivery {
-  send(userId: string, message: string, title: string, settings: AnomalySettings): Promise<{ outcome: 'sent' | 'failed' | 'uncertain' | 'skipped'; code: string | null }>;
+  /** categories lists which anomaly sources (crypto / TradFi) the push covers, for per-source routing. */
+  send(userId: string, message: string, title: string, settings: AnomalySettings, categories: readonly Category[]): Promise<{ outcome: 'sent' | 'failed' | 'uncertain' | 'skipped'; code: string | null }>;
 }
 export interface AnomalyEngineOptions {
   store: AnomalyStore; delivery: Delivery; appUrl: string;
@@ -373,7 +374,7 @@ export function createAnomalyEngine(options: AnomalyEngineOptions) {
       if ((await options.store.deliveriesSince(dayStart, userId)).length >= settings.dailyLimit) { console.warn('open_alert_anomaly_daily_limit'); continue; }
       const { title, message } = formatPush(mine, options.appUrl);
       let result: Awaited<ReturnType<Delivery['send']>>;
-      try { result = await options.delivery.send(userId, message, title, settings); } catch { result = { outcome: 'uncertain', code: 'delivery_failed' }; }
+      try { result = await options.delivery.send(userId, message, title, settings, [...new Set(mine.map(e => e.category))]); } catch { result = { outcome: 'uncertain', code: 'delivery_failed' }; }
       if (result.outcome !== 'skipped') await options.store.recordDelivery(g.id, userId, now(), mine.map(e => ({ entity: e.entity, ...markOf(e) })), result.outcome, result.code);
     }
   }
