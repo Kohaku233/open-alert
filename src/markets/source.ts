@@ -349,7 +349,10 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       }
     }
   }
-  const eligible = (id: string) => { const s = locate(id); return !!s && catalogFresh(s) && !['trade_queue_overflow', 'trade_replay_capacity'].includes(demand.get(id)?.code ?? ''); };
+  // Display clients have independent quote/history transports. A fault in the
+  // alert trade buffer must not hide an otherwise current, listed market.
+  const catalogAvailable = (id: string) => { const s = locate(id); return !!s && catalogFresh(s); };
+  const eligible = (id: string) => catalogAvailable(id) && !['trade_queue_overflow', 'trade_replay_capacity'].includes(demand.get(id)?.code ?? '');
   const available = (id: string, d: Demand) => eligible(id) && d.code === null;
   const samples = (id: string) => { const d = demand.get(id); return d && available(id, d) ? d.queue.filter(t => fresh(t)).map(t => ({ ...t })) : []; };
   const ticks = () => new Map([...demand].flatMap(([id, d]) => d.latest && available(id, d) && fresh(d.latest) ? [[id, { ...d.latest }] as const] : []));
@@ -411,7 +414,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
       const identity = parseInstrumentIdentity(instrument);
       const scopes = identity ? states.filter(s => s.venue === identity.venue && (!s.product || s.product === identity.type)) : [];
       const selected = scopes.find(s => s.catalog.has(instrument))?.catalog.get(instrument);
-      const available = !!selected && eligible(instrument);
+      const available = !!selected && catalogAvailable(instrument);
       return { market: selected ? { ...selected, available } : null, stale: !scopes.length || scopes.some(s => !catalogFresh(s)), available };
     },
     acknowledgeSamples(id, captured) {
@@ -430,7 +433,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
     ticks, getPrices: () => [...ticks().values()], lastPollAt: () => lastPoll,
     getMarkets() {
       const ats = states.map(s => s.catalogAt);
-      return { markets: states.flatMap(s => [...s.catalog.values()].map(m => ({ ...m, available: eligible(m.instrument) }))), updatedAt: ats.some(t => t === null) ? null : Math.min(...ats as number[]), stale: states.some(s => !catalogFresh(s)),
+      return { markets: states.flatMap(s => [...s.catalog.values()].map(m => ({ ...m, available: catalogAvailable(m.instrument) }))), updatedAt: ats.some(t => t === null) ? null : Math.min(...ats as number[]), stale: states.some(s => !catalogFresh(s)),
         sources: states.map(s => ({ venue: s.venue, ...(s.product ? {type:s.product} : {}), updatedAt: s.catalogAt, stale: !catalogFresh(s), code: s.catalogCode })) };
     },
     priceHealth() {

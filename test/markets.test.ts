@@ -185,6 +185,35 @@ test('saturated CCXT stream cache fails closed even if queue has room', async ()
     assert.equal(f.source.eligible('BTC-USDT-SWAP'),false); assert.deepEqual(f.source.getPrices(),[]); assert.equal(f.source.diagnostics().queued,0);
   } finally {await f.source.stop();}
 });
+
+test('alert overflow does not disable independent Binance quote and candle discovery', async () => {
+  const id='binance:swap:BTCUSDT';
+  const f=fixture({venues:['binance'],mode:'stream',maxBatch:2});
+  try {
+    await f.source.refreshCatalog(); await f.source.setDemand([id]); await f.source.refresh();
+    const e=f.current('binance'); await until(()=>e.watches.length===1);
+    e.watches[0]!.resolve([trade(10),trade(20)]);
+    await until(()=>f.source.diagnostics().instruments[0]!.code==='trade_queue_overflow');
+    // Monitoring still refuses an incomplete stream; display metadata stays usable.
+    assert.equal(f.source.eligible(id),false);
+    assert.deepEqual(f.source.samples(id),[]);
+    assert.deepEqual(f.source.getPrices(),[]);
+    const selected=f.source.resolve!(id);
+    assert.equal(selected.stale,false);
+    assert.equal(selected.available,true);
+    assert.equal(selected.market!.available,true);
+    assert.equal(marketAvailable(f.source.getMarkets(),selected.market!),true);
+    assert.equal(f.source.getMarkets().markets.find(m=>m.instrument===id)!.available,true);
+    // Separating the two states must not bypass freshness, delisting or shutdown.
+    f.advance(100);
+    assert.equal(f.source.resolve!(id).available,false);
+    assert.equal(f.source.resolve!(id).stale,true);
+    e.metadata={}; f.next.binance=new MockExchange('binance'); f.next.binance.metadata={};
+    await f.source.refreshCatalog();
+    assert.equal(f.source.resolve!(id).market,null);
+    assert.equal(f.source.resolve!(id).available,false);
+  } finally {await f.source.stop();}
+});
 test('poll failure isolates a venue, clears its prices and reconnects with bounded backoff', async () => {
   const f=fixture(); try {
     await f.source.refreshCatalog(); await f.source.setDemand(['BTC-USDT-SWAP','binance:swap:BTCUSDT']);
@@ -300,7 +329,7 @@ test('stream queue overflow clears crossings and isolates the affected instrumen
     e.watches[0]!.resolve([trade(10),trade(20),trade(30),trade(40)]);
     await until(()=>f.source.diagnostics().instruments[0]!.code==='trade_queue_overflow');
     assert.equal(f.source.eligible('BTC-USDT-SWAP'),false); assert.equal(f.source.priceHealth().code,'trade_queue_overflow'); assert.equal(f.source.diagnostics().queued,0);
-    assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,false);assert.equal(f.source.resolve!('BTC-USDT-SWAP').available,false);
+    assert.equal(f.source.resolve!('BTC-USDT-SWAP').stale,false);assert.equal(f.source.resolve!('BTC-USDT-SWAP').available,true);
     e.watches[1]!.resolve([trade(80,initial,'BTC/USDT')]); await until(()=>f.source.getPrices().length===1);
     assert.equal(f.source.getPrices()[0]!.instrument,'okx:spot:BTC-USDT'); assert.equal(f.source.priceHealth().state,'degraded');
     assert.equal(e.closed,0); assert.ok(f.source.diagnostics().queued<=3);
@@ -435,6 +464,8 @@ test('replay timestamp capacity fails closed and recovers on a newer timestamp',
     await until(()=>e.watches.length===2); e.watches[1]!.resolve([trade(80)]);
     await until(()=>f.source.diagnostics().instruments[0]!.code==='trade_replay_capacity');
     assert.equal(f.source.eligible('BTC-USDT-SWAP'),false); assert.equal(f.source.diagnostics().queued,0);
+    assert.equal(f.source.resolve!('BTC-USDT-SWAP').available,true);
+    assert.equal(f.source.getMarkets().markets.find(m=>m.instrument==='BTC-USDT-SWAP')!.available,true);
     await until(()=>e.watches.length===3); e.watches[2]!.resolve([trade(120)]);
     await until(()=>e.watches.length===4); assert.deepEqual(f.source.samples('BTC-USDT-SWAP'),[]);
     // A transport fault must not remove the blocked timestamp. An unchanged
