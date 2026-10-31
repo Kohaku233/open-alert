@@ -10,7 +10,8 @@
   .tabs :global([role="tabpanel"]){padding:16px 18px 6px}
 </style>
 <script>
-  document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root, n) => {
+  document.addEventListener('astro:page-load', () => document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root, n) => {
+    if (root.dataset.ready) return; root.dataset.ready = '1';
     const bar = root.querySelector('.tab-bar')!;
     const panels = [...root.querySelectorAll<HTMLElement>(':scope > [data-tab]')];
     const buttons = panels.map((panel, i) => {
@@ -23,5 +24,5 @@
     });
     const select = (k: number) => { buttons.forEach((b, i) => { b.setAttribute('aria-selected', String(i === k)); b.tabIndex = i === k ? 0 : -1; panels[i]!.hidden = i !== k; }); };
     select(0);
-  });
+  }));
 </script>

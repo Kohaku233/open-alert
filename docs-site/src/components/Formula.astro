@@ -17,10 +17,10 @@ const { name, formula, example } = Astro.props;
   .c{color:var(--muted-fg)}
 </style>
 <script>
-  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) => {
+  document.addEventListener('astro:page-load', () => document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) => {
     b.onclick = async () => {
       try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = '已复制'; } catch { b.textContent = '复制失败'; }
       setTimeout(() => (b.textContent = '复制'), 1400);
     };
-  });
+  }));
 </script>

@@ -1,4 +1,5 @@
 ---
+import { ClientRouter } from 'astro:transitions';
 import '../styles/site.css';
 import { nav, href } from '../nav';
 
@@ -41,16 +42,22 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   {noindex && <meta name="robots" content="noindex" />}
   <script is:inline>
     (() => {
-      let t = null;
-      try { t = localStorage.getItem('oa-docs-theme'); } catch {}
-      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      document.documentElement.dataset.theme = t;
+      const apply = (doc) => {
+        let t = null;
+        try { t = localStorage.getItem('oa-docs-theme'); } catch {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        doc.documentElement.dataset.theme = t;
+      };
+      apply(document);
+      // In-page navigation swaps <html> attributes; set the theme on the incoming page before it paints.
+      if (!window.__oaTheme) { window.__oaTheme = true; document.addEventListener('astro:before-swap', (e) => apply(e.newDocument)); }
     })();
   </script>
+  <ClientRouter />
 </head>
 <body>
   <a class="skip" href="#content">跳到正文</a>
-  <header class="top">
+  <header class="top" transition:animate="none">
     <a class="brand" href="/" aria-label="价格哨站文档首页">
       <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 22A16 16 0 0 1 40 22Z" fill="var(--mark-top)" transform="translate(3 -1.5)"/><path d="M8 26A16 16 0 0 0 40 26Z" fill="var(--mark-bottom)" transform="translate(-3 1.5)"/></svg>
       <span>价格哨站<small>openalert</small></span><span class="tag">docs</span>
@@ -71,7 +78,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   </header>
 
   <div class="shell">
-    <aside class="side" id="side" aria-label="文档目录">
+    <aside class="side" id="side" aria-label="文档目录" transition:persist transition:animate="none">
       {groups.map((g) => (
         <div class="group"><h4>{g.label}</h4>
           {g.links.map((l) => <a href={l.href} aria-current={l.id === current ? 'page' : undefined}>{l.title}</a>)}
@@ -79,7 +86,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       ))}
     </aside>
 
-    <main id="content">
+    <main id="content" transition:animate="fade">
       <div class="crumbs">
         <a href="/">文档</a>
         {group && <><span>/</span>{group}</>}
@@ -115,49 +122,62 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <ul class="find-list" role="listbox" aria-label="搜索结果"></ul>
   </dialog>
 
-  <script is:inline>
-    // Wrap Markdown tables for horizontal scroll, and add "#" links to section headings.
-    document.querySelectorAll('.prose table').forEach((t) => {
-      const w = document.createElement('div'); w.className = 'table'; t.before(w); w.append(t);
-    });
-    document.querySelectorAll('.prose h2[id]').forEach((h) => {
-      const a = document.createElement('a'); a.className = 'anchor'; a.href = '#' + h.id; a.textContent = '#';
-      a.setAttribute('aria-label', '链接到本节'); a.setAttribute('data-pagefind-ignore', ''); h.append(a);
-    });
-  </script>
   <script>
     import { setupSearch } from '../scripts/search';
     const root = document.documentElement;
-    const themeButton = document.getElementById('theme')!;
-    const paintTheme = () => {
-      const dark = root.dataset.theme === 'dark';
-      themeButton.querySelector('span')!.textContent = dark ? '深色' : '浅色';
-      themeButton.querySelector<SVGElement>('.moon')!.style.display = dark ? '' : 'none';
-      themeButton.querySelector<SVGElement>('.sun')!.style.display = dark ? 'none' : '';
-    };
-    themeButton.addEventListener('click', () => {
-      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-      try { localStorage.setItem('oa-docs-theme', root.dataset.theme); } catch {}
-      paintTheme();
-    });
-    paintTheme();
-
-    const menu = document.getElementById('menu')!;
-    const side = document.getElementById('side')!;
-    menu.addEventListener('click', () => { const open = side.classList.toggle('open'); menu.setAttribute('aria-expanded', String(open)); });
-    side.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => { side.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }));
-    side.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest' });
-
-    const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a')];
-    if (links.length) {
-      const io = new IntersectionObserver((entries) => entries.forEach((e) => {
-        if (e.isIntersecting) links.forEach((l) => l.classList.toggle('on', l.getAttribute('href') === '#' + e.target.id));
-      }), { rootMargin: '-90px 0px -70% 0px' });
-      document.querySelectorAll('.prose h2[id]').forEach((h) => io.observe(h));
-      links[0]!.classList.add('on');
-    }
-
     setupSearch();
+
+    // Runs on the first load and after every in-page navigation.
+    document.addEventListener('astro:page-load', () => {
+      // Wrap Markdown tables for horizontal scroll, and add "#" links to section headings.
+      document.querySelectorAll('.prose table').forEach((t) => {
+        if (t.parentElement?.classList.contains('table')) return;
+        const w = document.createElement('div'); w.className = 'table'; t.before(w); w.append(t);
+      });
+      document.querySelectorAll('.prose h2[id]').forEach((h) => {
+        if (h.querySelector('.anchor')) return;
+        const a = document.createElement('a'); a.className = 'anchor'; a.href = '#' + h.id; a.textContent = '#';
+        a.setAttribute('aria-label', '链接到本节'); a.setAttribute('data-pagefind-ignore', ''); h.append(a);
+      });
+
+      const themeButton = document.getElementById('theme')!;
+      const paintTheme = () => {
+        const dark = root.dataset.theme === 'dark';
+        themeButton.querySelector('span')!.textContent = dark ? '深色' : '浅色';
+        themeButton.querySelector<SVGElement>('.moon')!.style.display = dark ? '' : 'none';
+        themeButton.querySelector<SVGElement>('.sun')!.style.display = dark ? 'none' : '';
+      };
+      themeButton.onclick = () => {
+        root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('oa-docs-theme', root.dataset.theme); } catch {}
+        paintTheme();
+      };
+      paintTheme();
+
+      // The sidebar persists across navigations (keeps its scroll); only the current-page mark moves.
+      const menu = document.getElementById('menu')!;
+      const side = document.getElementById('side')!;
+      const close = () => { side.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); };
+      close();
+      menu.onclick = () => { const open = side.classList.toggle('open'); menu.setAttribute('aria-expanded', String(open)); };
+      let currentLink: HTMLAnchorElement | undefined;
+      side.querySelectorAll<HTMLAnchorElement>('a').forEach((a) => {
+        a.onclick = close;
+        const here = new URL(a.href).pathname === location.pathname;
+        if (here) { a.setAttribute('aria-current', 'page'); currentLink = a; } else a.removeAttribute('aria-current');
+      });
+      currentLink?.scrollIntoView({ block: 'nearest' });
+
+      const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a')];
+      if (links.length) {
+        const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+          if (e.isIntersecting) links.forEach((l) => l.classList.toggle('on', l.getAttribute('href') === '#' + e.target.id));
+        }), { rootMargin: '-90px 0px -70% 0px' });
+        document.querySelectorAll('.prose h2[id]').forEach((h) => io.observe(h));
+        links[0]!.classList.add('on');
+        document.addEventListener('astro:before-swap', () => io.disconnect(), { once: true });
+      }
+    });
   </script>
 </body>
 </html>

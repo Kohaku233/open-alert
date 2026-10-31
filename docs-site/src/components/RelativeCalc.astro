@@ -26,7 +26,8 @@
 </style>
 <script>
   const pct = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
-  for (const root of document.querySelectorAll<HTMLElement>('[data-oa-calc]')) {
+  document.addEventListener('astro:page-load', () => { for (const root of document.querySelectorAll<HTMLElement>('[data-oa-calc]')) {
+    if (root.dataset.ready) continue; root.dataset.ready = '1';
     const [btc, coin] = root.querySelectorAll<HTMLInputElement>('input');
     const out = (s: string) => root.querySelector<HTMLElement>(s)!;
     const update = () => {
@@ -39,5 +40,5 @@
       v.classList.toggle('ok', a >= 0.10);
     };
     btc!.addEventListener('input', update); coin!.addEventListener('input', update); update();
-  }
+  } });
 </script>
