@@ -1,0 +1,35 @@
+---
+title: 价格哨站文档
+description: 价格警报、异动监测和通知渠道的使用说明。
+template: splash
+hero:
+  title: 价格哨站使用说明
+  tagline: 后台盯盘，到价或出现异动时通过 Pushover、Discord 通知你。页面关掉也照常工作。
+  actions:
+    - text: 五分钟上手
+      link: /start/
+      icon: right-arrow
+      variant: primary
+    - text: 打开控制台
+      link: https://cryptotool.bar
+      icon: external
+      variant: secondary
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## 从这里开始
+
+<CardGrid>
+  <LinkCard title="五分钟上手" description="登录、添加通知渠道、创建第一条警报、打开监控。" href="/start/" />
+  <LinkCard title="价格警报怎么触发" description="价格选取依据、触发时机以及触发后自动锁定的原因。" href="/alerts/how-it-works/" />
+  <LinkCard title="异动监测规则" description="异动行情的判定标准，以及通知推送时机的原因解析。" href="/anomaly/rules/" />
+  <LinkCard title="通知渠道与推送规则" description="配置 Pushover、Discord 等渠道，灵活规划各类消息的推送路径。" href="/notify/channels/" />
+</CardGrid>
+
+## 遇到问题
+
+<CardGrid>
+  <LinkCard title="常见问题" description="排查未收到提醒、重复收到通知或价格显示不一致等常见疑问。" href="/help/faq/" />
+  <LinkCard title="额度与限制" description="了解账户可创建的警报数量上限及每日通知接收额度。" href="/account/limits/" />
+</CardGrid>
