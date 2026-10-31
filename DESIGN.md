@@ -287,7 +287,7 @@ The login page reads the fixed public display endpoint /api/public-quotes every 
 
 Notification-provider availability is omitted from account/admin summaries because an untested provider is not evidence of a service restriction. Genuine delivery errors and uncertain outcomes stay visible in alert and operational diagnostics.
 
-Boot rows describe session, workspace and price claims. Route output is gated by the existing entrance mechanism; completion follows the timeline and active claims. Background polling retains content rather than replaying a full-screen entrance. Initial failures become stable retry states, and loading never supplies invented values.
+Boot rows describe session, workspace and price claims. Route output is gated by the existing entrance mechanism; completion follows the timeline and active claims. The entrance plays once per page load; sign-in, retries, market switches and background polling use inline loading states rather than replaying a full-screen entrance. Initial failures become stable retry states, and loading never supplies invented values.
 
 ### Reference Chart
 

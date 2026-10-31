@@ -104,7 +104,7 @@ export function Admin({ model, notify }: {
     const health = adminStatus ? accountHealth(adminStatus.health) : null;
     if (!canAdmin)
         return <section className="page-loading"><h1>{t("管理")}</h1><p>{t("此页面仅供管理员使用。")}</p></section>;
-    return <section ref={pageRef} className="settings-page admin-page"><PageHeader className="page-heading"><div><span className="page-index">04 — ADMIN</span><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button loading={loading} onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></PageHeader>
+    return <section ref={pageRef} className="settings-page admin-page"><PageHeader className="page-heading"><div><span className="page-index">05 — ADMIN</span><h1>{t("管理")}</h1><p>{t("邀请账户、控制访问与查看运行状态。")}</p></div><Button loading={loading} onClick={() => void load()} disabled={loading || model.busy}>{t("刷新管理信息")}</Button></PageHeader>
     <FormError message={error}/>
     <div className="admin-overview"><span>{t("活跃账户 ")}<strong>{adminStatus?.activeUsers ?? '—'}</strong></span><span>{t("活跃警报 ")}<strong>{adminStatus?.activeAlerts ?? '—'}</strong></span><span>{t("运行状态 ")}<strong className={health?.overall === 'healthy' ? 'signal-text' : 'amber-text'}>{health ? healthLabels[health.overall] : t("读取中")}</strong></span><div className="admin-health-strip" aria-label={t("后台运行状态")}>{(['database','scheduler','prices','email'] as const).map((key,i)=><div key={key} title={health ? healthLabels[health[key].state] : t("读取中")}><i className={health?.[key].state === 'healthy' ? 'is-healthy' : 'is-limited'}/><span>{[t("数据库"),t("监控"),t("行情"),t("邮件")][i]}</span></div>)}</div></div>
     <div className="admin-grid"><Invitations model={model} notify={notify}/>

@@ -11,7 +11,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import { api, errorText } from '../api.js';
-import { breached, formatPrice, formatQuotePrice, freshTick } from '../utils.js';
+import { breached, formatPrice, formatQuotePrice } from '../utils.js';
 import { findMarket, marketLabel, marketQuote, sameMarket, selectableMarket, useRetainedMarket } from '../markets.js';
 import type { WorkspaceModel } from '../model.js';
 import { Dialog, FormError } from './Dialog.js';
@@ -41,6 +41,7 @@ export function AlertEditor({ model, alert, instrument, initialThreshold, initia
     const quoteState = useMarketQuote(selected, available);
     const viewed = quoteState.quote;
     const tick = viewed?.timestamp ? { instrument: selected, price: viewed.price, timestamp: viewed.timestamp, receivedAt: viewed.observedAt } : data?.status.prices.find(price => sameMarket(price.instrument, selected));
+    const referencePrice = tick && Number.isFinite(tick.price) && tick.price > 0 ? tick.price : null;
     const distance = tick && parsedValue(threshold) ? (Number(threshold) / tick.price - 1) * 100 : null;
     const current = alert ? data?.alerts.find(item => item.id === alert.id) : null;
     const pending = !!current?.pending;
@@ -73,24 +74,27 @@ export function AlertEditor({ model, alert, instrument, initialThreshold, initia
     return <Dialog className="alert-editor-dialog" eyebrow={alert ? 'EDIT RULE' : 'NEW RULE'} title={alert ? t("编辑价格警报") : t("创建价格警报")} onClose={onClose} busy={busy}>
     <form className="alert-editor-form" onSubmit={event => void save(event)}><fieldset className="alert-editor-fields" disabled={busy || pending || !!model.error}>
       <MarketPicker labelOutside compact label={t("警报市场")} markets={data?.markets ?? []} value={selected} onChange={setSelected} disabled={busy || pending || !!model.error} stale={data?.marketStale ?? false} error={model.error} onRetry={() => void model.refresh()}/>
-      <p className="small muted rule-market-note">{t("始终按这里保存的交易所和市场判断，与当前参考图表选择无关。")}</p>
       <Label>{t("警报名称")}<Input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder={t("例如：突破前高")} autoFocus/></Label>
       <div className="alert-condition"><span className="field-label">{t("触发条件")}</span><div className="direction-segments" role="group" aria-label={t("触发条件")}>{(['upper', 'lower'] as const).map(value => <Button key={value} type="button" aria-pressed={side === value} onClick={() => setSide(value)} className={value}>{value === 'upper' ? '↑ ' : '↓ '}{value === 'upper' ? t("达到或高于") : t("达到或低于")}</Button>)}</div></div>
-      <div className="threshold-field"><Label className="threshold-label">{t("价格 · ")}{quote}<span className="threshold-control"><Input className="threshold-input" type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} placeholder={tick ? formatQuotePrice(tick.price) : '0.00'}/><span className="mobile-threshold-unit">{quote}</span></span></Label><div className="price-shortcuts desktop-price-shortcuts">{[-1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div></div>
-      {distance !== null && <div className="threshold-distance"><div className="distance-track"><i style={{left: `${Math.max(10, Math.min(94, 69 + distance * 6))}%`}}/></div><div className="distance-labels"><span>{t('现价')} {tick && formatQuotePrice(tick.price)}</span><strong>{distance >= 0 ? '↑ +' : '↓ '}{distance.toFixed(2)}%</strong></div></div>}
-      <div className="price-shortcuts mobile-price-shortcuts">{[-5, -1, 1, 5].map(percent => <Button type="button" key={percent} disabled={!freshTick(tick)} onClick={() => { if (tick) setThreshold(String(Number((tick.price * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div>
+      <div className="threshold-field"><Label className="threshold-label">{t("价格 · ")}{quote}<span className="threshold-control"><Input className="threshold-input" type="number" min="0" max="1000000000000" step="any" required value={threshold} onChange={event => setThreshold(event.target.value)} placeholder={tick ? formatQuotePrice(tick.price) : '0.00'}/><span className="mobile-threshold-unit">{quote}</span></span></Label><div className="price-shortcuts desktop-price-shortcuts">{SHORTCUTS.map(percent => <Button type="button" key={percent} disabled={!referencePrice} onClick={() => { if (referencePrice) setThreshold(String(Number((referencePrice * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div></div>
+      {distance !== null && <div className="threshold-distance"><div className="distance-track"><i style={{left: `${distancePosition(distance)}%`}}/></div><div className="distance-labels"><span>{t('现价')} {tick && formatQuotePrice(tick.price)}</span><strong>{distance >= 0 ? '↑ +' : '↓ '}{distance.toFixed(2)}%</strong></div></div>}
+      <div className="price-shortcuts mobile-price-shortcuts">{SHORTCUTS.map(percent => <Button type="button" key={percent} disabled={!referencePrice} onClick={() => { if (referencePrice) setThreshold(String(Number((referencePrice * (1 + percent / 100)).toPrecision(12)))); }}>{percent > 0 ? '+' : ''}{percent}%</Button>)}</div>
       <Label className="check-label enable-rule"><span>{t("启用这条警报")}</span><Switch checked={enabled} onCheckedChange={setEnabled} disabled={busy || pending || !!model.error} aria-label={t("启用这条警报")}/></Label>
 
     </fieldset>
     {!available && unchangedMarket && <Notice as="p" className="warning">{t("原警报市场当前不可用。可保留原市场修改其他设置或暂停警报。重新启用前需选择可用市场；保存不会自动更换市场。")}</Notice>}
     {pending && <Notice as="p" className="warning">{t("该警报的通知正在排队或发送，请等待完成后再修改。")}</Notice>}
     {hit && enabled && <Notice as="p" className="warning">{marketLabel(selected, market)}{t(" 当前新鲜成交价 ")}{tick ? formatQuotePrice(tick.price) : ''} {quote}{t(" 已满足条件。保存后首次收到满足条件的新鲜价格可能立即触发。")}</Notice>}
-    {!freshTick(tick) && <p className="small muted">{t("当前没有可用的新鲜后台价格。恢复行情后，首次满足条件的价格也会触发。")}</p>}
     {alert?.triggered && <Notice as="p" className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</Notice>}
-    {!data?.status.settings.enabled && <p className="small muted">{t("你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。")}</p>}
     <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")} <DocsLink path="/alerts/how-it-works/">{t("触发规则")}</DocsLink></p>
     <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy && <Spinner/>}{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>
   </Dialog>;
 }
 
+const SHORTCUTS = [-5, -1, 1, 5] as const;
+/** Track position (%) for a distance from the current price; eases toward the edges instead of clipping at about +-4%. */
+function distancePosition(distance: number) {
+    const room = distance >= 0 ? 25 : 59;
+    return 69 + Math.sign(distance) * room * (1 - Math.exp(-Math.abs(distance) * 6 / room));
+}
 function parsedValue(value: string) { return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) > 0; }

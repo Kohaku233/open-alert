@@ -4,7 +4,7 @@
 
 /* Former workbench.css baseline; keep before redesign rules. */
 :root{--radius:6px}
-html:lang(en){font-family:Sora,'Segoe UI',sans-serif}input{caret-color:var(--signal)}
+html:lang(en){font-family:var(--body-font)}input{caret-color:var(--signal)}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline-color:var(--ring)}input,select{background:var(--field)}h1{font-size:26px}.primary{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:500}.primary:hover{background:var(--primary-hover);color:var(--bg);border-color:var(--primary-hover)}
 .masthead{min-height:76px;padding:0 36px;gap:36px}.brand{color:var(--text);font-size:17px;gap:12px}.brand-mark{width:34px;height:34px;border:0;border-radius:0;color:var(--text)}.languages{flex-shrink:0}.languages button[aria-pressed=true]{background:var(--selected);color:var(--text)}.app-nav{align-self:stretch}.app-nav a{border-bottom:2px solid transparent}.app-nav a[aria-current=page]{color:var(--text);border-color:var(--signal)}.app-footer{margin:auto;border-color:var(--secondary-hover)}.page-heading button{flex-shrink:0}.page-heading p{max-width:65ch}
 .market-header{padding:15px 18px;border:1px solid var(--line);border-radius:6px;margin-bottom:20px;min-height:80px;gap:28px}.contract{background:none;font-size:12px}.quote{font-size:inherit;font-weight:450}.price-block{margin-left:0}.health{margin-left:auto}
@@ -125,7 +125,7 @@ small, .small { line-height: 1.65; }
   background: color-mix(in srgb, var(--card) 88%, transparent); box-shadow: var(--elevation-deep); backdrop-filter: blur(18px);
 }
 .login-panel-status { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; padding-bottom: 15px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font: 11px/1.2 Consolas, monospace; letter-spacing: .12em; }
-.login-panel-status span:last-child { margin-left: auto; letter-spacing: .02em; font-family: "Sora", sans-serif; }
+.login-panel-status span:last-child { margin-left: auto; letter-spacing: .02em; font-family: var(--body-font); }
 .login-panel h2 { margin-bottom: 10px; font-size: 28px; font-weight: 400; }
 .live-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); }
 .login-panel label { margin: 0; }
@@ -155,7 +155,7 @@ small, .small { line-height: 1.65; }
 .signal-hero-main { z-index: 1; grid-template-columns: minmax(0, 1fr) auto; align-content: space-between; }
 .contract { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border: 1px solid var(--hero-line); border-radius: 999px; color: var(--hero-muted); font: 11px/1.2 Consolas, monospace; letter-spacing: .04em; white-space: nowrap; }
 .price-block { grid-area: price; margin-top: 18px; }
-.price-block strong { display: flex; align-items: baseline; gap: 7px; color: var(--hero-text); font: 300 clamp(52px, 5.4vw, 96px)/.95 "Sora", sans-serif; letter-spacing: -.075em; font-variant-numeric: tabular-nums; }
+.price-block strong { display: flex; align-items: baseline; gap: 7px; color: var(--hero-text); font: 300 clamp(52px, 5.4vw, 96px)/.95 var(--body-font); letter-spacing: -.075em; font-variant-numeric: tabular-nums; }
 .price-value { transform-origin: left center; }
 .health { grid-area: health; display: grid; grid-template-columns: 8px auto; align-items: center; gap: 5px 8px; align-self: start; justify-self: end; color: var(--hero-muted); font-size: 12px; text-align: right; }
 .health small { grid-column: 2; color: var(--hero-muted); font-size: 12px; }

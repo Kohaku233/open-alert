@@ -54,7 +54,7 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
     catch (cause) { setFormError(errorText(cause)); void load(); return false; }
     finally { setBusy(false); }
   }
-  if (!view) return <section ref={pageRef} className="settings-page anomaly-page"><PageHeader className="page-heading"><div><span className="page-index">03 — ANOMALY</span><h1>{t('异动监测')}</h1></div></PageHeader>
+  if (!view) return <section ref={pageRef} className="settings-page anomaly-page"><PageHeader className="page-heading"><div><span className="page-index">02 — ANOMALY</span><h1>{t('异动监测')}</h1></div></PageHeader>
     {loadError ? <Notice className="connection-error" role="alert"><p>{loadError}</p><Button onClick={() => void load()}>{t('重新读取')}</Button></Notice> : <ListSkeleton label={t('正在读取异动监测…')} rows={4}/>}</section>;
   const { settings, monitor } = view;
   const values = draft ?? { crypto: String(Math.round(settings.minMoveCrypto * 100)), tradfi: String(Math.round(settings.minMoveTradfi * 1000) / 10) };
@@ -69,12 +69,11 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
   }
   const edit = (key: 'crypto' | 'tradfi', value: string) => setDraft({ ...values, [key]: value });
   return <section ref={pageRef} className="settings-page anomaly-page">
-    <PageHeader className="page-heading"><div><span className="page-index">03 — ANOMALY</span><h1>{t('异动监测')}</h1><p>{t('Binance、OKX、MEXC 的 USDT 永续合约出现极端行情时推送到手机。')}</p></div>
+    <PageHeader className="page-heading"><div><span className="page-index">02 — ANOMALY</span><h1>{t('异动监测')}</h1><p>{t('Binance、OKX、MEXC 的 USDT 永续合约出现极端行情时推送到手机。')}</p></div>
       <Badge variant="outline" className={`status-pill ${settings.enabled ? 'success' : ''}`}>{settings.enabled ? t('推送中') : t('未开启')}</Badge></PageHeader>
     {!view.channelConfigured && <Notice className="warning"><p>{t('没有已启用的推送渠道接收异动，暂时无法推送。')}</p><Button onClick={() => navigate('/notifications')}>{t('去通知中心设置')}</Button></Notice>}
     <div className="settings-grid anomaly-grid">
       <Panel className="settings-panel anomaly-switches"><span className="section-index">01 — SIGNAL</span><h2>{t('推送开关')}</h2>
-        <p className="small muted">{t('与价格警报的监控总开关相互独立，推送渠道在手机通知页的路由里选择。')}</p>
         <div className="anomaly-toggles">
           <label className="anomaly-toggle is-primary"><span><strong>{t('异动推送')}</strong><small>{settings.enabled ? t('满足规则即推送，多交易所合并为一条') : t('只记录，不推送')}</small></span>
             <Switch checked={settings.enabled} aria-label={t('异动推送')} disabled={busy || (!settings.enabled && !view.channelConfigured)} onCheckedChange={checked => void save({ enabled: checked }, checked ? t('异动推送已开启。') : t('异动推送已关闭。'))}/></label>
@@ -83,7 +82,7 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
           <label className="anomaly-toggle"><span><strong>{t('股票与 TradFi 合约')}</strong><small>{t('盘中、盘外、周末分别计算常态波动')}</small></span>
             <Switch checked={settings.tradfi} aria-label={t('股票与 TradFi 合约')} disabled={busy} onCheckedChange={checked => void save({ tradfi: checked }, t('已更新股票类推送。'))}/></label>
         </div>
-        <p className="small muted">{t('接收渠道、提醒级别和免打扰统一在通知中心设置。')} <Button className="text-button" onClick={()=>navigate('/notifications')}>{t('设置推送规则')}</Button></p>
+        <p className="small muted">{t('与价格警报的监控总开关相互独立；接收渠道、提醒级别和免打扰在通知中心设置。')} <Button className="text-button" onClick={()=>navigate('/notifications')}>{t('设置推送规则')}</Button></p>
         <dl className="key-state anomaly-state"><div><dt>{t('监测范围')}</dt><dd>{monitor.series ? t('{0} 个合约 · 币种 {1} / 股票类 {2}', monitor.series, monitor.crypto, monitor.tradfi) : t('正在读取合约列表')}</dd></div>
           <div><dt>{t('行情连接')}</dt><dd>{(['binance', 'okx', 'mexc'] as const).map(v => <span key={v} className={`venue-dot ${monitor.streams[v] ? 'is-live' : ''}`}>{venueName[v]}</span>)}</dd></div>
           <div><dt>{t('波动基准')}</dt><dd>{ready ? t('{0} / {1} 已就绪', monitor.baselines, monitor.series) : t('正在载入 30 天历史 · {0} / {1}', monitor.baselines, monitor.series)}</dd></div>
@@ -100,7 +99,7 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
         <form onSubmit={event => void saveFilters(event)}><fieldset disabled={busy}><div className="delivery-fields anomaly-fields">
           <Label>{t('币种最小涨跌 · %')}<Input type="number" min={10} max={100} step={1} required value={values.crypto} onChange={event => edit('crypto', event.target.value)}/><span className="small muted">{t('扣除 BTC 后计算，默认 25')} · <DocsLink path="/anomaly/filters/">{t('如何设置')}</DocsLink></span></Label>
           <Label>{t('股票类最小涨跌 · %')}<Input type="number" min={2} max={50} step={0.5} required value={values.tradfi} onChange={event => edit('tradfi', event.target.value)}/><span className="small muted">{t('默认 3')}</span></Label>
-        </div><Button variant="default" className="primary wide">{busy && <Spinner/>}{busy ? t('正在保存…') : t('保存过滤条件')}</Button></fieldset>
+        </div><Button variant="default" className="primary" disabled={!draft}>{busy && <Spinner/>}{busy ? t('正在保存…') : t('保存过滤条件')}</Button></fieldset>
           <FormError message={formError}/>{draft && <Button type="button" className="text-button" disabled={busy} onClick={() => { setDraft(null); setFormError(''); }}>{t('撤销修改')}</Button>}</form>
       </Panel>
     </div>

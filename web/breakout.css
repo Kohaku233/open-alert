@@ -877,6 +877,16 @@ input::placeholder {
   color: var(--amber);
   background: var(--warning-bg);
 }
+/* DESIGN.md: paused monitoring is Copper Latch, never Signal Lime. */
+.state-label.paused {
+  color: var(--amber);
+  background: var(--warning-bg);
+}
+.alert-row[data-focused="true"] {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  transition: outline-color .3s ease;
+}
 .instrument-button[data-slot="button"] {
   border: 0;
   padding: 0;

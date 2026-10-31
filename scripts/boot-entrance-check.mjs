@@ -105,17 +105,25 @@ try {
       const button = page.getByRole('button', { name: profile.fail === 'session' ? '重试连接' : '重试读取登录方式' });
       if (profile.interrupt) await button.evaluate(node => node.click());
       else await button.click();
-      await page.locator('[data-slot="boot-stage"]').waitFor();
-      await page.waitForFunction(() => window.bootFrames.some(frame => frame.id > 1 && frame.settled));
-      assert.equal(await page.locator('[data-boot-phase="entering"]').count(), 1, 'old exit callbacks must not dismiss a new stage');
-      held = false; release();
-      await page.locator('[data-slot="boot-stage"]').waitFor({ state: 'detached' });
+      if (profile.interrupt) {
+        // A claim during the first exit still restarts the first entrance.
+        await page.locator('[data-slot="boot-stage"]').waitFor();
+        await page.waitForFunction(() => window.bootFrames.some(frame => frame.id > 1 && frame.settled));
+        assert.equal(await page.locator('[data-boot-phase="entering"]').count(), 1, 'old exit callbacks must not dismiss a new stage');
+        held = false; release();
+        await page.locator('[data-slot="boot-stage"]').waitFor({ state: 'detached' });
+      } else {
+        // The entrance plays once per page load; a retry after it lifted loads inline.
+        await page.waitForTimeout(300);
+        assert.equal(await page.locator('[data-slot="boot-stage"]').count(), 0, 'retry after the entrance must not replay it');
+        held = false; release();
+      }
     }
     await page.getByLabel(profile.locale.startsWith('zh') ? '邮箱地址' : 'Email address', { exact: true }).fill('check@example.test');
     const frames = await page.evaluate(() => window.bootFrames);
     await writeFile(join(output, profile.name + '-frames.json'), JSON.stringify({ frames, errors }, null, 2));
     const exits = frames.filter((frame, index) => frame.phase === 'exiting' && frames[index - 1]?.phase !== 'exiting');
-    assert.equal(new Set(frames.map(frame => frame.id)).size, profile.fail ? 2 : 1, 'claims must not restart an entrance that is still playing');
+    assert.equal(new Set(frames.map(frame => frame.id)).size, profile.interrupt ? 2 : 1, 'claims must not restart an entrance that is still playing');
     assert(exits.length >= 1, 'must observe the actual curtain exit');
     for (const exit of exits) {
       const first = frames.find(frame => frame.id === exit.id && frame.settled);

@@ -30,6 +30,15 @@ const typeName = (type: string) => ({ pushover: 'Pushover', telegram: 'Telegram'
 const sourceName = (s: NotifySource) => s === 'price_alert' ? t('价格警报') : s === 'anomaly_crypto' ? t('币种异动') : t('股票异动');
 const sourceHint = (s: NotifySource) => s === 'price_alert' ? t('价格到达目标时发送，失败时按渠道重试。') : s === 'anomaly_crypto' ? t('加密货币永续合约的异动推送。') : t('美股等 TradFi 合约的异动推送。');
 const key = (s: string, c: string) => `${s}\u0000${c}`;
+// Pushover's built-in sounds (https://pushover.net/api#sounds); '' keeps the device default.
+const SOUNDS = ['pushover', 'bike', 'bugle', 'cashregister', 'classical', 'cosmic', 'falling', 'gamelan', 'incoming', 'intermission', 'magic', 'mechanical', 'pianobar', 'siren', 'spacealarm', 'tugboat', 'alien', 'climb', 'persistent', 'echo', 'updown', 'vibrate', 'none'] as const;
+const DEVICE_SOUND = '__device__';
+const RETRY_SECONDS = [30, 60, 120, 300, 600, 1800, 3600] as const;
+const EXPIRE_SECONDS = [300, 900, 1500, 1800, 3600, 7200, 10800] as const;
+const soundName = (sound: string) => sound === 'none' ? t('静音') : sound === 'vibrate' ? t('仅振动') : sound;
+const duration = (seconds: number) => seconds < 60 ? t('{0} 秒', seconds) : seconds < 3600 ? t('{0} 分钟', Math.round(seconds / 60 * 10) / 10) : t('{0} 小时', Math.round(seconds / 360) / 10);
+/** Preset choices; a previously saved custom value stays selectable so editing never silently changes it. */
+function withCurrent<T extends string | number>(presets: readonly T[], current: T): T[] { return presets.includes(current) ? [...presets] : [...presets, current]; }
 
 function outcomeText(c: Channel) {
   if (!c.configured) return t('未完成配置');
@@ -88,7 +97,7 @@ export function NotifyCenter({ notify }: { notify: (text: string) => void }) {
     finally { setBusy(false); }
   }
   async function saveRoutes() {
-    if([...routes.values()].some(r=>!Number.isInteger(r.options.dailyLimit)||r.options.dailyLimit<1||r.options.dailyLimit>50||r.options.notification&&(r.options.notification.expire<r.options.notification.retry||r.options.notification.retry<30||r.options.notification.expire>10800||!/^[A-Za-z0-9_-]{0,64}$/.test(r.options.notification.sound)))){setRouteError(t('请检查每日上限、间隔、到期时间和铃声标识。到期时间不能小于重复间隔。'));return;}
+    if([...routes.values()].some(r=>!Number.isInteger(r.options.dailyLimit)||r.options.dailyLimit<1||r.options.dailyLimit>50||r.options.notification&&(r.options.notification.expire<r.options.notification.retry||r.options.notification.retry<30||r.options.notification.expire>10800||!/^[A-Za-z0-9_-]{0,64}$/.test(r.options.notification.sound)))){setRouteError(t('请检查每日上限、重复间隔、到期时间和铃声。到期时间不能小于重复间隔。'));return;}
     const bad = ROUTABLE.map(quietOf).some(q => q && (!q.from || !q.to || q.from === q.to));
     if (bad) { setRouteError(t('免打扰的开始和结束时间不能相同。')); return; }
     if (await run(() => request('/api/notify/routes', 'PUT', { routes: [...routes.values()] }), t('推送路由已保存。'), setRouteError)) setDraft(null);
@@ -140,22 +149,20 @@ export function NotifyCenter({ notify }: { notify: (text: string) => void }) {
           <Switch checked={c.enabled} disabled={busy} aria-label={t('启用 {0}', c.name)} onCheckedChange={value => void toggleChannel(c, value)}/>
         </span></li>)}</ul>
       {full && <p className="small muted">{t('最多 10 个渠道。')}</p>}
-      <p className="small muted notify-planned">{t('即将支持')}：{PLANNED.map(typeName).join(' · ')}</p>
     </Panel>
-    <Panel className="settings-panel notify-panel notify-routing"><div className="notify-head"><div><span className="section-index">02 — RULES</span><h2>{t('推送规则')}</h2><p className="small muted">{t('决定每类消息发到哪些渠道。停用的渠道即使勾选也不会收到。')} <DocsLink path="/notify/routes/"/></p>{view.unlimited && <p className="small muted">{t('管理员不受业务额度限制')}</p>}</div>
+    <Panel className="settings-panel notify-panel notify-routing"><div className="notify-head"><div><span className="section-index">02 — RULES</span><h2>{t('推送规则')}</h2><p className="small muted">{t('决定每类消息发到哪些渠道。停用的渠道即使勾选也不会收到。')} <DocsLink path="/notify/routes/"/></p><p className="small muted">{view.unlimited ? t('管理员不受业务额度限制') : t('每日上限按渠道分别计算，UTC 零点重置。价格警报另有账户合计上限：每天最多尝试 {0} 次（含失败重试），两者先到先停。', view.priceAttemptLimit ?? 20)}</p></div>
       {dirty && <Badge variant="outline" className="status-pill">{t('未保存')}</Badge>}</div>
       <div className="notify-sources">
         {ROUTABLE.map(source => { const quiet = quietOf(source); return <section key={source} className="notify-source" aria-label={sourceName(source)}>
           <header><strong>{sourceName(source)}</strong><small>{sourceHint(source)}</small></header>
-          {source==='price_alert' && !view.unlimited && <p className="small muted notify-attempt-limit">{t('价格警报每日合计最多尝试 {0} 次，含失败重试。',view.priceAttemptLimit??20)}</p>}
           <ul>{view.channels.map(c => { const r = routes.get(key(source, c.id)); return <li key={c.id}><label className="notify-route"><span>{c.name}{!c.enabled && <small>{t('已停用')}</small>}</span>
             <Switch checked={!!r?.enabled} disabled={busy} aria-label={t('{0}发到 {1}', sourceName(source), c.name)} onCheckedChange={value => toggleRoute(source, c.id, value)}/></label></li>; })}</ul>
           <div className="notify-rule-options">
             <Label>{t('提醒级别')}<FieldSelect label={sourceName(source)+' '+t('提醒级别')} value={String(profile(source).priority)} disabled={busy} onValueChange={v=>setSource(source,{notification:{...profile(source),priority:Number(v)}})} options={[{value:'2',label:t('紧急提醒')},{value:'1',label:t('高优先级')},{value:'0',label:t('普通提醒')},{value:'-1',label:t('低优先级')},{value:'-2',label:t('静默提醒')}]}/></Label>
             <Label>{t('每日上限')}{view.unlimited ? <Input value={t('无限')} readOnly disabled aria-label={t('管理员不受业务额度限制')}/> : <Input type="number" min={1} max={50} value={sourceOptions(source).dailyLimit??10} disabled={busy} onChange={e=>setSource(source,{dailyLimit:Number(e.target.value)})}/>}</Label>
-            <details><summary>{t('Pushover 声音与重复提醒')}</summary><Label>{t('铃声标识')}<Input value={profile(source).sound} maxLength={64} onChange={e=>setSource(source,{notification:{...profile(source),sound:e.target.value}})}/></Label>
-              {profile(source).priority===2 && <><Label>{t('重复间隔 · 秒')}<Input type="number" min={30} max={3600} value={profile(source).retry} onChange={e=>setSource(source,{notification:{...profile(source),retry:Number(e.target.value)}})}/></Label><Label>{t('到期时间 · 秒')}<Input type="number" min={30} max={10800} value={profile(source).expire} onChange={e=>setSource(source,{notification:{...profile(source),expire:Number(e.target.value)}})}/></Label></>}
-            </details><small className="muted">{t('每日上限按渠道计算，UTC 零点重置。Discord 的声音由客户端控制。')}</small>
+            <details><summary>{t('Pushover 声音与重复提醒')}</summary><Label>{t('铃声')}<FieldSelect label={sourceName(source)+' '+t('铃声')} value={profile(source).sound || DEVICE_SOUND} disabled={busy} onValueChange={v=>setSource(source,{notification:{...profile(source),sound:v===DEVICE_SOUND?'':v}})} options={[{value:DEVICE_SOUND,label:t('跟随设备默认')},...withCurrent<string>(SOUNDS,profile(source).sound||'pushover').map(sound=>({value:sound,label:soundName(sound)}))]}/></Label>
+              {profile(source).priority===2 && <><Label>{t('重复间隔')}<FieldSelect label={sourceName(source)+' '+t('重复间隔')} value={String(profile(source).retry)} disabled={busy} onValueChange={v=>setSource(source,{notification:{...profile(source),retry:Number(v),expire:Math.max(profile(source).expire,Number(v))}})} options={withCurrent<number>(RETRY_SECONDS,profile(source).retry).map(value=>({value:String(value),label:t('每 {0}',duration(value))}))}/></Label><Label>{t('到期时间')}<FieldSelect label={sourceName(source)+' '+t('到期时间')} value={String(profile(source).expire)} disabled={busy} onValueChange={v=>setSource(source,{notification:{...profile(source),expire:Number(v)}})} options={withCurrent<number>(EXPIRE_SECONDS,profile(source).expire).map(value=>({value:String(value),label:t('{0}后停止',duration(value)),disabled:value<profile(source).retry}))}/></Label></>}
+            </details>
           </div><div className="notify-quiet"><label className="notify-route"><span>{t('免打扰')}<small>{t('时段内不推送，按本机时区')}</small></span>
             <Switch checked={!!quiet} disabled={busy} aria-label={t('{0}免打扰', sourceName(source))} onCheckedChange={value => setQuiet(source, value ? { from: '23:00', to: '07:00', offsetMinutes: -new Date().getTimezoneOffset() } : null)}/></label>
             {quiet && <div className="notify-quiet-range"><Label>{t('开始')}<Input type="time" value={quiet.from} disabled={busy} onChange={event => setQuiet(source, { ...quiet, from: event.target.value })}/></Label>

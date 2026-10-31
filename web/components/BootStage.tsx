@@ -35,6 +35,9 @@ type BootAction =
   | { type: "ready" | "exit" | "done"; generation: number };
 function bootReducer(state: BootState, action: BootAction): BootState {
   if (action.type === "claim") {
+    // The entrance plays once per page load. Later loads (sign-in, market
+    // switches) show inline loading states instead of replaying the curtain.
+    if (state.phase === "done") return state;
     const restart = state.phase !== "entering";
     return {
       ...state,
@@ -67,6 +70,7 @@ function bootReducer(state: BootState, action: BootAction): BootState {
 const BootContext = createContext<{
   claim: (label: string, stage: Stage) => () => void;
   visible: boolean;
+  done: boolean;
 } | null>(null);
 
 export function useBootClaim(
@@ -85,6 +89,11 @@ export function useBootVisible() {
   return useContext(BootContext)?.visible ?? true;
 }
 
+/** True once the first-load entrance has fully lifted. */
+export function useBootDone() {
+  return useContext(BootContext)?.done ?? true;
+}
+
 export function BootStageProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(bootReducer, {
     claims: [],
@@ -100,7 +109,8 @@ export function BootStageProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "claim", claim: { id, label, stage } });
     return () => dispatch({ type: "release", id });
   }, []);
-  const context = useMemo(() => ({ claim, visible }), [claim, visible]);
+  const done = phase === "done";
+  const context = useMemo(() => ({ claim, visible, done }), [claim, visible, done]);
   const pending = claims.length > 0;
   const contextLabel = claims.at(-1)?.label ?? t("正在准备工作台…");
   useEffect(() => {
