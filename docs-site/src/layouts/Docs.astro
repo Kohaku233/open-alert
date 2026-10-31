@@ -2,7 +2,7 @@
 import { ClientRouter } from 'astro:transitions';
 import '../styles/site.css';
 import { nav } from '../nav';
-import { langOf, htmlLang, pageHref, counterpart, ui } from '../i18n';
+import { langOf, htmlLang, pageHref, counterpart, ui, langNames } from '../i18n';
 
 interface Heading { depth: number; slug: string; text: string }
 interface Props {
@@ -31,6 +31,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 const otherPath = noindex ? pageHref(lang === 'en' ? 'zh' : 'en') : counterpart(Astro.url.pathname);
 const zhUrl = new URL(lang === 'zh' ? Astro.url.pathname : otherPath, Astro.site);
 const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site);
+// Language menu targets. 404 pages point at each language's home page.
+const langHref = noindex
+  ? { zh: pageHref('zh'), en: pageHref('en') }
+  : { zh: lang === 'zh' ? Astro.url.pathname : otherPath, en: lang === 'en' ? Astro.url.pathname : otherPath };
 ---
 <!doctype html>
 <html lang={htmlLang(lang)} data-theme="dark">
@@ -43,7 +47,7 @@ const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site
   {!noindex && <>
     <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
     <link rel="alternate" hreflang="en" href={enUrl} />
-    <link rel="alternate" hreflang="x-default" href={zhUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
   </>}
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="sitemap" href="/sitemap-index.xml" />
@@ -53,6 +57,34 @@ const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site
   <meta property="og:type" content="article" />
   <meta name="theme-color" content="#05070a" />
   {noindex && <meta name="robots" content="noindex" />}
+  <script is:inline>
+    // Language: a ?lang= link from the app or a saved choice wins; otherwise the browser languages
+    // decide (Chinese → Chinese, anything else → English). Runs before paint on full page loads only.
+    (() => {
+      if (window.__oaLang) return; window.__oaLang = true;
+      const KEY = 'oa-docs-lang';
+      const here = /^\/en(\/|$)/.test(location.pathname) ? 'en' : 'zh';
+      const url = new URL(location.href);
+      const asked = url.searchParams.get('lang');
+      let want = asked === 'en' || asked === 'zh' ? asked : null;
+      if (want) {
+        try { localStorage.setItem(KEY, want); } catch {}
+        url.searchParams.delete('lang');
+        history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+      } else {
+        try { const saved = localStorage.getItem(KEY); if (saved === 'en' || saved === 'zh') want = saved; } catch {}
+        if (!want && !/bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent)) {
+          const list = navigator.languages?.length ? navigator.languages : [navigator.language || ''];
+          want = 'en';
+          for (const l of list) { if (/^zh(-|$)/i.test(l)) { want = 'zh'; break; } if (/^en(-|$)/i.test(l)) break; }
+        }
+      }
+      if (!want || want === here) return;
+      const path = want === 'en' ? '/en' + location.pathname : location.pathname.replace(/^\/en(?=\/|$)/, '') || '/';
+      document.documentElement.style.visibility = 'hidden';
+      location.replace(path + url.search + location.hash);
+    })();
+  </script>
   <script is:inline>
     (() => {
       const apply = (doc) => {
@@ -84,8 +116,16 @@ const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
       <button class="pill theme" id="theme" type="button" aria-label={t.theme} data-dark={t.dark} data-light={t.light}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path class="moon" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg><span>{t.dark}</span></button>
-      <a class="pill lang" href={otherPath} hreflang={lang === 'en' ? 'zh-CN' : 'en'} lang={lang === 'en' ? 'zh-CN' : 'en'} aria-label={t.switchAria} data-astro-reload>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg><span>{t.switchTo}</span></a>
+      <div class="lang-pick" data-lang-pick data-here={lang}>
+        <button class="pill lang" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="lang-menu" aria-label={t.languageAria}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg><span>{langNames[lang]}</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div class="lang-menu" id="lang-menu" role="menu" aria-label={t.language} hidden>
+          <button type="button" role="menuitemradio" aria-checked="false" data-lang-choice="auto"><span>{t.auto}<small data-lang-detected></small></span></button>
+          <a role="menuitemradio" aria-checked="false" data-lang-choice="zh" href={langHref.zh} hreflang="zh-CN" lang="zh-CN" data-astro-reload><span>{langNames.zh}</span></a>
+          <a role="menuitemradio" aria-checked="false" data-lang-choice="en" href={langHref.en} hreflang="en" lang="en" data-astro-reload><span>{langNames.en}</span></a>
+        </div>
+      </div>
       <button class="pill menu" id="menu" type="button" aria-label={t.menu} aria-expanded="false" aria-controls="side">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <a class="pill solid" href="https://cryptotool.bar">{t.console}</a>
@@ -140,9 +180,11 @@ const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site
   <script>
     import { setupSearch } from '../scripts/search';
     import { setupPreload } from '../scripts/preload';
+    import { setupLang } from '../scripts/lang';
     const root = document.documentElement;
     setupSearch();
     setupPreload();
+    setupLang();
 
     // Runs on the first load and after every in-page navigation.
     document.addEventListener('astro:page-load', () => {
