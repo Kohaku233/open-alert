@@ -1430,7 +1430,7 @@ try {
       await check('group flyout lists TradingView line tools',()=>expect(flyout.locator('.draw-flyout-pick',{hasText:'平行通道'})).toBeVisible());
       await flyout.getByRole('button',{name:'收藏工具 水平线'}).click();
       await check('starred tool appears in the floating favourites bar',async()=>{const fav=p.getByRole('toolbar',{name:'收藏的工具'});await expect(fav.getByRole('button',{name:'水平线',exact:true})).toBeVisible();assert.deepEqual(await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-draw-favorites'))),['horizontal-line']);});
-      await check('favourites bar drags and stays inside the chart',async()=>{const fav=p.getByRole('toolbar',{name:'收藏的工具'}),grip=fav.getByRole('button',{name:'拖动收藏工具栏'});const before=await fav.boundingBox(),g=await grip.boundingBox(),shell=await p.locator('.native-chart-shell').boundingBox();await p.mouse.move(g.x+g.width/2,g.y+g.height/2);await p.mouse.down();await p.mouse.move(g.x-120,g.y+90,{steps:6});await p.mouse.move(g.x-5000,g.y+5000,{steps:4});await p.mouse.up();const after=await fav.boundingBox();assert.ok(after.x<before.x&&after.y>before.y,'bar should move');assert.ok(after.x>=shell.x-1&&after.y+after.height<=shell.y+shell.height+1,'bar should stay inside the chart');const saved=await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-draw-favbar')));assert.equal(saved.x,0);assert.equal(saved.y,1);});
+      await check('favourites bar drags and stays inside the chart',async()=>{const fav=p.getByRole('toolbar',{name:'收藏的工具'}),grip=fav.getByRole('button',{name:'拖动收藏工具栏'});const settled=async()=>{let last=null;for(let i=0;i<40;i++){const b=await fav.boundingBox();if(last&&b&&Math.abs(b.x-last.x)<0.5&&Math.abs(b.y-last.y)<0.5)return b;last=b;await p.waitForTimeout(50);}return last;};const before=await settled(),g=await grip.boundingBox(),shell=await p.locator('.native-chart-shell').boundingBox();await p.mouse.move(g.x+g.width/2,g.y+g.height/2);await p.mouse.down();await p.mouse.move(g.x-120,g.y+90,{steps:6});await p.mouse.move(g.x-5000,g.y+5000,{steps:4});await p.mouse.up();const after=await fav.boundingBox();assert.ok(after.x<before.x&&after.y>before.y,'bar should move');assert.ok(after.x>=shell.x-1&&after.y+after.height<=shell.y+shell.height+1,'bar should stay inside the chart');const saved=await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-draw-favbar')));assert.equal(saved.x,0);assert.equal(saved.y,1);});
       await p.waitForTimeout(250);await p.screenshot({path:join(outputs,'native-draw-flyout-'+profile+'-MOCK.png')});
       await p.keyboard.press('Escape');await expect(flyout).toHaveCount(0);
       await tools.getByRole('button',{name:'趋势线',exact:true}).click();
@@ -1439,6 +1439,45 @@ try {
       await check('trend line saved per market',async()=>expect.poll(()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP')||'[]').map(d=>d.kind))).toEqual(['trend-line']));
       await check('placing a drawing opens no alert dialog',()=>expect(dialog).toHaveCount(0));
       await p.waitForTimeout(300);await p.screenshot({path:join(outputs,`native-drawing-${profile}-MOCK.png`)});
+      // TradingView-style edit bar for the selected drawing: appears on placement/click, edits are saved, clicks elsewhere close it.
+      const editbar=p.getByRole('toolbar',{name:'画线设置'}),saved=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP')||'[]'));
+      const lineMid={x:box.x+box.width*0.475,y:box.y+box.height*0.4};
+      // An empty plot point: off the trend line, the left rail, the create chip and every alert line.
+      const emptySpot=async()=>{for(const fy of [0.12,0.18,0.24,0.62,0.7,0.78]){const pt={x:box.x+box.width*0.2,y:box.y+box.height*fy};await p.mouse.move(pt.x,pt.y);if(!await p.locator('.native-chart.is-line-hover').count())return pt;}throw new Error('no empty chart spot');};
+      await check('placed drawing is selected and shows the edit bar',()=>expect(editbar).toBeVisible());
+      await check('edit bar sits inside the chart, clear of the drawing rail',async()=>{const b=await editbar.boundingBox(),shell=await p.locator('.native-chart-shell').boundingBox(),rail=await tools.boundingBox();assert(b.x>=shell.x&&b.x+b.width<=shell.x+shell.width&&b.y>=shell.y&&b.y+b.height<=shell.y+shell.height,'outside chart '+JSON.stringify(b));assert(b.x>rail.x+rail.width||b.y>rail.y+rail.height,'covers rail');});
+      await check('edit bar offers colour, width, lock, delete and more',async()=>{for(const name of ['线条颜色','线条粗细 2px','锁定画线','删除画线','更多操作'])await expect(editbar.getByRole('button',{name,exact:true})).toBeVisible();});
+      await editbar.getByRole('button',{name:'线条颜色',exact:true}).click();
+      const pop=p.locator('.draw-edit-pop');
+      await check('colour menu shows the palette inside its panel',async()=>{await expect(pop.getByRole('button',{name:'颜色 #f23645'})).toBeVisible();const r=await pop.boundingBox();for(const el of await pop.locator('.draw-edit-color, .draw-edit-custom input').all()){const c=await el.boundingBox();assert(c.x>=r.x&&c.x+c.width<=r.x+r.width+1&&c.height<=40,'control '+JSON.stringify(c));}});
+      await p.waitForTimeout(250);await p.screenshot({path:join(outputs,`native-draw-editbar-colors-${profile}-MOCK.png`)});
+      await pop.getByRole('button',{name:'颜色 #f23645'}).click();
+      await check('picked colour is saved on the drawing',async()=>expect.poll(async()=>(await saved())[0]?.style.color).toBe('#f23645'));
+      await p.keyboard.press('Escape');
+      await check('Esc closes the menu but keeps the drawing selected',async()=>{await expect(pop).toHaveCount(0);await expect(editbar).toBeVisible();});
+      await editbar.getByRole('button',{name:'线条粗细 2px',exact:true}).click();await pop.getByRole('button',{name:'4px',exact:true}).click();
+      await check('line width is saved',async()=>expect.poll(async()=>(await saved())[0]?.style.width).toBe(4));
+      await check('width menu closes after a pick',()=>expect(pop).toHaveCount(0));
+      await editbar.getByRole('button',{name:'线条粗细 4px',exact:true}).click();await pop.getByRole('button',{name:'虚线',exact:true}).click();
+      await check('line style is saved',async()=>expect.poll(async()=>(await saved())[0]?.style.lineStyle).toBe('dashed'));
+      await editbar.getByRole('button',{name:'锁定画线',exact:true}).click();
+      await check('lock is saved and shown',async()=>{await expect.poll(async()=>(await saved())[0]?.locked).toBe(true);await expect(editbar.getByRole('button',{name:'解锁画线',exact:true})).toHaveAttribute('aria-pressed','true');});
+      await editbar.getByRole('button',{name:'解锁画线',exact:true}).click();
+      await check('unlock is saved',async()=>expect.poll(async()=>(await saved())[0]?.locked).toBe(false));
+      await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`native-draw-editbar-${profile}-MOCK.png`)});
+      const empty=await emptySpot();await p.mouse.click(empty.x,empty.y);
+      await check('clicking empty chart space closes the edit bar',()=>expect(editbar).toHaveCount(0));
+      await check('the deselecting click opens no alert dialog',()=>expect(dialog).toHaveCount(0));
+      await p.mouse.click(lineMid.x,lineMid.y);
+      await check('clicking the drawing reopens the edit bar',()=>expect(editbar).toBeVisible());
+      await p.locator('.chart-caption').click();
+      await check('clicking outside the chart closes the edit bar',()=>expect(editbar).toHaveCount(0));
+      await p.mouse.click(lineMid.x,lineMid.y);await expect(editbar).toBeVisible();
+      await editbar.getByRole('button',{name:'更多操作',exact:true}).click();await pop.getByRole('button',{name:'克隆',exact:true}).click();
+      await check('clone adds a copy with the same style',async()=>expect.poll(async()=>(await saved()).map(d=>[d.kind,d.style.color,d.style.width])).toEqual([['trend-line','#f23645',4],['trend-line','#f23645',4]]));
+      await editbar.getByRole('button',{name:'删除画线',exact:true}).click();
+      await check('delete removes only the selected drawing and closes the bar',async()=>{await expect.poll(async()=>(await saved()).length).toBe(1);await expect(editbar).toHaveCount(0);});
+      await check('the arming rail hides the edit bar while drawing',async()=>{await p.mouse.click(lineMid.x,lineMid.y);await expect(editbar).toBeVisible();await tools.getByRole('button',{name:'趋势线',exact:true}).click();await expect(editbar).toHaveCount(0);await p.keyboard.press('Escape');});
     }
     // TradingView-style intervals: typed entry on the chart, a starred custom interval, and asset favourites.
     if(profile==='desktop'){
@@ -1474,8 +1513,36 @@ try {
     await check('selection survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart canvas').first()).toBeVisible();});
     if(profile==='desktop'){
       await check('drawings restored after reload',async()=>{await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(p.getByRole('button',{name:'清空画线'})).toBeEnabled();});
+      await check('restored drawing keeps the edited style',async()=>expect.poll(()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP')||'[]').map(d=>[d.style.color,d.style.width,d.style.lineStyle]))).toEqual([['#f23645',4,'dashed']]));
       await p.getByRole('button',{name:'清空画线'}).click();await p.getByRole('button',{name:'再点一次清空'}).click();
       await check('clear removes saved drawings',async()=>expect.poll(()=>p.evaluate(()=>localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP'))).toBe(null));
+    }
+    if(profile==='mobile'){
+      // Phone: tap to place, tap to select; the edit bar keeps 44px targets inside the chart and taps elsewhere close it.
+      await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
+      // Measure after scrolling: boundingBox is viewport-relative and touchscreen taps use the viewport.
+      await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();
+      const mbox=await p.locator('.native-chart').boundingBox(),editbar=p.getByRole('toolbar',{name:'画线设置'}),pop=p.locator('.draw-edit-pop');
+      await p.getByRole('button',{name:'展开画线工具'}).click();await p.getByRole('toolbar',{name:'画线工具'}).getByRole('button',{name:'趋势线',exact:true}).click();
+      await p.touchscreen.tap(mbox.x+mbox.width*0.35,mbox.y+mbox.height*0.35);await p.touchscreen.tap(mbox.x+mbox.width*0.65,mbox.y+mbox.height*0.55);
+      await check('mobile: placed drawing shows the edit bar',()=>expect(editbar).toBeVisible());
+      await check('mobile: edit bar stays inside the chart with 44px targets',async()=>{const b=await editbar.boundingBox(),shell=await p.locator('.native-chart-shell').boundingBox();assert(b.x>=shell.x-1&&b.x+b.width<=shell.x+shell.width+1&&b.y>=shell.y-1&&b.y+b.height<=shell.y+shell.height+1,'outside chart '+JSON.stringify(b));for(const el of await editbar.locator('[data-slot="button"]').all()){const r=await el.boundingBox();assert(r.height>=44,'short target '+r.height);}});
+      await noOverflow(p);
+      await editbar.getByRole('button',{name:'线条颜色',exact:true}).tap();
+      await check('mobile: palette fits the viewport',async()=>{await expect(pop).toBeVisible();const r=await pop.boundingBox(),vw=await p.evaluate(()=>innerWidth);assert(r.x>=0&&r.x+r.width<=vw,'palette '+JSON.stringify(r));for(const el of await pop.locator('.draw-edit-color').all()){const c=await el.boundingBox();assert(c.width>=44&&c.height>=44&&c.x>=r.x&&c.x+c.width<=r.x+r.width+1,'swatch '+JSON.stringify(c));}});
+      await p.waitForTimeout(250);await p.screenshot({path:join(outputs,`native-draw-editbar-colors-${profile}-MOCK.png`)});
+      await pop.getByRole('button',{name:'颜色 #089981'}).tap();
+      await check('mobile: picked colour is saved',async()=>expect.poll(()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP')||'[]')[0]?.style.color)).toBe('#089981'));
+      await p.getByText('拖动警报线可直接改价。',{exact:true}).tap();
+      await check('mobile: tapping outside closes the menu and the edit bar',async()=>{await expect(pop).toHaveCount(0);await expect(editbar).toHaveCount(0);});
+      await p.touchscreen.tap(mbox.x+mbox.width*0.5,mbox.y+mbox.height*0.45);
+      await check('mobile: tapping the drawing reopens the edit bar',()=>expect(editbar).toBeVisible());
+      await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`native-draw-editbar-${profile}-MOCK.png`)});
+      await p.touchscreen.tap(mbox.x+mbox.width*0.5,mbox.y+mbox.height*0.12);
+      await check('mobile: tapping empty chart space closes the edit bar',()=>expect(editbar).toHaveCount(0));
+      await p.touchscreen.tap(mbox.x+mbox.width*0.5,mbox.y+mbox.height*0.45);await expect(editbar).toBeVisible();
+      await editbar.getByRole('button',{name:'删除画线',exact:true}).tap();
+      await check('mobile: delete removes the drawing',async()=>expect.poll(()=>p.evaluate(()=>localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP'))).toBe(null));
     }
     await p.locator('.chart-panel').getByRole('button',{name:'TradingView',exact:true}).click();
     await check('switching back restores TradingView embed',()=>expect(p.locator('.tradingview-widget-container script')).toHaveCount(1));
