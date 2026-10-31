@@ -1558,8 +1558,21 @@ try {
       await check('overlays are saved with default lengths and stay in the price pane',async()=>{await expect.poll(async()=>(await saved()).map(i=>[i.kind,i.params.period])).toEqual([['ma',20],['ma',50],['boll',20]]);assert.equal(await panes(),panesBefore);});
       const legend=p.getByTestId('chart-legend');
       await check('overlay legend rows show name, lengths and numeric values',async()=>{await expect(legend.locator('.chart-indicator-row .chart-indicator-name')).toHaveText(['MA 20','MA 50','BOLL 20 2']);for(const v of await legend.locator('.chart-indicator-value').allTextContents())assert.match(v,/^[\d,.]+$/,v);});
+      // Regression: lightweight-charts creates a pane with a copy of the price pane's scale options. Oscillator panes
+      // added while log is on and auto is off must render exactly like ones added in the default state.
+      const modes=p.getByRole('group',{name:'价格坐标'}),logButton=modes.getByRole('button',{name:'对数坐标'}),autoButton=modes.getByRole('button',{name:'自动缩放价格坐标'});
+      const tap=async b=>{if(profile==='mobile')await b.tap();else await b.click();};
+      const subPixels=async()=>{await p.mouse.move(1,1);await p.waitForTimeout(300);return p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40).slice(1).map(tr=>tr.children[1].querySelector('canvas').toDataURL()));};
       await add('RSI');await add('MACD');
       await check('RSI and MACD each open their own pane under the price pane',async()=>expect.poll(panes).toBe(panesBefore+2));
+      const reference=await subPixels();
+      await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();await tap(p.getByRole('button',{name:'移除 MACD 12 26 9'}));await tap(p.getByRole('button',{name:'移除 RSI 14'}));
+      await expect.poll(panes).toBe(panesBefore);
+      await tap(logButton);await tap(autoButton);await expect(logButton).toHaveAttribute('aria-pressed','true');await expect(autoButton).toHaveAttribute('aria-pressed','false');
+      await add('RSI');await add('MACD');await expect.poll(panes).toBe(panesBefore+2);
+      await check('oscillator panes stay linear and auto-fitted when the price pane is log/manual',async()=>{const shown=await subPixels();assert.equal(shown.length,2);assert(shown[0]===reference[0],'RSI pane inherited the price pane scale');assert(shown[1]===reference[1],'MACD pane inherited the price pane scale');});
+      await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`native-indicators-log-${profile}-MOCK.png`)});
+      await tap(logButton);await tap(autoButton);await expect(logButton).toHaveAttribute('aria-pressed','false');await expect(autoButton).toHaveAttribute('aria-pressed','true');
       const paneLegends=p.locator('.chart-pane-legend');
       await check('oscillator pane legends sit at the top of their panes, in order',async()=>{await expect(paneLegends).toHaveCount(2);await expect(paneLegends.locator('.chart-indicator-name')).toHaveText(['RSI 14','MACD 12 26 9']);const main=await legend.boundingBox(),a=await paneLegends.nth(0).boundingBox(),b=await paneLegends.nth(1).boundingBox(),plot=await p.locator('.native-chart').boundingBox();assert(main.y<a.y&&a.y<b.y&&b.y+b.height<plot.y+plot.height,'legend order '+JSON.stringify([main,a,b,plot]));});
       await check('RSI value is between 0 and 100 and MACD shows three values',async()=>{const rsi=Number(await paneLegends.nth(0).locator('.chart-indicator-value').textContent());assert(rsi>=0&&rsi<=100,String(rsi));const macd=await paneLegends.nth(1).locator('.chart-indicator-value').allTextContents();assert.equal(macd.length,3);for(const v of macd)assert.match(v,/^-?[\d,.]+$|^−?[\d,.]+$/,v);});
