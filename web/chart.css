@@ -136,6 +136,56 @@
 .draw-flyout-star svg { width: 13px; height: 13px; }
 .draw-flyout-star[aria-pressed="true"] { color: var(--amber); }
 .draw-flyout-star[aria-pressed="true"] svg { fill: currentColor; }
+/* Selected-drawing toolbar (TradingView's floating edit bar): colours, width/style, lock, delete, more. */
+.draw-editbar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .22);
+  animation: draw-rail-in .16s ease-out both;
+}
+.draw-editbar.is-dragging { box-shadow: 0 16px 40px rgb(0 0 0 / .32); }
+.draw-editbar [data-slot="button"] { position: relative; min-width: 32px; height: 32px; min-height: 32px; padding: 0 6px; gap: 6px; border: 0; border-radius: 8px; background: none; color: var(--muted-foreground); font: 11px/1 var(--mono-font); }
+.draw-editbar [data-slot="button"]:hover { background: var(--field); color: var(--text); }
+.draw-editbar [aria-pressed="true"], .draw-editbar [aria-expanded="true"] { background: var(--selected); color: var(--signal); }
+.draw-editbar svg { width: 16px; height: 16px; }
+.draw-editbar [data-slot="button"].draw-edit-grip { min-width: 18px; width: 18px; padding: 0; cursor: grab; touch-action: none; opacity: .6; }
+.draw-editbar.is-dragging .draw-edit-grip { cursor: grabbing; opacity: 1; }
+.draw-editbar [data-slot="button"].is-danger:hover { color: var(--danger); }
+.draw-edit-swatch { position: absolute; left: 7px; right: 7px; bottom: 4px; height: 3px; border-radius: 2px; box-shadow: 0 0 0 1px rgb(128 128 128 / .35); }
+.draw-edit-swatch.is-none { background: linear-gradient(135deg, transparent 45%, var(--danger) 45% 55%, transparent 55%); }
+.draw-edit-divider { flex: none; width: 1px; height: 18px; margin: 0 3px; background: var(--line); }
+.draw-edit-line { display: block; width: 18px; border-top: 2px solid currentColor; }
+.draw-edit-line[data-style="dashed"] { border-top-style: dashed; }
+.draw-edit-line[data-style="dotted"] { border-top-style: dotted; }
+[data-slot="popover-content"].draw-edit-pop { width: auto; min-width: 150px; padding: 8px; border-color: var(--line); border-radius: 14px; background: var(--card); }
+.draw-edit-title { margin: 4px 8px 6px; font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
+.draw-edit-list { display: grid; gap: 1px; }
+.draw-edit-list [data-slot="button"] { justify-content: flex-start; gap: 10px; height: 32px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: none; font-size: 12px; font-weight: 400; color: var(--text); }
+.draw-edit-list [data-slot="button"]:hover { background: var(--field); }
+.draw-edit-list [aria-pressed="true"] { background: var(--selected); color: var(--signal); }
+.draw-edit-list svg { width: 15px; height: 15px; color: var(--muted-foreground); }
+.draw-edit-colors { display: grid; gap: 10px; width: 236px; }
+.draw-edit-palette { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.draw-edit-color { aspect-ratio: 1; width: 100%; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: inset 0 0 0 1px rgb(128 128 128 / .3); cursor: pointer; }
+.draw-edit-color:hover { transform: scale(1.12); }
+.draw-edit-color[aria-pressed="true"] { outline: 2px solid var(--signal); outline-offset: 1px; }
+.draw-edit-color:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.draw-edit-color-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.draw-edit-custom { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--text); cursor: pointer; }
+.draw-edit-custom input { flex: none; width: 26px; height: 26px; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.draw-edit-colors [data-slot="button"].draw-edit-none { height: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: none; font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.draw-edit-colors .draw-edit-none[aria-pressed="true"] { border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--selected); color: var(--signal); }
+.draw-edit-opacity { display: grid; margin: 0; grid-template-columns: auto 1fr 38px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.draw-edit-opacity input { width: 100%; min-height: 0; padding: 0; border: 0; background: none; accent-color: var(--signal); }
+.draw-edit-opacity output { font: 11px/1 var(--mono-font); text-align: right; color: var(--text); }
 /* Inline editor for text, note and callout drawings, opened at the placed point. */
 .chart-text-edit { position: absolute; z-index: 7; transform: translate(-4px, -50%); }
 .chart-text-edit textarea {
@@ -290,13 +340,22 @@
   .draw-rail { top: 8px; left: 8px; }
   .draw-rail [data-slot="button"] { width: 36px; height: 36px; min-height: 36px; }
   .draw-favbar [data-slot="button"] { width: 34px; height: 34px; min-height: 34px; }
+  /* Touch: 44px-tall targets; a long bar (callouts, notes) wraps instead of leaving the chart. */
+  .draw-editbar { max-width: calc(100% - 16px); flex-wrap: wrap; }
+  .draw-editbar [data-slot="button"] { min-width: 40px; height: 44px; min-height: 44px; }
+  .draw-editbar [data-slot="button"].draw-edit-grip { min-width: 22px; width: 22px; }
+  .draw-edit-list [data-slot="button"] { height: 44px; min-height: 44px; font-size: 14px; }
+  .draw-edit-palette { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .draw-edit-colors { width: min(300px, calc(100vw - 40px)); }
+  .draw-edit-custom input { width: 40px; height: 40px; }
+  .draw-edit-colors [data-slot="button"].draw-edit-none { height: 36px; min-height: 36px; }
   .chart-legend { top: 8px; left: 58px; font-size: 10px; }
   .chart-scale-modes button { min-width: 44px; height: 36px; font-size: 12px; }
   .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
 }
 /* Phones: keep close + change on one line; full OHL appears from tablet width up. */
 @media (max-width: 520px) { .chart-legend-ohl { display: none; } }
-@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } .draw-rail, .draw-favbar { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .chart-create-at[data-slot="button"] { animation: none; opacity: 1; } .draw-rail, .draw-favbar, .draw-editbar { animation: none; } .draw-edit-color:hover { transform: none; } }
 
 /* Timeframes: starred intervals as pills, a full menu, and a TradingView-style typed entry. */
 .timeframe-favorites { display: inline-flex; align-items: center; gap: 2px; flex: none; }

@@ -8,6 +8,7 @@ import type { Alert } from '../../src/contracts/domain.js';
 import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
 import { bucketEnd, bucketStart, parseTimeframe, timeframeSupported } from '../../src/contracts/timeframes.js';
 import { TimeframeMenu } from './TimeframeMenu.js';
+import { DrawingEditBar } from './DrawingEditBar.js';
 import { ALL_TOOLS, DrawingToolbar } from './DrawingToolbar.js';
 import type { MarketQuote } from '../../src/markets/quotes.js';
 import { request, errorText } from '../api.js';
@@ -387,6 +388,14 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const current = drawings.get(edit.drawing.id);
     if (current) drawings.update({ ...current, text: edit.value.trim() });
   }
+  // The edit bar's "edit text" reopens the placement editor at the text's anchor (callouts keep the text at the last point).
+  function editText(drawing: Drawing) {
+    const current = chartRef.current, at = drawing.points.at(-1);
+    if (!current || !at) return;
+    const x = current.chart.timeScale().timeToCoordinate(at.time), y = current.candles.priceToCoordinate(at.price);
+    if (x === null || y === null) return;
+    setTextEdit({ drawing, x, y, value: drawing.text ?? '' });
+  }
   const selectedAlert = alerts.find(alert => alert.id === selected);
   // TradingView-style legend: hovered candle, else the forming one; change is against the previous close.
   const index = hoverIndex !== null && hoverIndex >= 0 ? hoverIndex : bars.current.length - 1;
@@ -405,6 +414,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px` } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
       {manager && state !== 'failed' && <DrawingToolbar manager={manager} tool={tool} state={drawState} scope={shell}/>}
+      {manager && state === 'ready' && !textEdit && <DrawingEditBar manager={manager} scope={shell} onEditText={editText}/>}
       {textEdit && <form className="chart-text-edit" style={{ left: textEdit.x, top: textEdit.y }} onSubmit={event => { event.preventDefault(); commitText(true); }}>
         <textarea autoFocus aria-label={t('画线文字')} maxLength={500} value={textEdit.value} placeholder={t('输入文字，Enter 确认')}
           onChange={event => setTextEdit({ ...textEdit, value: event.target.value })} onBlur={() => commitText(true)}
