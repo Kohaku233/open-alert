@@ -13,11 +13,12 @@ import { DialogPresence } from '../motion.js';
 import { errorText, request } from '../api.js';
 import { formatTime } from '../utils.js';
 import { t } from '../i18n.js';
+import { DocsLink } from './DocsLink.js';
 import type { NotificationOptions } from '../../src/contracts/domain.js';
 import type { HubDelivery, HubChannel, HubRoute, NotifySource, RouteOptions } from '../../src/notifications/hub.js';
 
 type Channel = HubChannel & { configured: boolean; summary: Record<string, string | boolean> };
-interface NotifyView { channels: Channel[]; routes: HubRoute[]; types: string[]; priceAttemptLimit?: number; profiles?: Record<NotifySource, NotificationOptions> }
+interface NotifyView { channels: Channel[]; routes: HubRoute[]; types: string[]; unlimited?: boolean; priceAttemptLimit?: number | null; profiles?: Record<NotifySource, NotificationOptions> }
 type Routable = NotifySource;
 type Quiet = NonNullable<RouteOptions['quiet']>;
 type Modal = { kind: 'add' } | { kind: 'edit' | 'remove' | 'test'; channel: Channel } | null;
@@ -121,7 +122,7 @@ export function NotifyCenter({ notify }: { notify: (text: string) => void }) {
     }
     if (ok) { setModal(null); if (modal.kind === 'remove') setDraft(null); }
   }
-  const full = view.channels.length >= 10;
+  const full = !view.unlimited && view.channels.length >= 10;
 
   return <>
     <Panel className="settings-panel notify-panel notify-channels"><div className="notify-head"><div><span className="section-index">01 — CHANNELS</span><h2>{t('通知渠道')}</h2><p className="small muted">{t('添加接收端，再为每类消息选择渠道。保存渠道不会发送测试消息。')}</p></div>
@@ -141,17 +142,17 @@ export function NotifyCenter({ notify }: { notify: (text: string) => void }) {
       {full && <p className="small muted">{t('最多 10 个渠道。')}</p>}
       <p className="small muted notify-planned">{t('即将支持')}：{PLANNED.map(typeName).join(' · ')}</p>
     </Panel>
-    <Panel className="settings-panel notify-panel notify-routing"><div className="notify-head"><div><span className="section-index">02 — RULES</span><h2>{t('推送规则')}</h2><p className="small muted">{t('决定每类消息发到哪些渠道。停用的渠道即使勾选也不会收到。')}</p></div>
+    <Panel className="settings-panel notify-panel notify-routing"><div className="notify-head"><div><span className="section-index">02 — RULES</span><h2>{t('推送规则')}</h2><p className="small muted">{t('决定每类消息发到哪些渠道。停用的渠道即使勾选也不会收到。')} <DocsLink path="/notify/routes/"/></p>{view.unlimited && <p className="small muted">{t('管理员不受业务额度限制')}</p>}</div>
       {dirty && <Badge variant="outline" className="status-pill">{t('未保存')}</Badge>}</div>
       <div className="notify-sources">
         {ROUTABLE.map(source => { const quiet = quietOf(source); return <section key={source} className="notify-source" aria-label={sourceName(source)}>
           <header><strong>{sourceName(source)}</strong><small>{sourceHint(source)}</small></header>
-          {source==='price_alert' && <p className="small muted notify-attempt-limit">{t('价格警报每日合计最多尝试 {0} 次，含失败重试。',view.priceAttemptLimit??20)}</p>}
+          {source==='price_alert' && !view.unlimited && <p className="small muted notify-attempt-limit">{t('价格警报每日合计最多尝试 {0} 次，含失败重试。',view.priceAttemptLimit??20)}</p>}
           <ul>{view.channels.map(c => { const r = routes.get(key(source, c.id)); return <li key={c.id}><label className="notify-route"><span>{c.name}{!c.enabled && <small>{t('已停用')}</small>}</span>
             <Switch checked={!!r?.enabled} disabled={busy} aria-label={t('{0}发到 {1}', sourceName(source), c.name)} onCheckedChange={value => toggleRoute(source, c.id, value)}/></label></li>; })}</ul>
           <div className="notify-rule-options">
             <Label>{t('提醒级别')}<FieldSelect label={sourceName(source)+' '+t('提醒级别')} value={String(profile(source).priority)} disabled={busy} onValueChange={v=>setSource(source,{notification:{...profile(source),priority:Number(v)}})} options={[{value:'2',label:t('紧急提醒')},{value:'1',label:t('高优先级')},{value:'0',label:t('普通提醒')},{value:'-1',label:t('低优先级')},{value:'-2',label:t('静默提醒')}]}/></Label>
-            <Label>{t('每日上限')}<Input type="number" min={1} max={50} value={sourceOptions(source).dailyLimit??10} disabled={busy} onChange={e=>setSource(source,{dailyLimit:Number(e.target.value)})}/></Label>
+            <Label>{t('每日上限')}{view.unlimited ? <Input value={t('无限')} readOnly disabled aria-label={t('管理员不受业务额度限制')}/> : <Input type="number" min={1} max={50} value={sourceOptions(source).dailyLimit??10} disabled={busy} onChange={e=>setSource(source,{dailyLimit:Number(e.target.value)})}/>}</Label>
             <details><summary>{t('Pushover 声音与重复提醒')}</summary><Label>{t('铃声标识')}<Input value={profile(source).sound} maxLength={64} onChange={e=>setSource(source,{notification:{...profile(source),sound:e.target.value}})}/></Label>
               {profile(source).priority===2 && <><Label>{t('重复间隔 · 秒')}<Input type="number" min={30} max={3600} value={profile(source).retry} onChange={e=>setSource(source,{notification:{...profile(source),retry:Number(e.target.value)}})}/></Label><Label>{t('到期时间 · 秒')}<Input type="number" min={30} max={10800} value={profile(source).expire} onChange={e=>setSource(source,{notification:{...profile(source),expire:Number(e.target.value)}})}/></Label></>}
             </details><small className="muted">{t('每日上限按渠道计算，UTC 零点重置。Discord 的声音由客户端控制。')}</small>

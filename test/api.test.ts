@@ -434,7 +434,8 @@ test('account overview exposes tenant-scoped invite-beta Pro access and preserve
   for(const query of ['?tenant=other','?x=1','?plan=pro','?user='])assert.equal((await f.call('/api/account'+query,'GET',undefined,member.cookie)).status,400,query);
   const adminAccount=(await f.body(await f.call('/api/account','GET',undefined,admin.cookie))).data;
   assert.equal(adminAccount.user.id,admin.id);assert.equal(adminAccount.user.role,'admin');
-  assert.deepEqual(adminAccount.access,account.access);
+  assert.deepEqual(adminAccount.access.limits,{alerts:null,instruments:null,channels:null,favorites:null,priceAttemptsPerDay:null});
+  assert.deepEqual(adminAccount.access.features,account.access.features);
   assert.equal(adminAccount.usage.alerts,0);assert.equal(adminAccount.usage.activeAlerts,0);assert.equal(adminAccount.usage.instruments,0);
   assert.equal(adminAccount.usage.channels,0);assert.equal(adminAccount.usage.favorites,0);assert.equal(adminAccount.usage.priceAttempts,0);
 

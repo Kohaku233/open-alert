@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge.js';
 import { FormError } from '../components/Dialog.js';
 import { errorText, request } from '../api.js';
 import { t } from '../i18n.js';
+import { DOCS_ORIGIN, DocsLink } from '../components/DocsLink.js';
 
 export function Account({ model, navigate, logout, logoutBusy }: {
   model: WorkspaceModel; notify: (text: string) => void; navigate: (path: string) => void;
@@ -44,12 +45,13 @@ export function Account({ model, navigate, logout, logoutBusy }: {
         <dl className="settings-details"><div><dt>{t('账户角色')}</dt><dd>{user?.role==='admin'?t('管理员'):t('成员')}</dd></div>
           <div><dt>{t('可用登录方式')}</dt><dd>{[capabilities?.emailOtp?t('邮箱验证码'):null,capabilities?.google?'Google':null].filter(Boolean).join(' · ')||'—'}</dd></div></dl>
         <div className="settings-account-actions"><Button disabled={logoutBusy} loading={logoutBusy} onClick={logout}>{logoutBusy?t('正在退出…'):t('退出登录')}</Button>
-          {admin&&<Button className="mobile-admin-link" onClick={()=>navigate('/admin')}>{t('进入管理台')} ↗</Button>}</div>
+          {admin&&<Button className="mobile-admin-link" onClick={()=>navigate('/admin')}>{t('进入管理台')} ↗</Button>}
+          <Button asChild className="mobile-docs-link"><a href={DOCS_ORIGIN+'/'} target="_blank" rel="noopener">{t('使用文档')} ↗<span className="sr-only">{t('（在新标签页打开）')}</span></a></Button></div>
       </Panel>
       <Panel className="settings-panel settings-access"><div className="settings-section-head"><div><span className="section-index">02 — ACCESS</span><h2>{t('测试资格与用量')}</h2></div>{overview&&<Badge variant="outline" className="settings-beta-badge">Pro · {t('邀请测试版')}</Badge>}</div>
         {!overview&&loading?<ListSkeleton label={t('正在读取测试资格与用量…')} rows={3}/>:overview&&
-          <dl className="settings-usage">{metrics.map(([label,value,limit])=><div key={label}><dt>{label}</dt><dd><strong>{value??'—'}</strong><span> / {limit}</span></dd></div>)}</dl>}
-        <FormError message={error}/><Button disabled={loading} loading={loading} onClick={()=>void load()}>{t('刷新用量')}</Button>
+          <dl className="settings-usage">{metrics.map(([label,value,limit])=><div key={label}><dt>{label}</dt><dd><strong>{value??'—'}</strong><span> / {limit === null ? t('无限') : limit}</span></dd></div>)}</dl>}
+        <FormError message={error}/><div className="settings-access-actions"><Button disabled={loading} loading={loading} onClick={()=>void load()}>{t('刷新用量')}</Button><DocsLink path="/account/limits/">{t('额度说明')}</DocsLink></div>
       </Panel>
       <Panel className="settings-panel settings-preferences"><span className="section-index">03 — PREFERENCES</span><h2>{t('偏好设置')}</h2><Preferences labels/></Panel>
     </div>

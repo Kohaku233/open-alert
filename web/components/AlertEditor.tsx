@@ -6,6 +6,7 @@ import { Button } from './ui/button.js';
 import { Input } from './ui/input.js';
 import { Label } from './ui/label.js';
 import { t } from '../i18n.js';
+import { DocsLink } from './DocsLink.js';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
@@ -87,7 +88,7 @@ export function AlertEditor({ model, alert, instrument, initialThreshold, initia
     {!freshTick(tick) && <p className="small muted">{t("当前没有可用的新鲜后台价格。恢复行情后，首次满足条件的价格也会触发。")}</p>}
     {alert?.triggered && <Notice as="p" className="warning">{t("此警报已触发。编辑价格或启用状态不会重新武装，请在列表中明确操作。")}</Notice>}
     {!data?.status.settings.enabled && <p className="small muted">{t("你的监控总开关目前关闭。保存后需在仪表盘明确启用监控。")}</p>}
-    <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")}</p>
+    <p className="small muted">{t("每条警报触发一次，包含恰好达到阈值。图表画线不会创建手机警报。")} <DocsLink path="/alerts/how-it-works/">{t("触发规则")}</DocsLink></p>
     <FormError message={error || model.error}/><Button variant="default" className="primary wide" disabled={busy || pending || !data || !canSaveMarket || !!model.error}>{busy && <Spinner/>}{busy ? t("正在保存…") : alert ? t("保存警报") : t("创建警报")}</Button></form>
   </Dialog>;
 }

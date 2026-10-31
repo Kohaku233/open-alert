@@ -10,6 +10,7 @@ import { Switch } from '../components/ui/switch.js';
 import { Spinner } from '../components/ui/spinner.js';
 import { FormError } from '../components/Dialog.js';
 import { t } from '../i18n.js';
+import { DocsLink } from '../components/DocsLink.js';
 import { errorText, request } from '../api.js';
 import type { WorkspaceModel } from '../model.js';
 import type { AnomalyEvent, AnomalySettings } from '../../src/anomaly/store.js';
@@ -62,7 +63,7 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
     event.preventDefault();
     const crypto = Number(values.crypto), tradfi = Number(values.tradfi);
     if (!(crypto >= 10 && crypto <= 100) || !(tradfi >= 2 && tradfi <= 50)) {
-      setFormError(t('币种门槛 10–100%，股票类门槛 2–50%，每日上限 1–50 条。')); return;
+      setFormError(t('币种门槛 10–100%，股票类门槛 2–50%。')); return;
     }
     if (await save({ minMoveCrypto: crypto / 100, minMoveTradfi: tradfi / 100 }, t('过滤条件已保存。'))) setDraft(null);
   }
@@ -89,15 +90,15 @@ export function Anomaly({ notify, navigate }: { model: WorkspaceModel; notify: (
           <div><dt>{t('今日推送')}</dt><dd>{view.today} · UTC</dd></div></dl>
       </Panel>
       <Panel className="settings-panel anomaly-filters"><span className="section-index">02 — FILTER</span><h2>{t('过滤条件')}</h2>
-        <p className="small muted">{t('以下条件同时满足才推送：')}</p>
+        <p className="small muted">{t('以下条件同时满足才推送：')} <DocsLink path="/anomaly/rules/"/></p>
         <ol className="anomaly-rules">
           <li><strong>{t('涨跌幅超过常态')}</strong><span>{t('15 分钟到 24 小时窗口内，币种达到自身 30 天波动的 6 倍，股票类达到同时段波动的 4 倍')}</span></li>
           <li><strong>{t('放量')}</strong><span>{t('窗口成交额至少是平时的 3 倍')}</span></li>
           <li><strong>{t('流动性')}</strong><span>{t('24 小时成交额 ≥ $10M；币种需 CoinGecko 可识别且流通市值 ≥ $10M')}</span></li>
-          <li><strong>{t('冷却')}</strong><span>{t('按你自己收到的推送计算：同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制')}</span></li>
+          <li><strong>{t('冷却')}</strong><span>{t('按你自己收到的推送计算：同一标的 24 小时内只再推涨跌幅翻倍的行情，方向反转不受限制')} <DocsLink path="/anomaly/cooldown/">{t('冷却说明')}</DocsLink></span></li>
         </ol>
         <form onSubmit={event => void saveFilters(event)}><fieldset disabled={busy}><div className="delivery-fields anomaly-fields">
-          <Label>{t('币种最小涨跌 · %')}<Input type="number" min={10} max={100} step={1} required value={values.crypto} onChange={event => edit('crypto', event.target.value)}/><span className="small muted">{t('扣除 BTC 后计算，默认 25')}</span></Label>
+          <Label>{t('币种最小涨跌 · %')}<Input type="number" min={10} max={100} step={1} required value={values.crypto} onChange={event => edit('crypto', event.target.value)}/><span className="small muted">{t('扣除 BTC 后计算，默认 25')} · <DocsLink path="/anomaly/filters/">{t('如何设置')}</DocsLink></span></Label>
           <Label>{t('股票类最小涨跌 · %')}<Input type="number" min={2} max={50} step={0.5} required value={values.tradfi} onChange={event => edit('tradfi', event.target.value)}/><span className="small muted">{t('默认 3')}</span></Label>
         </div><Button variant="default" className="primary wide">{busy && <Spinner/>}{busy ? t('正在保存…') : t('保存过滤条件')}</Button></fieldset>
           <FormError message={formError}/>{draft && <Button type="button" className="text-button" disabled={busy} onClick={() => { setDraft(null); setFormError(''); }}>{t('撤销修改')}</Button>}</form>

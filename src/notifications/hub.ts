@@ -7,6 +7,7 @@ import { decryptSecret, encryptSecret } from './crypto.js';
 import { boundedJson } from './http.js';
 import type { Fetch } from './http.js';
 import { NotificationError, sendPushover, validatePushoverChannel } from './pushover.js';
+import { hasUnlimitedQuotas } from '../access/quotas.js';
 
 export const ROUTABLE_SOURCES = ['price_alert', 'anomaly_crypto', 'anomaly_tradfi'] as const;
 export const ALL_SOURCES = ROUTABLE_SOURCES;
@@ -181,7 +182,7 @@ export function createNotifyHub(options: HubOptions) {
   }
   async function createChannel(userId: string, input: { type: string; name: string; config: unknown }) {
     await ensureUser(userId);
-    if ((await rows(userId)).length >= MAX_CHANNELS) throw new HubError('limit_exceeded');
+    if (!await hasUnlimitedQuotas(db,userId) && (await rows(userId)).length >= MAX_CHANNELS) throw new HubError('limit_exceeded');
     const sealedConfig = await sealed(userId, input.type, input.config), at = now(), id = crypto.randomUUID();
     await db.execute('INSERT INTO notify_channels(id,user_id,type,name,enabled,legacy,config_json,generation,created_at,updated_at) VALUES(?,?,?,?,1,0,?,0,?,?)', [id, userId, input.type, input.name, sealedConfig, at, at]);
     return describe(userId, await row(userId, id));
@@ -238,6 +239,7 @@ export function createNotifyHub(options: HubOptions) {
   }
   async function dispatch(userId: string, sources: readonly RoutableSource[], message: HubMessage, fallback: NotificationOptions, eventKey?: string): Promise<SendOutcome & { channels: number }> {
     await ensureUser(userId);
+    const unlimited = await hasUnlimitedQuotas(db,userId);
     const all=await routes(userId), byId=new Map((await rows(userId)).map(r=>[r.id,r])), picked=new Map<string,HubRoute>();
     for(const source of sources) for(const route of all) if(route.source===source && route.enabled && !picked.has(route.channelId)) picked.set(route.channelId,route);
     const results:SendOutcome[]=[];
@@ -248,7 +250,7 @@ export function createNotifyHub(options: HubOptions) {
       let result:SendOutcome;
       const count=(await db.query<{n:number}>("SELECT COUNT(*) AS n FROM notify_deliveries WHERE user_id=? AND channel_id=? AND source=? AND at>=? AND outcome<>'skipped'",[userId,id,route.source,Math.floor(now()/86400000)*86400000]))[0]?.n??0;
       if(inQuietHours(route.options.quiet,now())) result={outcome:'skipped',code:'quiet_hours'};
-      else if(!previous && count>=route.options.dailyLimit) result={outcome:'skipped',code:'daily_limit'};
+      else if(!unlimited && !previous && count>=route.options.dailyLimit) result={outcome:'skipped',code:'daily_limit'};
       else {
         // Persist ambiguous state before I/O: restart or a lost scheduler lease must never replay acceptance.
         if(eventKey) await log(userId,r,route.source,message,{outcome:'uncertain',code:'dispatch_interrupted'},eventKey);
