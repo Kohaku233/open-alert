@@ -1597,6 +1597,21 @@ try {
       await check('after reload with log on, oscillator panes render as before (linear, auto)',async()=>{const shown=await subPixels();assert.equal(shown.length,2);assert(shown[0]===reference[0],'RSI pane changed');assert(shown[1]===reference[1],'MACD pane changed');});
       await tap(logButton);await expect(logButton).toHaveAttribute('aria-pressed','false');if(await autoButton.getAttribute('aria-pressed')==='false')await tap(autoButton);
       if(profile==='mobile')await tap(p.getByTestId('chart-legend').locator('.chart-legend-toggle'));
+      // Dragging a pane separator must stick: live trades re-render studies and used to reset pane heights.
+      if(profile==='desktop'){
+        const paneHeights=()=>p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40).map(tr=>Math.round(tr.getBoundingClientRect().height)));
+        const sepY=await p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40)[1].getBoundingClientRect().top-0.5);
+        const box=await p.locator('.native-chart').boundingBox(),x=box.x+box.width/3,start=await paneHeights();
+        await p.mouse.move(x,sepY);await p.mouse.down();await p.mouse.move(x,sepY-50,{steps:8});await p.mouse.up();
+        const dragged=await paneHeights();
+        await check('dragging the separator above RSI resizes the panes',async()=>{assert(dragged[1]>=start[1]+40,'RSI '+JSON.stringify([start,dragged]));});
+        const quotes=requests(s,'GET','/api/quote').length;s.quotePrice=60900;await expect.poll(()=>requests(s,'GET','/api/quote').length,{timeout:15000}).toBeGreaterThan(quotes);await p.waitForTimeout(400);
+        await check('resized panes keep their height after a live price update',async()=>assert.deepEqual(await paneHeights(),dragged));
+        s.quotePrice=undefined;
+        // Drag back so the later reload comparison sees the default layout.
+        await p.mouse.move(x,sepY-50);await p.mouse.down();await p.mouse.move(x,sepY,{steps:8});await p.mouse.up();
+        await check('dragging back restores the default pane heights',async()=>{const back=await paneHeights();for(let i=0;i<back.length;i++)assert(Math.abs(back[i]-start[i])<=1,JSON.stringify([start,back]));});
+      }
       await check('studies survive reload',async()=>{await expect(p.getByTestId('chart-legend').locator('.chart-indicator-name')).toHaveCount(4);await expect(trigger).toContainText('6');});
       // Settings: generated from the study's own input list.
       await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();
