@@ -49,7 +49,22 @@ docker compose exec app-postgres npm run admin:invite -- you@example.com
 npm run admin:invite -- you@example.com
 ```
 
-它不验证 SMTP 连通性、不发送邮件、不创建用户/会话、不授予管理员。受邀邮箱正常登录并验证后，在账户页使用 `BOOTSTRAP_TOKEN` 的一次性初始化动作。服务同时要求已验证 cookie 会话、可信 Origin 和 `Authorization: Bearer BOOTSTRAP_TOKEN`，只在尚无管理员时原子地消耗持久化标记。完成后删除该部署 Secret；更换 token 不会重置已消耗状态。
+它不验证 SMTP 连通性、不发送邮件、不创建用户/会话、不授予管理员。受邀邮箱正常登录并验证后，通过 `POST /api/admin/bootstrap` 初始化首位管理员；当前账户界面没有初始化表单。
+
+在已登录的本站页面打开浏览器开发者工具，在 Console 中执行以下代码，并在弹窗中输入本次部署的 `BOOTSTRAP_TOKEN`。代码使用当前页面的同源 cookie 会话，不要在其他网站执行：
+
+```js
+const result = await fetch('/api/admin/bootstrap', {
+  method: 'POST',
+  credentials: 'same-origin',
+  headers: {
+    Authorization: 'Bearer ' + prompt('BOOTSTRAP_TOKEN'),
+  },
+});
+console.log(await result.json());
+```
+
+响应中的 `ok: true` 和 `data.bootstrapped: true` 表示成功，刷新页面后可进入管理台。服务同时要求已验证 cookie 会话、可信 Origin 和 `Authorization: Bearer BOOTSTRAP_TOKEN`，只在尚无管理员时原子地消耗持久化标记。完成后删除 `.env` 或部署 Secrets 中的 `BOOTSTRAP_TOKEN`，并重启 Node 服务或更新 Worker 部署；更换 token 不会重置已消耗状态。
 
 后续管理员依据数据库中的 Better Auth 身份与角色执行操作，可通过管理界面创建邀请。用户必须自己保存并测试 Pushover 通道、创建规则、开启总监控；新账户默认关闭。Google 回调设为 `APP_URL/api/auth/callback/google`，缺少两项 Google 配置时能力报告会明确关闭入口。
 
