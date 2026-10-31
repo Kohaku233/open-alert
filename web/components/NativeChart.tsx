@@ -145,6 +145,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const [editing, setEditing] = useState<string | null>(null);
   // One renderer per shown study; outputs keep each plot's values by chart time for the legend.
   const renderers = useRef(new Map<string, IndicatorRenderer>());
+  // Pane layout (count + chart instance) the default heights were last applied to; drag-resized heights survive refreshes.
+  const paneLayout = useRef<{ chart: unknown; count: number } | null>(null);
   const outputs = useRef(new Map<string, StudyOutput[]>());
   const logRef = useRef(logScale);
   logRef.current = logScale;
@@ -277,8 +279,12 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     // Panes copy the price pane's scale options (log, manual range) when created; oscillators need linear, auto-fitted axes.
     const panes = current.chart.panes();
     for (const sub of panes.slice(1)) sub.priceScale('right').applyOptions({ mode: PriceScaleMode.Normal, autoScale: true });
-    panes[0]?.setStretchFactor(pane > 1 ? 2.5 : 3);
-    for (const sub of panes.slice(1)) sub.setStretchFactor(1);
+    // Only reset heights when panes are added or removed; live ticks re-render studies every update and must not undo a drag.
+    if (paneLayout.current?.chart !== current.chart || paneLayout.current.count !== panes.length) {
+      panes[0]?.setStretchFactor(pane > 1 ? 2.5 : 3);
+      for (const sub of panes.slice(1)) sub.setStretchFactor(1);
+      paneLayout.current = { chart: current.chart, count: panes.length };
+    }
     // The library lays new panes out on its next frame; measure legend positions after that.
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => setRevision(value => value + 1)));
   }
