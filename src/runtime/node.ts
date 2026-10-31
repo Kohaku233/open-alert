@@ -64,7 +64,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   // Alert state changes reach open dashboards immediately; bound to the gateway below.
   let notifyUser:(userId:string)=>void=()=>{};
   const engine=createScheduler({...services,notifications:createNotificationService({...services,provider:notifications,hub}),hubDelivery:true,onUserActivity:userId=>notifyUser(userId),
-    marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:config.limits.globalInstruments,binanceEndpoints})});
+    marketSource:createPublicCcxtMarketSource({mode:'stream',maxDemand:null,binanceEndpoints})});
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};

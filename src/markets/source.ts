@@ -54,7 +54,7 @@ export interface MarketSource {
   diagnostics(): SourceDiagnostics;
 }
 export interface SourceDiagnostics {
-  stopped: boolean; queued: number; queueCapacity: number; demandCapacity: number;
+  stopped: boolean; queued: number; queueCapacity: number; demandCapacity: number | null;
   venues: { venue: Venue; type?: MarketType; catalogAt: number | null; catalogCode: string | null; priceCode: string | null; retryAt: number; clientOpen: boolean; pollRequests?: number; pollFailures?: number }[];
   instruments: { instrument: string; code: string | null; queued: number; replayEntries: number }[];
   replayCapacity: number;
@@ -66,7 +66,7 @@ export interface MarketSourceOptions {
   catalogTtlMs?: number; requestTimeoutMs?: number; closeTimeoutMs?: number;
   freshnessMs?: number; futureSkewMs?: number; pollIntervalMs?: number;
   retryBaseMs?: number; retryMaxMs?: number;
-  maxDemand?: number; maxQueue?: number; maxBatch?: number; maxCatalogMarkets?: number;
+  maxDemand?: number | null; maxQueue?: number; maxBatch?: number; maxCatalogMarkets?: number;
   /** IDs at the monotonic trade timestamp; separate from pending observations. */
   maxReplayEntries?: number;
   pollBudgetMs?: number; maxPollRequestsPerVenue?: number;
@@ -114,7 +114,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
   const pollInterval = bound(options.pollIntervalMs ?? 5000, 1, 60_000);
   const retryBase = bound(options.retryBaseMs ?? 1000, 1, 60_000);
   const retryMax = bound(options.retryMaxMs ?? 60_000, retryBase, 300_000);
-  const maxDemand = bound(options.maxDemand ?? 200, 1, 1000);
+  const maxDemand = options.maxDemand === null ? null : bound(options.maxDemand ?? 200, 1, 1000);
   const maxQueue = bound(options.maxQueue ?? 4096, 1, 100_000);
   const maxBatch = bound(options.maxBatch ?? 1000, 2, 10_000);
   const maxReplay = bound(options.maxReplayEntries ?? 10_000, 2, 100_000);
@@ -381,7 +381,7 @@ export function createCcxtMarketSource(options: MarketSourceOptions): MarketSour
     const ids = [...new Set(instruments)];
     const task = demandWork.then(async () => {
       if (stopped) throw new Error('market_source_stopped');
-      if (ids.length > maxDemand) throw new Error('demand_capacity');
+      if (maxDemand !== null && ids.length > maxDemand) throw new Error('demand_capacity');
       // Active SQL rules survive outages and delisting. Keep their demand while
       // per-market eligibility prevents evaluation; one venue cannot block others.
       if (ids.some(id => { const identity = parseInstrumentIdentity(id); return !identity || !venues.includes(identity.venue); })) throw new Error('instrument_unavailable');

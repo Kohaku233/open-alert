@@ -152,7 +152,7 @@ export interface SystemStatus {
   user: UserIdentity;
   settings: UserSettings;
   settingsGeneration: number;
-  daily: { date: string; attempts: number; limit: number };
+  daily: { date: string; attempts: number; limit: number | null };
   health: {
     overall: HealthState;
     database: ComponentHealth;

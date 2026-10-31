@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { BellRing, ChevronsUpDown, LogOut, Settings2 } from "lucide-react";
+import { ArrowUpRight, BellRing, BookOpen, ChevronsUpDown, LogOut, Settings2 } from "lucide-react";
 import { Button } from "./ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.js";
 import { Preferences } from "./Preferences.js";
 import { t } from "../i18n.js";
+import { DOCS_ORIGIN } from "./DocsLink.js";
 
 export function AccountMenu({
   name,
@@ -65,6 +66,12 @@ export function AccountMenu({
               {t(label)}
             </a>
           ))}
+          <a className="account-menu-docs" href={DOCS_ORIGIN + "/"} target="_blank" rel="noopener" onClick={() => setOpen(false)}>
+            <BookOpen aria-hidden="true" />
+            {t("使用文档")}
+            <ArrowUpRight aria-hidden="true" className="account-menu-external" />
+            <span className="sr-only">{t("（在新标签页打开）")}</span>
+          </a>
         </div>
         <Preferences />
         <Button

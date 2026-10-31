@@ -10,7 +10,8 @@ export interface ProductAccess {
   billing: 'not_enabled';
   expiresAt: null;
   features: Record<ProductFeature, boolean>;
-  limits: { alerts: number; instruments: number; channels: number; favorites: number; priceAttemptsPerDay: number };
+  /** null is an explicit unlimited business entitlement. */
+  limits: { alerts: number | null; instruments: number | null; channels: number | null; favorites: number | null; priceAttemptsPerDay: number | null };
 }
 export interface AccountUsage {
   observedAt: number;
