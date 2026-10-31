@@ -3,7 +3,7 @@ interface Step { tag: string; title: string; text: string }
 interface Props { steps: Step[]; label: string }
 const { steps, label } = Astro.props;
 ---
-<figure class="oa-pipeline not-content" aria-label={label}>
+<figure class="oa-pipeline" aria-label={label}>
   <div class="oa-trace" aria-hidden="true"></div>
   <ol class="oa-steps" style={`--n:${steps.length}`}>
     {steps.map(step => (
@@ -17,27 +17,27 @@ const { steps, label } = Astro.props;
 </figure>
 <style>
   .oa-pipeline {
-    position: relative; margin: 1.6rem 0 .6rem; padding: 22px; border: 1px solid var(--oa-line); border-radius: 16px; overflow: hidden;
+    position: relative; margin: 28px 0 12px; padding: 26px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
     background:
-      linear-gradient(var(--oa-grid) 1px, transparent 1px) 0 0 / 100% 32px,
-      linear-gradient(90deg, var(--oa-grid) 1px, transparent 1px) 0 0 / 32px 100%,
-      var(--oa-card);
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 100% 32px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 100%,
+      var(--card);
   }
   .oa-steps { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
-  .oa-step { position: relative; z-index: 1; margin: 0; padding: 13px 13px 15px; border-radius: 12px; border: 1px solid var(--oa-line); background: color-mix(in srgb, var(--oa-card) 92%, transparent); }
-  .oa-step b { display: block; font-weight: 500; font-size: 13.5px; margin-bottom: 4px; color: var(--oa-text); }
-  .oa-text { display: block; font-size: 12px; line-height: 1.55; color: var(--oa-muted-fg); }
-  .oa-tag { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 11.5px; font-weight: 500; color: var(--oa-signal); }
-  .oa-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--oa-signal); }
-  .oa-trace { position: absolute; left: 22px; right: 22px; top: 46px; height: 1px; background: var(--oa-line); }
+  .oa-step { position: relative; z-index: 1; margin: 0; padding: 14px 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--card) 92%, transparent); }
+  .oa-step b { display: block; font-weight: 500; font-size: 13.5px; margin-bottom: 4px; color: var(--text); }
+  .oa-text { display: block; font-size: 12px; line-height: 1.55; color: var(--muted-fg); }
+  .oa-tag { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-family: var(--mono); font-size: 11px; color: var(--signal); }
+  .oa-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--signal); }
+  .oa-trace { position: absolute; left: 26px; right: 26px; top: 52px; height: 1px; background: var(--line); }
   .oa-trace::after {
     content: ""; position: absolute; left: 0; top: -1px; height: 3px; width: 14%; border-radius: 3px;
-    background: linear-gradient(90deg, transparent, var(--oa-signal)); animation: oa-run 4.6s var(--oa-ease) infinite;
+    background: linear-gradient(90deg, transparent, var(--signal)); animation: oa-run 4.6s var(--ease) infinite;
   }
   @keyframes oa-run { 0% { transform: translateX(0); opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { transform: translateX(620%); opacity: 0 } }
-  @media (max-width: 50rem) {
+  @media (max-width: 860px) {
     .oa-steps { grid-template-columns: 1fr; }
-    .oa-trace { left: 29px; right: auto; top: 22px; bottom: 22px; width: 1px; height: auto; }
+    .oa-trace { left: 33px; right: auto; top: 26px; bottom: 26px; width: 1px; height: auto; }
     .oa-trace::after { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .oa-trace::after { display: none; } }

@@ -1,0 +1,13 @@
+---
+interface Props { title: string; description: string; href: string }
+const { title, description, href } = Astro.props;
+---
+<a class="link-card" href={href}><b>{title}</b><span>{description}</span><i aria-hidden="true">→</i></a>
+<style>
+  .link-card{position:relative;display:block;padding:16px 40px 16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);text-decoration:none;transition:border-color .2s,background .2s}
+  .link-card:hover{border-color:var(--control);background:var(--row)}
+  .link-card b{display:block;font-weight:500;font-size:15px}
+  .link-card span{display:block;font-size:13px;color:var(--muted-fg);margin-top:4px;line-height:1.6}
+  .link-card i{position:absolute;right:16px;top:16px;font-style:normal;color:var(--signal);transition:transform .2s var(--ease)}
+  .link-card:hover i{transform:translateX(3px)}
+</style>

@@ -1,0 +1,26 @@
+---
+// Formula block with a name bar and copy button, as in the preview.
+interface Props { name: string; formula: string; example?: string }
+const { name, formula, example } = Astro.props;
+---
+<div class="code">
+  <header><span>{name}</span><button type="button" data-copy={formula}>复制</button></header>
+  <pre><code>{formula}{example && <span class="c">{'\n'}# {example}</span>}</code></pre>
+</div>
+<style>
+  .code{position:relative;margin:18px 0 24px;border:1px solid var(--line);border-radius:14px;background:var(--field);overflow:hidden}
+  .code header{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 8px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--muted-fg)}
+  .code button{font:500 11px var(--body);color:var(--muted-fg);background:transparent;border:1px solid var(--line);border-radius:999px;padding:3px 10px;cursor:pointer}
+  .code button:hover{color:var(--text);border-color:var(--control)}
+  .code pre{margin:0;padding:16px;border:0;border-radius:0;background:none;font-family:var(--mono);font-size:13px;line-height:1.7;overflow:auto}
+  .code code{background:none;border:0;padding:0;font-size:inherit}
+  .c{color:var(--muted-fg)}
+</style>
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) => {
+    b.onclick = async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = '已复制'; } catch { b.textContent = '复制失败'; }
+      setTimeout(() => (b.textContent = '复制'), 1400);
+    };
+  });
+</script>

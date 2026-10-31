@@ -3,7 +3,7 @@ title: 价格警报怎么触发
 description: 用哪个价格判断、多新的价格才算数、触发后为什么锁定。
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Aside from '../../../components/Aside.astro';
 import Pipeline from '../../../components/Pipeline.astro';
 
 价格警报用 **所选交易所的最新成交价** 判断。价格恰好等于目标价也算满足条件。每条警报只触发一次，触发后锁定，直到你手动重新武装。
