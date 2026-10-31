@@ -321,6 +321,18 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
   /** The TP/SL that closes this whole position, if any (closeFraction 1, or a size equal to the position). */
   const protectionFor = (position: TradePosition) => (account?.protects ?? []).find(item => item.instId === position.instId && (item.posSide === position.posSide || item.posSide === 'net')
     && (item.full || Math.abs(item.contracts - position.contracts) < 1e-9)) ?? null;
+  /** Every resting TP/SL on this position, including partial ones attached to the orders that built it. */
+  const protectsFor = (position: TradePosition) => (account?.protects ?? []).filter(item => item.instId === position.instId && (item.posSide === position.posSide || item.posSide === 'net'));
+  /** An OKX conditional/oco body closing `size` of the position (whole position, or a fixed number of contracts). */
+  const protectBody = (position: TradePosition, size: 'full' | number, input: ProtectInput, tick: string, cfg: TradeConfig) => {
+    const net = cfg.posMode !== 'long_short_mode';
+    // closeFraction=1 follows the position size and is cancelled with it; OKX allows it in net mode outside portfolio margin only.
+    const sizing = size === 'full' && net && cfg.acctLv !== '4' ? { closeFraction: '1', reduceOnly: true }
+      : { sz: String(size === 'full' ? position.contracts : size), ...(net ? { reduceOnly: true } : { posSide: position.posSide }) };
+    // A net-mode conditional order with both legs runs only the stop loss, so two legs always use oco.
+    return { instId: position.instId, tdMode: position.mgnMode === 'isolated' ? 'isolated' : 'cross', side: position.side === 'long' ? 'sell' : 'buy',
+      ordType: input.tp && input.sl ? 'oco' : 'conditional', algoClOrdId: clientOrderId(), ...sizing, ...legs(input, tick) };
+  };
   /** Sets or clears the whole-position TP/SL. Same legs -> amend prices in place; a different leg set -> cancel, then place anew. */
   const protectPosition = async (position: TradePosition, input: ProtectInput): Promise<boolean> => {
     const inst = instrument(position.instId), cfg = configRef.current;
@@ -330,26 +342,36 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     if (!input.tp && !input.sl) return current ? writeThenRefresh(cancelCurrent, t('已删除止盈止损')) : true;
     if (current && !!current.tp === !!input.tp && !!current.sl === !!input.sl)
       return writeThenRefresh(() => call('POST', 'trade/amend-algos', { instId: current.instId, algoId: current.id, ...legs(input, inst.tickSz, true) }), t('止盈止损已更新'));
-    const net = cfg.posMode !== 'long_short_mode';
-    // closeFraction=1 follows the position size and is cancelled with it; OKX allows it in net mode outside portfolio margin only.
-    const size = net && cfg.acctLv !== '4' ? { closeFraction: '1', reduceOnly: true } : net ? { sz: String(position.contracts), reduceOnly: true } : { sz: String(position.contracts), posSide: position.posSide };
-    // A net-mode conditional order with both legs runs only the stop loss, so two legs always use oco.
-    const body = { instId: position.instId, tdMode: position.mgnMode === 'isolated' ? 'isolated' : 'cross', side: position.side === 'long' ? 'sell' : 'buy',
-      ordType: input.tp && input.sl ? 'oco' : 'conditional', algoClOrdId: clientOrderId(), ...size, ...legs(input, inst.tickSz) };
+    const body = protectBody(position, 'full', input, inst.tickSz, cfg);
     // OKX keeps one whole-position TP/SL, so the old one goes first; a failed placement leaves the position unprotected and says so.
     if (current && !await writeThenRefresh(cancelCurrent, t('已撤销旧的止盈止损'))) return false;
     return writeThenRefresh(() => call('POST', 'trade/order-algo', body), t('止盈止损已设置'), current ? t('旧的止盈止损已撤销，新的设置失败，当前持仓没有止盈止损：') : '');
   };
+  /** Dragging the position line sets one leg of the whole-position TP/SL and keeps the other. */
+  const setProtectLeg = (position: TradePosition, leg: 'tp' | 'sl', price: number) => {
+    const current = protectionFor(position);
+    return protectPosition(position, { tp: leg === 'tp' ? price : current?.tp ?? null, sl: leg === 'sl' ? price : current?.sl ?? null });
+  };
   /** Chart drag moves one leg; × removes it (the other leg, if any, stays). */
-  const amendProtect = (position: TradePosition, item: TradeProtect, leg: 'tp' | 'sl', price: number | null) => {
+  const amendProtect = async (position: TradePosition, item: TradeProtect, leg: 'tp' | 'sl', price: number | null): Promise<boolean> => {
     const inst = instrument(item.instId);
-    if (!inst) return Promise.resolve(false);
-    if (price === null) return protectPosition(position, { tp: leg === 'tp' ? null : item.tp, sl: leg === 'sl' ? null : item.sl });
+    const cfg = configRef.current;
+    if (!inst || !cfg) return false;
+    if (price === null) {
+      const rest = { tp: leg === 'tp' ? null : item.tp, sl: leg === 'sl' ? null : item.sl };
+      const name = leg === 'tp' ? t('止盈') : t('止损');
+      const cancelItem = () => call('POST', 'trade/cancel-algos', [{ instId: item.instId, algoId: item.id }]);
+      if (!rest.tp && !rest.sl) return writeThenRefresh(cancelItem, t('已删除{0}', name));
+      if (protectionFor(position)?.id === item.id) return protectPosition(position, rest);
+      // A partial oco cannot drop one leg in place: cancel it, then re-place the other leg for the same size.
+      if (!await writeThenRefresh(cancelItem, t('已删除{0}', name))) return false;
+      return writeThenRefresh(() => call('POST', 'trade/order-algo', protectBody(position, item.contracts, rest, inst.tickSz, cfg)), t('剩余的止盈止损已重新挂出'), t('原止盈止损已撤销，剩余部分重新挂出失败：'));
+    }
     return writeThenRefresh(() => call('POST', 'trade/amend-algos', { instId: item.instId, algoId: item.id, ...legs(leg === 'tp' ? { tp: price, sl: null } : { tp: null, sl: price }, inst.tickSz, true) }),
       t('{0}已改到 {1}', leg === 'tp' ? t('止盈') : t('止损'), roundTo(price, inst.tickSz)));
   };
 
   const orders = [...(account?.orders ?? []), ...local.filter(order => !(account?.orders ?? []).some(item => item.clOrdId === order.clOrdId))];
-  return { vault, status, relay, config, account, orders, pollError, leverage, uncertain, instrument, unlock, save, forget, lock, place, amend, cancel, cancelAll, refresh, protectionFor, protectPosition, amendProtect };
+  return { vault, status, relay, config, account, orders, pollError, leverage, uncertain, instrument, unlock, save, forget, lock, place, amend, cancel, cancelAll, refresh, protectionFor, protectsFor, protectPosition, setProtectLeg, amendProtect };
 }
 export type OkxAccount = ReturnType<typeof useOkxAccount>;

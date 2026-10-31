@@ -1,7 +1,7 @@
 /* Trade-mode surfaces for the Markets page. Markup follows the approved preview (prototype-trade). */
 import { forwardRef, useState } from 'react';
 import type { ComponentProps, FormEvent } from 'react';
-import { Copy, KeyRound, Keyboard, Lock, ShieldCheck } from 'lucide-react';
+import { ArrowLeftRight, Copy, KeyRound, Keyboard, Lock, Pencil, ShieldCheck } from 'lucide-react';
 import { Dialog, FormError } from '../components/Dialog.js';
 import { Notice } from '../components/Surface.js';
 import { Button } from '../components/ui/button.js';
@@ -14,7 +14,7 @@ import { t } from '../i18n.js';
 import { formatQuotePrice } from '../utils.js';
 import type { TradeDesk } from './useTradeDesk.js';
 import type { TradePosition } from './useOkxAccount.js';
-import { NOTIONAL_PRESETS, decimalDraft, formatQty, formatSigned, kindText, pnlAt, protectProblem, sideText } from './useTradeDesk.js';
+import { decimalDraft, formatQty, formatSigned, kindText, parsePresets, pnlAt, protectPct, protectPrice, protectProblem, roeOf, sideText } from './useTradeDesk.js';
 
 const money = (value: number, digits = 2) => new Intl.NumberFormat(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 const baseOf = (instId: string) => instId.split('-')[0] ?? instId;
@@ -27,18 +27,54 @@ const DecimalInput = forwardRef<HTMLInputElement, Omit<ComponentProps<'input'>, 
       onChange={event => onValue(decimalDraft(event.target.value.normalize('NFKC')))}/>;
   });
 
-/** One TP or SL field with the P&L it would book, shown next to the price as the user types. */
-function ProtectField({ leg, value, onValue, side, entry, qty, problem }: { leg: 'tp' | 'sl'; value: string; onValue: (value: string) => void; side: 'long' | 'short'; entry: number; qty: number; problem: string | null }) {
+/** One TP or SL leg: trigger price and its distance from entry in %, either can be typed.
+    Below it, the USDT P&L and return on margin the leg would book. */
+function ProtectField({ leg, value, onValue, side, entry, qty, lever, problem, round }: { leg: 'tp' | 'sl'; value: string; onValue: (value: string) => void; side: 'long' | 'short'; entry: number; qty: number; lever: number; problem: string | null; round: (price: number) => string }) {
+  const [pctDraft, setPctDraft] = useState<string | null>(null);
   const at = Number(value) || 0;
   const pnl = at > 0 && entry > 0 && qty > 0 ? pnlAt(side, entry, at, qty) : null;
-  const pct = at > 0 && entry > 0 ? (at / entry - 1) * 100 : null;
-  return <Label className={`order-field protect-field ${leg}`}>
-    <span className="protect-label">{leg === 'tp' ? t('止盈触发价') : t('止损触发价')}{pct !== null && <small>{formatSigned(pct)}%</small>}</span>
-    <span className="order-input"><DecimalInput value={value} onValue={onValue} placeholder={leg === 'tp' ? t('不设止盈') : t('不设止损')} aria-invalid={problem ? true : undefined}/>
-      {value && <button type="button" aria-label={leg === 'tp' ? t('清除止盈') : t('清除止损')} onClick={() => onValue('')}>{t('清除')}</button>}</span>
+  const pct = at > 0 && entry > 0 ? protectPct(side, leg, entry, at) : null;
+  const roe = pnl !== null ? roeOf(pnl, entry, qty, lever) : null;
+  const name = leg === 'tp' ? t('止盈') : t('止损');
+  // % is measured in the leg's own direction: TP 2% = 2% in profit, SL 2% = 2% against the position.
+  function typePct(text: string) {
+    const draft = decimalDraft(text.normalize('NFKC'));
+    setPctDraft(draft);
+    const n = Number(draft);
+    if (!draft) onValue('');
+    else if (n > 0 && entry > 0 && (leg === 'tp' || n < 100)) onValue(round(protectPrice(side, leg, entry, n)));
+  }
+  return <div className={`order-field protect-field ${leg}`} role="group" aria-label={name}>
+    <span className="protect-label">{leg === 'tp' ? t('止盈触发价') : t('止损触发价')}</span>
+    <div className="protect-inputs">
+      <span className="order-input"><DecimalInput value={value} onValue={next => { setPctDraft(null); onValue(next); }} placeholder={leg === 'tp' ? t('不设止盈') : t('不设止损')} aria-label={t('{0}价格', name)} aria-invalid={problem ? true : undefined}/>
+        {value && <button type="button" aria-label={leg === 'tp' ? t('清除止盈') : t('清除止损')} onClick={() => { setPctDraft(null); onValue(''); }}>{t('清除')}</button>}</span>
+      <span className="order-input protect-pct"><DecimalInput value={pctDraft ?? (pct !== null && pct > 0 ? String(Number(pct.toFixed(2))) : '')} onValue={typePct} onBlur={() => setPctDraft(null)} placeholder="%" aria-label={t('{0}幅度 %', name)} disabled={!(entry > 0)}/><span className="order-unit">%</span></span>
+    </div>
+    <div className="protect-quick" role="group" aria-label={t('{0}幅度', name)}>{(leg === 'tp' ? [1, 2, 5, 10] : [0.5, 1, 2, 5]).map(step => <button key={step} type="button" disabled={!(entry > 0)} aria-pressed={pct !== null && Math.abs(pct - step) < 0.005} onClick={() => { setPctDraft(null); onValue(round(protectPrice(side, leg, entry, step))); }}>{step}%</button>)}</div>
     <small className={problem ? 'danger-text' : pnl === null ? '' : pnl >= 0 ? 'signal-text' : 'danger-text'} aria-live="polite">
-      {problem ?? (pnl === null ? t('触发后市价平仓') : t('预计 {0} USDT', formatSigned(pnl)))}</small>
-  </Label>;
+      {problem ?? (pnl === null ? t('触发后市价平仓') : `${formatSigned(pnl)} USDT${roe !== null ? ` · ROE ${formatSigned(roe, 1)}%` : ''}`)}</small>
+  </div>;
+}
+
+/** Size presets as buttons, editable in place: "100U" = USDT, "25%" = share of the max size, "0.01" = coin amount. */
+function SizePresets({ desk, base }: { desk: TradeDesk; base: string }) {
+  const { form } = desk;
+  const [draft, setDraft] = useState<string | null>(null);
+  const parsed = draft === null ? [] : parsePresets(draft);
+  if (draft !== null) return <div className="preset-editor">
+    <Input autoFocus value={draft} onChange={event => setDraft(event.target.value)} aria-label={t('快捷数量列表')} spellCheck={false}
+      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (parsed.length) { form.setPresets(parsed); setDraft(null); } } if (event.key === 'Escape') { event.stopPropagation(); setDraft(null); } }}/>
+    <small>{t('用逗号分隔，最多 9 个。100U 按 USDT 金额，25% 按最大可开数量，0.01 按 {0} 数量。', base || t('币'))}</small>
+    <div className="preset-editor-actions"><Button type="button" variant="ghost" className="text-button" onClick={() => setDraft(null)}>{t('取消')}</Button>
+      <Button type="button" variant="ghost" className="text-button" onClick={() => setDraft('100U, 500U, 1000U, 25%, 50%, 100%')}>{t('恢复默认')}</Button>
+      <Button type="button" disabled={!parsed.length} onClick={() => { form.setPresets(parsed); setDraft(null); }}>{t('保存 {0} 个', parsed.length)}</Button></div>
+  </div>;
+  return <div className="qty-presets" role="group" aria-label={t('快捷数量')}>
+    {form.presets.map((preset, index) => <Button key={`${preset.text}-${index}`} type="button" disabled={!form.sizePrice} title={preset.kind === 'pct' ? (form.reduceOnly ? t('持仓数量的 {0}', preset.text) : t('可用保证金 × 杠杆的 {0}', preset.text)) : undefined}
+      onClick={() => form.applyPreset(preset)}>{desk.keyboard && index < 9 && <kbd className="trade-kbd">{index + 1}</kbd>}{preset.text}{preset.kind === 'base' && <small className="preset-unit">{base}</small>}</Button>)}
+    <Button type="button" variant="ghost" className="preset-edit" aria-label={t('编辑快捷数量')} onClick={() => setDraft(form.presets.map(preset => preset.text).join(', '))}><Pencil aria-hidden="true"/></Button>
+  </div>;
 }
 
 export function TradeTelemetry({ desk }: { desk: TradeDesk }) {
@@ -69,8 +105,8 @@ export function ArmGroup({ desk, trade }: { desk: TradeDesk; trade: boolean }) {
 
 export function OrderPanel({ desk, last, base }: { desk: TradeDesk; last: number | undefined; base: string }) {
   const { form, inst, ready, account } = desk;
-  const lever = desk.instId ? account.leverage[desk.instId] : undefined;
-  const px = form.type === 'limit' ? Number(form.price) || last || 0 : last || 0;
+  const lever = form.lever || undefined;
+  const px = form.sizePrice;
   const notional = form.qtyValue * px;
   const uncertain = account.uncertain;
   const disabled = !ready || !!uncertain || desk.busy;
@@ -87,17 +123,19 @@ export function OrderPanel({ desk, last, base }: { desk: TradeDesk; last: number
       <Tabs value={form.type} onValueChange={value => form.setType(value as 'limit' | 'market')}><TabsList aria-label={t('订单类型')} className="order-type"><TabsTrigger value="limit">{t('限价')}</TabsTrigger><TabsTrigger value="market">{t('市价')}</TabsTrigger></TabsList></Tabs>
       {form.type === 'limit' && <Label className="order-field">{t('价格 · USDT')}<span className="order-input"><DecimalInput ref={form.priceInput} value={form.price} placeholder={last ? formatQuotePrice(last) : ''} onValue={form.setPrice}/>
         <button type="button" disabled={!last} onClick={() => last && form.setPrice(String(last))}>{t('最新')}</button></span></Label>}
-      <Label className="order-field">{t('数量 · {0}', base)}<span className="order-input"><DecimalInput value={form.qty} placeholder="0" onValue={form.setQty}/><span className="order-unit">{base}</span></span>
-        {inst && <small>{t('{0} 张 · 每张 {1} {2}', form.contracts, inst.ctVal, base)}</small>}</Label>
-      <div className="price-shortcuts qty-presets" role="group" aria-label={t('按名义价值填写数量')}>{NOTIONAL_PRESETS.map(value => <Button key={value} type="button" disabled={!inst || !last} onClick={() => form.presetQty(value)}>{value >= 1000 ? `${value / 1000}k` : value} U</Button>)}</div>
+      <div className="order-field qty-field"><Label htmlFor="trade-qty">{t('数量 · {0}', form.unit === 'base' ? base : 'USDT')}</Label>
+        <span className="order-input"><DecimalInput id="trade-qty" value={form.qty} placeholder="0" onValue={form.setQty}/>
+          <button type="button" className="unit-toggle" aria-label={t('切换单位：当前 {0}，切换为 {1}', form.unit === 'base' ? base : 'USDT', form.unit === 'base' ? 'USDT' : base)} onClick={() => form.setUnit(form.unit === 'base' ? 'quote' : 'base')}>{form.unit === 'base' ? base : 'USDT'}<ArrowLeftRight aria-hidden="true"/></button></span>
+        <small>{form.qtyValue > 0 ? (form.unit === 'base' ? `≈ ${money(notional)} USDT` : `≈ ${formatQty(form.qtyValue)} ${base}`) : ' '}{inst && form.qtyValue > 0 ? ` · ${t('{0} 张', form.contracts)}` : ''}{form.maxQty > 0 ? ` · ${t('最多 {0}', form.unit === 'base' ? `${formatQty(Number(form.maxQty.toPrecision(6)))} ${base}` : `${money(form.maxQty * px)} USDT`)}` : ''}</small></div>
+      <SizePresets desk={desk} base={base}/>
       <dl className="order-summary"><div><dt>{t('名义价值')}</dt><dd>{money(notional)} USDT</dd></div><div><dt>{t('所需保证金')}</dt><dd>{lever ? `${money(notional / lever)} USDT` : '—'}</dd></div><div><dt>{t('可用')}</dt><dd>{account.account ? `${money(account.account.available)} USDT` : '—'}</dd></div></dl>
       <div className="order-toggles">
         <Label className="check-label order-reduce"><Checkbox checked={form.protect && !form.reduceOnly} disabled={form.reduceOnly} onCheckedChange={value => form.setProtect(value === true)}/><span>{t('止盈止损')}</span></Label>
         <Label className="check-label order-reduce"><Checkbox checked={form.reduceOnly} onCheckedChange={value => form.setReduceOnly(value === true)}/><span>{t('只减仓')}</span></Label>
       </div>
       {form.attachProtect && <div className="protect-grid">
-        <ProtectField leg="tp" value={form.tp} onValue={form.setTp} side={form.side === 'buy' ? 'long' : 'short'} entry={form.entryRef} qty={form.qtyValue} problem={form.protectErrors.tp}/>
-        <ProtectField leg="sl" value={form.sl} onValue={form.setSl} side={form.side === 'buy' ? 'long' : 'short'} entry={form.entryRef} qty={form.qtyValue} problem={form.protectErrors.sl}/>
+        <ProtectField leg="tp" value={form.tp} onValue={form.setTp} side={form.side === 'buy' ? 'long' : 'short'} entry={form.entryRef} qty={form.qtyValue} lever={form.lever} problem={form.protectErrors.tp} round={form.roundPrice}/>
+        <ProtectField leg="sl" value={form.sl} onValue={form.setSl} side={form.side === 'buy' ? 'long' : 'short'} entry={form.entryRef} qty={form.qtyValue} lever={form.lever} problem={form.protectErrors.sl} round={form.roundPrice}/>
         <p className="protect-note">{t('按{0}估算；成交后交易所自动挂出止盈止损，触发后市价平仓。', form.type === 'limit' && Number(form.price) > 0 ? t('委托价') : t('最新价'))}</p>
       </div>}
       {uncertain && <Notice as="p" className="warning" role="status">{t('下单结果不确定，正在按客户端订单号 {0} 向交易所核对；核对完成前不会重发，也不接受新订单。', uncertain.clOrdId)}</Notice>}
@@ -110,6 +148,7 @@ export function OrderPanel({ desk, last, base }: { desk: TradeDesk; last: number
         <li><kbd className="trade-kbd">B</kbd><span>{t('图上买：点击处低于现价挂限价，高于现价为突破触发')}</span></li>
         <li><kbd className="trade-kbd">S</kbd><span>{t('图上卖：点击处高于现价挂限价，低于现价为跌破触发')}</span></li>
         <li><kbd className="trade-kbd">A</kbd><span>{t('在点击价位创建警报')}</span></li>
+        <li><kbd className="trade-kbd">1–9</kbd><span>{t('套用对应的数量预设')}</span></li>
         <li><kbd className="trade-kbd">C</kbd><span>{t('撤销本市场全部挂单')}</span></li>
         <li><kbd className="trade-kbd">Shift</kbd><span>{t('Shift+点击保持就绪，连续下单')}</span></li>
         <li><kbd className="trade-kbd">Esc</kbd><span>{t('取消就绪')}</span></li>
@@ -229,8 +268,9 @@ function PositionCard({ desk, position, base }: { desk: TradeDesk; position: Tra
       <span className="position-lever">{position.mgnMode === 'isolated' ? t('逐仓') : t('全仓')} {position.lever}x</span>
       <strong className={position.upnl >= 0 ? 'signal-text' : 'danger-text'}>{formatSigned(position.upnl)}<small> USDT · {formatSigned(position.uplRatio)}%</small></strong></div>
     <dl><div><dt>{t('均价')}</dt><dd>{formatQuotePrice(position.entry)}</dd></div><div><dt>{t('强平价')}</dt><dd className="danger-text">{position.liq ? formatQuotePrice(position.liq) : '—'}</dd></div>
-      <div><dt>{t('止盈')}</dt><dd>{item?.tp ? <><span>{formatQuotePrice(item.tp)}</span><small className="signal-text">{formatSigned(tp!)}</small></> : '—'}</dd></div>
-      <div><dt>{t('止损')}</dt><dd>{item?.sl ? <><span>{formatQuotePrice(item.sl)}</span><small className="danger-text">{formatSigned(sl!)}</small></> : '—'}</dd></div></dl>
+      <div><dt>{t('止盈')}</dt><dd>{item?.tp ? <><span>{formatQuotePrice(item.tp)}</span><small className="signal-text">{formatSigned(tp!)} U · {formatSigned((item.tp / position.entry - 1) * 100)}%</small></> : '—'}</dd></div>
+      <div><dt>{t('止损')}</dt><dd>{item?.sl ? <><span>{formatQuotePrice(item.sl)}</span><small className="danger-text">{formatSigned(sl!)} U · {formatSigned((item.sl / position.entry - 1) * 100)}%</small></> : '—'}</dd></div></dl>
+    {desk.protects.length > (item ? 1 : 0) && <p className="position-note">{t('另有 {0} 笔部分止盈止损挂在图上，可直接拖动或撤销。', desk.protects.length - (item ? 1 : 0))}</p>}
     <Button type="button" className="position-protect" disabled={!desk.ready || desk.busy} onClick={() => desk.setProtectDialog(true)}>{item ? t('修改止盈止损') : t('设置止盈止损')}</Button>
   </section>;
 }
@@ -260,10 +300,10 @@ export function ProtectDialog({ desk, last }: { desk: TradeDesk; last: number | 
       <dl className="protect-facts"><div><dt>{t('仓位')}</dt><dd className={position.side === 'long' ? 'signal-text' : 'amber-text'}>{position.side === 'long' ? t('多') : t('空')} {formatQty(position.qty)} {base}</dd></div>
         <div><dt>{t('均价')}</dt><dd>{formatQuotePrice(position.entry)}</dd></div><div><dt>{t('标记价')}</dt><dd>{formatQuotePrice(reference)}</dd></div></dl>
       <div className="protect-grid">
-        <ProtectField leg="tp" value={tp} onValue={setTp} side={position.side} entry={position.entry} qty={position.qty} problem={problems.tp}/>
-        <ProtectField leg="sl" value={sl} onValue={setSl} side={position.side} entry={position.entry} qty={position.qty} problem={problems.sl}/>
+        <ProtectField leg="tp" value={tp} onValue={setTp} side={position.side} entry={position.entry} qty={position.qty} lever={position.lever} problem={problems.tp} round={desk.form.roundPrice}/>
+        <ProtectField leg="sl" value={sl} onValue={setSl} side={position.side} entry={position.entry} qty={position.qty} lever={position.lever} problem={problems.sl} round={desk.form.roundPrice}/>
       </div>
-      <p className="small muted">{t('金额按持仓均价和当前数量估算，未计手续费与滑点。触发后以市价平掉整个仓位；仓位变动时数量自动跟随。两个都清空并保存会删除止盈止损。')}</p>
+      <p className="small muted">{t('百分比按持仓均价计算，止盈为盈利方向、止损为亏损方向；ROE 按当前杠杆计算保证金收益率。金额未计手续费与滑点。触发后以市价平掉整个仓位；两个都清空并保存会删除止盈止损。也可以在图表上从持仓线上下拖动来设置。')}</p>
       <div className="confirm-actions"><Button type="button" disabled={busy} onClick={close}>{t('取消')}</Button>
         <Button variant="default" className="primary" disabled={busy || unchanged || !!problems.tp || !!problems.sl || !desk.ready}>{busy ? t('正在提交…') : !tpValue && !slValue && current ? t('删除止盈止损') : t('保存')}</Button></div>
     </form>

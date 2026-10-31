@@ -118,8 +118,20 @@ span.book-market { cursor:default; }
 .order-unit { position:absolute;right:14px;top:50%;transform:translateY(-50%);font:12px var(--mono-font);color:var(--muted-foreground);pointer-events:none; }
 .order-input button { position:absolute;right:8px;top:50%;transform:translateY(-50%);height:30px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);font:11px var(--mono-font);color:var(--muted-foreground);cursor:pointer; }
 .order-input button:hover { color:var(--text);border-color:var(--control-border); }
-.qty-presets { display:grid;grid-template-columns:repeat(4,minmax(0,1fr)); }
-.qty-presets [data-slot="button"] { gap:5px;padding:4px 6px;font-family:var(--mono-font); }
+.qty-presets { display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px; }
+.qty-presets [data-slot="button"] { min-height:32px;height:32px;gap:4px;padding:0 6px;white-space:nowrap;overflow:hidden;font:12px var(--mono-font);font-variant-numeric:tabular-nums; }
+.qty-presets [data-slot="button"] .trade-kbd { min-width:16px;height:16px;font-size:9px;opacity:.7; }
+.qty-presets .preset-edit[data-slot="button"] { color:var(--muted-foreground);border:1px dashed var(--line); }
+.qty-presets .preset-edit svg { width:13px;height:13px; }
+.preset-editor { display:grid;gap:8px;padding:10px;border:1px dashed var(--control-border);border-radius:12px; }
+.preset-editor [data-slot="input"] { height:38px;border-radius:10px;background:var(--field);font:13px var(--mono-font); }
+.preset-editor small { font-size:11px;line-height:1.5;color:var(--muted-foreground); }
+.preset-editor-actions { display:flex;justify-content:flex-end;gap:6px; }
+.preset-editor-actions [data-slot="button"] { min-height:30px;height:30px;padding:0 12px;font-size:12px; }
+.qty-field > [data-slot="label"] { font-size:12px;color:var(--muted-foreground); }
+.qty-field .order-input [data-slot="input"] { padding-right:104px; }
+.order-input .unit-toggle { display:inline-flex;align-items:center;gap:6px;color:var(--text); }
+.order-input .unit-toggle svg { width:12px;height:12px;color:var(--muted-foreground); }
 .order-summary { display:grid;gap:6px;margin:0;padding:12px 0;border-block:1px solid var(--line); }
 .order-summary div { display:flex;justify-content:space-between;font:12px var(--mono-font); }
 .order-summary dt { color:var(--muted-foreground); }
@@ -129,8 +141,19 @@ span.book-market { cursor:default; }
 .order-toggles [data-disabled] + span,.order-toggles :disabled + span { color:var(--muted-foreground); }
 
 /* TP/SL: two fields side by side, each with the P&L it would book. */
-.protect-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.protect-grid { display:grid;grid-template-columns:1fr;gap:12px; }
+.protect-dialog .protect-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .protect-field .order-input [data-slot="input"] { height:42px;padding-right:56px;font-size:15px; }
+.protect-inputs { display:grid;grid-template-columns:minmax(0,1fr) 74px;gap:6px; }
+.protect-pct [data-slot="input"] { padding:0 24px 0 10px !important;font-size:14px !important; }
+.protect-pct .order-unit { right:10px; }
+.protect-quick { display:flex;gap:4px; }
+.protect-quick button { flex:1;height:24px;padding:0;border:1px solid var(--line);border-radius:999px;background:none;font:11px var(--mono-font);color:var(--muted-foreground);cursor:pointer; }
+.protect-quick button:hover:not(:disabled) { color:var(--text);border-color:var(--control-border); }
+.protect-quick button:disabled { opacity:.45;cursor:default; }
+.protect-field.tp .protect-quick button[aria-pressed="true"] { color:var(--signal);border-color:var(--signal); }
+.protect-field.sl .protect-quick button[aria-pressed="true"] { color:var(--danger);border-color:var(--danger); }
+.position-note { margin:0;font-size:11px;color:var(--muted-foreground); }
 .protect-field .order-input button { height:26px;padding:0 8px; }
 .protect-field.tp .order-input [data-slot="input"]:not([aria-invalid="true"]):focus-visible { border-color:var(--signal); }
 .protect-field.sl .order-input [data-slot="input"]:not([aria-invalid="true"]):focus-visible { border-color:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 14%,transparent); }
@@ -150,7 +173,7 @@ span.book-market { cursor:default; }
 .position-card-head strong small { font-size:11px;font-weight:400; }
 .position-card dl { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0; }
 .position-card dt { font:10px/1.4 var(--mono-font);letter-spacing:.06em;color:var(--muted-foreground); }
-.position-card dd { display:flex;align-items:baseline;gap:6px;margin:2px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums;white-space:nowrap; }
+.position-card dd { display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;margin:2px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums;white-space:nowrap; }
 .position-card dd small { font-size:11px; }
 .position-protect[data-slot="button"] { min-height:34px;height:34px;font-size:12px; }
 
@@ -222,8 +245,18 @@ span.book-market { cursor:default; }
   .book-row .book-pnl,.book-row .state-label { grid-column:2;grid-row:1;justify-self:end; }
   .book-row .book-side { grid-column:1; }
   .chart-ghost small { display:none; }
-  .chart-chip.position > span:not(.chip-pnl) { display:none; }
+  .chart-chip.position > span:not(.chip-pnl):not(.chip-grip) { display:none; }
   .protect-facts { grid-template-columns:1fr 1fr; }
+  .protect-dialog .protect-grid { grid-template-columns:1fr; }
+  .qty-presets [data-slot="button"] .trade-kbd { display:none; }
   .protect-facts div:last-child { grid-column:1 / -1;border-top:1px solid var(--line); }
   .protect-facts div:nth-child(2) { border-right:0; }
 }
+
+/* Drag grip on chips: the position chip drags out a TP/SL, other chips move their own line. */
+.chart-chip > .chip-grip { display:grid;place-items:center;align-self:stretch;width:16px;margin-right:-4px;color:var(--muted-foreground);cursor:ns-resize;touch-action:none; }
+.chart-chip > .chip-grip:hover { color:var(--text); }
+.chart-chip > .chip-grip svg { width:12px;height:12px; }
+.chart-drag-label.is-tp { border-color:var(--signal);color:var(--signal); }
+.chart-drag-label.is-sl { border-color:var(--danger);color:var(--danger); }
+.qty-presets .preset-unit { font-size:9px;color:var(--muted-foreground); }

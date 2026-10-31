@@ -6,14 +6,34 @@ type Market = { instrument: string; base: string; venue?: string; type?: string;
 import type { ChartArmed, ChartOverlay, ChartTradeLine } from '../components/NativeChart.js';
 import { t } from '../i18n.js';
 import { formatQuotePrice } from '../utils.js';
-import { baseFor, contractsFor } from './okx.js';
+import { baseFor, contractsFor, roundTo } from './okx.js';
 import type { TradeKind, TradeOrder, TradePosition, TradeProtect, TradeSide } from './useOkxAccount.js';
 import { useOkxAccount } from './useOkxAccount.js';
 
 const KEYBOARD_KEY = 'open-alert-trade-keyboard';
 const CAP_KEY = 'open-alert-trade-cap';
+const UNIT_KEY = 'open-alert-trade-qty-unit';
+const PRESET_KEY = 'open-alert-trade-presets';
 export const DEFAULT_CAP = 5000;
-export const NOTIONAL_PRESETS = [100, 500, 1000, 2500] as const;
+/** Size presets: "100U" = USDT notional, "25%" = share of the maximum size, a bare number = coin amount. */
+export const DEFAULT_PRESETS = ['100U', '500U', '1000U', '25%', '50%', '100%'];
+export type SizePreset = { text: string; kind: 'quote' | 'pct' | 'base'; value: number };
+export function parsePreset(token: string): SizePreset | null {
+  const match = /^(\d+(?:\.\d+)?)\s*(u|usdt|%)?$/i.exec(token.trim());
+  const value = match ? Number(match[1]) : NaN;
+  if (!match || !(value > 0) || !Number.isFinite(value)) return null;
+  const kind = !match[2] ? 'base' : match[2] === '%' ? 'pct' : 'quote';
+  if (kind === 'pct' && value > 100) return null;
+  return { text: kind === 'quote' ? `${match[1]}U` : kind === 'pct' ? `${match[1]}%` : match[1]!, kind, value };
+}
+/** Comma, space or newline separated; at most 9 so each one has a number key. */
+export function parsePresets(text: string): SizePreset[] {
+  return text.split(/[,，、\s]+/).filter(Boolean).map(parsePreset).filter((item): item is SizePreset => !!item).slice(0, 9);
+}
+function readPresets(): SizePreset[] {
+  try { const saved = JSON.parse(readText(PRESET_KEY) ?? 'null') as unknown; if (Array.isArray(saved)) { const list = parsePresets(saved.filter(item => typeof item === 'string').join(',')); if (list.length) return list; } } catch { /* fall back */ }
+  return parsePresets(DEFAULT_PRESETS.join(','));
+}
 const readText = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const writeText = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* keep in memory */ } };
 // Keys never fire while the user types or a dialog, list or menu has focus.
@@ -31,6 +51,11 @@ export const formatQty = (value: number) => Number(value.toPrecision(10)).toStri
 export const formatSigned = (value: number, digits = 2) => `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(digits)}`;
 /** Profit in USDT if a position of qty (base units) opened at entry closes at exit. */
 export const pnlAt = (side: 'long' | 'short', entry: number, exit: number, qty: number) => (side === 'long' ? exit - entry : entry - exit) * qty;
+/** Distance of a TP/SL price from entry in that leg's own direction (TP: profit side, SL: loss side), in %. */
+export const protectPct = (side: 'long' | 'short', leg: 'tp' | 'sl', entry: number, price: number) => ((side === 'long') === (leg === 'tp') ? price / entry - 1 : 1 - price / entry) * 100;
+export const protectPrice = (side: 'long' | 'short', leg: 'tp' | 'sl', entry: number, pct: number) => entry * (1 + ((side === 'long') === (leg === 'tp') ? pct : -pct) / 100);
+/** Return on margin for a P&L, given the position's entry, size and leverage. */
+export const roeOf = (pnl: number, entry: number, qty: number, lever: number) => entry > 0 && qty > 0 && lever > 0 ? pnl / (entry * qty / lever) * 100 : null;
 /** Keeps a decimal draft: digits and one dot, no signs or exponents (what a price or size field accepts). */
 export const decimalDraft = (value: string) => { const clean = value.replace(/[,，\s]/g, '').replace(/[。．]/g, '.').replace(/[^\d.]/g, ''); const dot = clean.indexOf('.'); return dot < 0 ? clean : clean.slice(0, dot + 1) + clean.slice(dot + 1).replace(/\./g, ''); };
 /** Why a TP/SL price is on the wrong side of the reference price, or null when it is valid. */
@@ -74,19 +99,45 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
   const [sl, setSl] = useState('');
   const [protectDialog, setProtectDialog] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [unit, setUnitState] = useState<'base' | 'quote'>(() => readText(UNIT_KEY) === 'quote' ? 'quote' : 'base');
+  const [presets, setPresetsState] = useState(readPresets);
   const priceInput = useRef<HTMLInputElement>(null);
   const setKeyboard = (on: boolean) => { setKeyboardState(on); writeText(KEYBOARD_KEY, on ? 'on' : 'off'); if (!on) setArmed(null); };
   const setCap = (value: string) => { setCapState(value); writeText(CAP_KEY, value); };
+  const setPresets = (list: SizePreset[]) => { setPresetsState(list); writeText(PRESET_KEY, JSON.stringify(list.map(item => item.text))); };
   const inst = account.instrument(instId);
   const ready = account.status === 'ready' && !!inst;
   useEffect(() => { setArmed(null); setPrice(''); setQty(''); setReduceOnly(false); setTp(''); setSl(''); setProtectDialog(false); }, [instId]);
   useEffect(() => { if (!enabled || !ready) setArmed(null); }, [enabled, ready]);
 
-  const qtyValue = Number(qty) || 0;
   const position = account.account?.positions.find(item => item.instId === instId);
   const protection = position ? account.protectionFor(position) : null;
+  const protects = position ? account.protectsFor(position) : [];
   const orders = account.orders.filter(order => order.instId === instId);
   const capValue = Number(cap) || 0;
+  const lever = (instId ? account.leverage[instId] : undefined) || position?.lever || 0;
+  // Size is typed in coin or in USDT; orders always go out in coin, floored to the contract lot.
+  const sizePrice = type === 'limit' ? Number(price) || last || 0 : last || 0;
+  const floorBase = (value: number) => inst && value > 0 ? baseFor(Number(contractsFor(value, inst)), inst) : value > 0 ? value : 0;
+  const qtyAt = (at: number) => { const n = Number(qty) || 0; return unit === 'base' ? n : at > 0 ? floorBase(n / at) : 0; };
+  const qtyValue = qtyAt(sizePrice);
+  const qtyText = (value: number, at: number) => unit === 'base' ? formatQty(value) : (value * at).toFixed(2);
+  function setUnit(next: 'base' | 'quote', persist = true) {
+    if (next === unit) return;
+    // Convert the typed amount so switching the unit never changes the order size by surprise.
+    if (qty && sizePrice > 0) setQty(next === 'quote' ? (qtyValue * sizePrice).toFixed(2) : formatQty(qtyValue));
+    setUnitState(next); if (persist) writeText(UNIT_KEY, next);
+  }
+  /** Largest size this preset base allows: the position when reducing, otherwise available margin x leverage. */
+  const maxQty = reduceOnly && position ? position.qty : account.account && lever && sizePrice ? account.account.available * lever / sizePrice : 0;
+  function applyPreset(preset: SizePreset) {
+    if (!sizePrice) { notify(t('等待最新价后再使用数量预设。')); return; }
+    const base = preset.kind === 'base' ? preset.value : preset.kind === 'quote' ? preset.value / sizePrice : maxQty * preset.value / 100;
+    if (preset.kind === 'pct' && !(maxQty > 0)) { notify(reduceOnly ? t('当前没有可减的持仓。') : t('可用保证金或杠杆尚未载入。')); return; }
+    const floored = floorBase(base);
+    if (!(floored > 0)) { notify(t('{0} 低于最小下单量。', preset.text)); return; }
+    setQty(unit === 'base' ? formatQty(floored) : preset.kind === 'quote' ? String(preset.value) : (floored * sizePrice).toFixed(2));
+  }
 
   async function send(input: { side: TradeSide; kind: TradeKind; price?: number; qty: number; reduceOnly: boolean; tp?: number | null; sl?: number | null }, source: 'chart' | 'form') {
     if (!instId) return false;
@@ -109,7 +160,7 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
       if (account.status !== 'connecting') setKeyDialog(true);
       return;
     }
-    if (next !== 'alert' && !(qtyValue > 0)) { notify(t('请先在下单面板填写数量。')); return; }
+    if (next !== 'alert' && !(Number(qty) > 0)) { notify(t('请先在下单面板填写数量。')); return; }
     setArmed(current => current === next ? null : next);
   }
   const armedRef = useRef(armed);
@@ -119,12 +170,13 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
     if (!keepArmed || mode === 'alert') setArmed(null);
     if (mode === 'alert') { onAlertAt(at); return; }
     if (!mode || !last) return;
-    void send({ side: mode, kind: chartKind(mode, at, last), price: at, qty: qtyValue, reduceOnly }, 'chart');
+    void send({ side: mode, kind: chartKind(mode, at, last), price: at, qty: qtyAt(at), reduceOnly }, 'chart');
   }
 
-  // Keyboard mode: B / S arm a side, A arms an alert, C cancels this market's orders, Esc disarms.
-  const keys = useRef({ enabled, keyboard, keyDialog, armed, arm, cancelAll: () => { if (instId) void account.cancelAll(instId); } });
-  keys.current = { enabled, keyboard, keyDialog, armed, arm, cancelAll: () => { if (instId) void account.cancelAll(instId); } };
+  // Keyboard mode: B / S arm a side, A arms an alert, C cancels this market's orders, 1-9 apply a size preset, Esc disarms.
+  const keyState = () => ({ enabled, keyboard, keyDialog, armed, arm, presets, applyPreset, cancelAll: () => { if (instId) void account.cancelAll(instId); } });
+  const keys = useRef(keyState());
+  keys.current = keyState();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const k = keys.current;
@@ -132,6 +184,7 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
       const key = event.key.toLowerCase();
       if (key === 'escape') { if (k.armed) { event.preventDefault(); setArmed(null); } return; }
       if (key === 'b' || key === 's' || key === 'a') { event.preventDefault(); k.arm(key === 'b' ? 'buy' : key === 's' ? 'sell' : 'alert'); return; }
+      if (/^[1-9]$/.test(key) && k.presets[Number(key) - 1]) { event.preventDefault(); k.applyPreset(k.presets[Number(key) - 1]!); return; }
       if (key === 'c') { event.preventDefault(); k.cancelAll(); }
     };
     window.addEventListener('keydown', onKey);
@@ -156,18 +209,20 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
     if (!position) return;
     const closeSide: TradeSide = position.side === 'long' ? 'sell' : 'buy';
     if (kind === 'market') { void send({ side: closeSide, kind: 'market', qty: position.qty, reduceOnly: true }, 'form'); return; }
-    setSide(closeSide); setType('limit'); setQty(String(position.qty)); setReduceOnly(true); if (last) setPrice(String(last));
+    setSide(closeSide); setType('limit'); setUnitState('base'); setQty(formatQty(position.qty)); setReduceOnly(true); if (last) setPrice(String(last));
     priceInput.current?.focus();
   }
-  function presetQty(notional: number) {
-    if (!inst || !last) return;
-    setQty(String(baseFor(Number(contractsFor(notional / last, inst)), inst)));
-  }
 
+  // A TP/SL books P&L on its own size (a partial one covers only part of the position).
+  const legPnl = (pos: TradePosition, at: number, qty = pos.qty) => {
+    const pnl = pnlAt(pos.side, pos.entry, at, qty);
+    return { pnl, pct: pos.entry > 0 ? (at / pos.entry - 1) * 100 : 0 };
+  };
+  const legText = (pos: TradePosition, at: number, qty = pos.qty) => { const { pnl, pct } = legPnl(pos, at, qty); return { text: `${formatSigned(pnl)} USDT · ${formatSigned(pct)}%`, positive: pnl >= 0 }; };
   const protectLine = (pos: TradePosition, item: TradeProtect, leg: 'tp' | 'sl', at: number): ChartTradeLine => {
-    const pnl = pnlAt(pos.side, pos.entry, at, pos.qty);
+    const qty = item.full ? pos.qty : Math.min(item.qty, pos.qty);
     return { id: `${leg}:${item.id}`, price: at, tone: leg, style: 'dashed', draggable: true, cancellable: true,
-      chip: { badge: leg === 'tp' ? t('止盈') : t('止损'), text: formatQuotePrice(at), qty: '', pnl: { text: `${formatSigned(pnl)} USDT`, positive: pnl >= 0 } } };
+      chip: { badge: leg === 'tp' ? t('止盈') : t('止损'), text: formatQuotePrice(at), qty: item.full || Math.abs(qty - pos.qty) < 1e-12 ? '' : formatQty(qty), pnl: legText(pos, at, qty) } };
   };
   const orderLine = (order: TradeOrder): ChartTradeLine => ({
     id: order.clOrdId || order.id, price: order.price, tone: order.side, style: order.kind === 'trigger' ? 'dashed' : 'solid',
@@ -179,57 +234,74 @@ export function useTradeDesk({ enabled, market, last, notify, onAlertAt }: { ena
     if (!enabled || account.status !== 'ready') return [];
     const list = orders.filter(order => order.kind !== 'market' && order.price > 0).map(orderLine);
     if (position) {
-      list.push({ id: 'position', price: position.entry, tone: 'position', style: 'solid',
+      // Dragging the position line away from it creates a TP (profit side) or SL (loss side); the line itself stays.
+      list.push({ id: 'position', price: position.entry, tone: 'position', style: 'solid', draggable: true, spawn: true,
         chip: { badge: `${position.side === 'long' ? t('多') : t('空')} ${position.lever}x`, text: formatQuotePrice(position.entry), qty: `${formatQty(position.qty)} ${market?.base ?? ''}`,
           pnl: { text: `${formatSigned(position.upnl)} USDT · ${formatSigned(position.uplRatio)}%`, positive: position.upnl >= 0 },
-          action: protection ? t('改止盈止损') : t('止盈止损') } });
+          action: protection ? t('改止盈止损') : t('止盈止损'), grip: t('上下拖动设置止盈止损') } });
       if (position.liq) list.push({ id: 'liq', price: position.liq, tone: 'liq', style: 'dotted', title: t('强平') });
-      if (protection?.tp) list.push(protectLine(position, protection, 'tp', protection.tp));
-      if (protection?.sl) list.push(protectLine(position, protection, 'sl', protection.sl));
+      for (const item of protects) {
+        if (item.tp) list.push(protectLine(position, item, 'tp', item.tp));
+        if (item.sl) list.push(protectLine(position, item, 'sl', item.sl));
+      }
     }
     return list;
-  }, [enabled, account.status, orders, position, protection, market?.base]);
+  }, [enabled, account.status, orders, position, protection, protects, market?.base]);
   const findOrder = (id: string) => orders.find(order => (order.clOrdId || order.id) === id);
-  // While a TP/SL line is dragged the label shows what the new price would earn or lose.
-  const preview = (id: string, at: number) => {
-    const [leg] = id.split(':');
-    if ((leg !== 'tp' && leg !== 'sl') || !position) return null;
-    return `${leg === 'tp' ? t('止盈') : t('止损')} ${formatQuotePrice(at)} · ${formatSigned(pnlAt(position.side, position.entry, at, position.qty))} USDT`;
+  const findProtect = (id: string) => { const [leg, ...rest] = id.split(':'); const item = protects.find(entry => entry.id === rest.join(':')); return (leg === 'tp' || leg === 'sl') && item ? { leg, item } as const : null; };
+  /** Which leg a drag from the position line creates: beyond the mark on the profit side is a TP, otherwise an SL. */
+  const spawnLeg = (pos: TradePosition, at: number): 'tp' | 'sl' => (at > (pos.mark || last || pos.entry)) === (pos.side === 'long') ? 'tp' : 'sl';
+  // While a line is dragged the label shows what the new price would earn or lose.
+  const preview = (id: string, at: number): ReturnType<NonNullable<ChartOverlay['preview']>> => {
+    if (!position) return null;
+    const found = findProtect(id);
+    if (id !== 'position' && !found) return null;
+    const leg = found ? found.leg : spawnLeg(position, at);
+    const qty = found && !found.item.full ? Math.min(found.item.qty, position.qty) : position.qty;
+    const { pnl, pct } = legPnl(position, at, qty);
+    const roe = roeOf(pnl, position.entry, qty, position.lever);
+    return { tone: leg, text: `${leg === 'tp' ? t('止盈') : t('止损')} ${formatQuotePrice(at)} · ${formatSigned(pnl)} USDT · ${formatSigned(pct)}%${roe !== null ? ` · ROE ${formatSigned(roe, 1)}%` : ''}` };
   };
   const ghost = (at: number): ReturnType<ChartOverlay['ghost']> => {
     if (!armed || !last) return null;
     if (armed === 'alert') return { tone: 'alert', text: `${t('警报')} · ${at >= last ? t('↑ 达到或高于') : t('↓ 达到或低于')} ${formatQuotePrice(at)}`, hint: t('点击后打开警报设置') };
     const kind = chartKind(armed, at, last);
-    return { tone: armed, text: `${sideText(armed)} · ${kindText(kind, armed)} ${formatQty(qtyValue)} ${market?.base ?? ''} @ ${formatQuotePrice(at)}`, hint: t('点击发送 · Shift+点击连续下单') };
+    const size = qtyAt(at);
+    return { tone: armed, text: `${sideText(armed)} · ${kindText(kind, armed)} ${formatQty(size)} ${market?.base ?? ''} @ ${formatQuotePrice(at)} · ≈ ${(size * at).toFixed(0)} U`, hint: t('点击发送 · Shift+点击连续下单') };
   };
   const caption = armed === 'alert' ? t('A 新建警报已就绪：在图表上点击价格位置，Esc 取消。')
-    : armed ? t('{0}已就绪：在图表上点击价格下单（{1} {2}），Shift+点击可连续下单，Esc 取消。', armed === 'buy' ? t('B 买入') : t('S 卖出'), formatQty(qtyValue), market?.base ?? '')
+    : armed ? t('{0}已就绪：在图表上点击价格下单（{1} {2}），Shift+点击可连续下单，Esc 取消。', armed === 'buy' ? t('B 买入') : t('S 卖出'), unit === 'base' ? formatQty(Number(qty) || 0) : Number(qty) || 0, unit === 'base' ? market?.base ?? '' : 'USDT')
+    : position ? t('从持仓线上下拖动设置止盈止损；拖动止盈止损线或订单线改价，点 × 撤销。')
     : keyboard ? t('键盘模式：B 买 / S 卖 / A 警报，然后在图上点击价格。拖动订单线改价，点 × 撤单。') : t('点「图上买 / 图上卖」后在图表上点击价格下单。拖动订单线改价，点 × 撤单。');
   const overlay: ChartOverlay | undefined = enabled ? {
     trading: true, lines, armed, caption, ghost, onArmedClick,
     onModify: (id, to) => {
-      const [leg] = id.split(':');
-      if ((leg === 'tp' || leg === 'sl') && position && protection) {
-        const problem = protectProblem(position.side, leg, to, position.mark || last || 0);
+      if (id === 'position' && position) { void account.setProtectLeg(position, spawnLeg(position, to), to); return; }
+      const found = findProtect(id);
+      if (found && position) {
+        const problem = protectProblem(position.side, found.leg, to, position.mark || last || 0);
         if (problem) { notify(problem); return; }
-        void account.amendProtect(position, protection, leg, to); return;
+        void account.amendProtect(position, found.item, found.leg, to); return;
       }
       const order = findOrder(id); if (order) void account.amend(order, to);
     },
     onCancel: id => {
-      const [leg] = id.split(':');
-      if ((leg === 'tp' || leg === 'sl') && position && protection) { void account.amendProtect(position, protection, leg, null); return; }
+      const found = findProtect(id);
+      if (found && position) { void account.amendProtect(position, found.item, found.leg, null); return; }
       const order = findOrder(id); if (order) void account.cancel(order);
     },
     onAction: id => { if (id === 'position') setProtectDialog(true); },
     preview,
   } : undefined;
   const contracts = inst && qtyValue > 0 ? contractsFor(qtyValue, inst) : '0';
+  const tick = inst?.tickSz;
+  const roundPrice = (value: number) => tick ? roundTo(value, tick) : String(Number(value.toPrecision(8)));
   return {
     account, instId, inst, ready, armed, setArmed, arm, keyboard, setKeyboard, cap, setCap, keyDialog, setKeyDialog, busy,
-    form: { side, setSide, type, setType, price, setPrice, qty, setQty, reduceOnly, setReduceOnly, priceInput, qtyValue, contracts, submit, presetQty,
+    form: { side, setSide, type, setType, price, setPrice, qty, setQty, reduceOnly, setReduceOnly, priceInput, qtyValue, contracts, submit,
+      unit, setUnit, qtyText, sizePrice, presets, setPresets, applyPreset, maxQty, lever, roundPrice,
       protect, setProtect, tp, setTp, sl, setSl, tpValue, slValue, attachProtect, entryRef, protectErrors },
-    position, protection, protectDialog, setProtectDialog, orders, overlay, closePosition,
+    position, protection, protects, protectDialog, setProtectDialog, orders, overlay, closePosition,
   };
 }
 export type TradeDesk = ReturnType<typeof useTradeDesk>;

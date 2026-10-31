@@ -72,3 +72,27 @@ test('TP/SL helpers: P&L in USDT, wrong-side prices and decimal drafts', async (
   assert.equal(decimalDraft('1.2.3'), '1.23');
   assert.equal(decimalDraft('67 420。5'), '67420.5');
 });
+
+test('size presets parse U / % / coin tokens and drop invalid ones', async () => {
+  const { parsePreset, parsePresets } = await import('../web/trade/useTradeDesk.js');
+  assert.deepEqual(parsePreset('100u'), { text: '100U', kind: 'quote', value: 100 });
+  assert.deepEqual(parsePreset('250 USDT'), { text: '250U', kind: 'quote', value: 250 });
+  assert.deepEqual(parsePreset('25%'), { text: '25%', kind: 'pct', value: 25 });
+  assert.deepEqual(parsePreset('0.05'), { text: '0.05', kind: 'base', value: 0.05 });
+  assert.equal(parsePreset('150%'), null);
+  assert.equal(parsePreset('0'), null);
+  assert.equal(parsePreset('abc'), null);
+  assert.deepEqual(parsePresets('100U，25%、0.01 junk 1,2,3,4,5,6,7,8').map(p => p.text), ['100U', '25%', '0.01', '1', '2', '3', '4', '5', '6']);
+});
+
+test('TP/SL percent is measured in each leg direction and round-trips to a price', async () => {
+  const { protectPct, protectPrice, roeOf } = await import('../web/trade/useTradeDesk.js');
+  assert.ok(Math.abs(protectPrice('long', 'tp', 66800, 2) - 68136) < 1e-9);
+  assert.ok(Math.abs(protectPrice('long', 'sl', 66800, 1) - 66132) < 1e-9);
+  assert.ok(Math.abs(protectPrice('short', 'tp', 66800, 1) - 66132) < 1e-9);
+  assert.ok(Math.abs(protectPrice('short', 'sl', 66800, 2) - 68136) < 1e-9);
+  for (const side of ['long', 'short'] as const) for (const leg of ['tp', 'sl'] as const)
+    assert.ok(Math.abs(protectPct(side, leg, 66800, protectPrice(side, leg, 66800, 3.5)) - 3.5) < 1e-9);
+  assert.ok(Math.abs(roeOf(24, 66800, 0.02, 10)! - 17.964) < 1e-3);
+  assert.equal(roeOf(24, 66800, 0.02, 0), null);
+});

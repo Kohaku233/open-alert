@@ -3,7 +3,7 @@ import type { HistogramData, IChartApi, IPriceLine, ISeriesApi, LineData, MouseE
 import { DrawingManager } from 'lightweight-charts-drawing';
 import type { Drawing, DrawingKind } from 'lightweight-charts-drawing';
 import type { CSSProperties } from 'react';
-import { X } from 'lucide-react';
+import { GripVertical, X } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Alert } from '../../src/contracts/domain.js';
 import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
@@ -86,8 +86,10 @@ export type ChartArmed = 'buy' | 'sell' | 'alert' | null;
 export interface ChartTradeLine {
   id: string; price: number; tone: 'buy' | 'sell' | 'position' | 'liq' | 'tp' | 'sl'; style: 'solid' | 'dashed' | 'dotted'; title?: string;
   /** action: a labelled button on the chip that calls overlay.onAction (e.g. open the position's TP/SL editor). */
-  chip?: { badge: string; text: string; qty: string; pnl?: { text: string; positive: boolean }; state?: string; action?: string };
+  chip?: { badge: string; text: string; qty: string; pnl?: { text: string; positive: boolean }; state?: string; action?: string; grip?: string };
   draggable?: boolean; cancellable?: boolean;
+  /** Dragging this line leaves it in place and drags out a new level instead (position line -> TP/SL). */
+  spawn?: boolean;
 }
 /** Host-owned overlay: when armed, one click on the price pane is handed to onArmedClick instead of the chart. */
 export interface ChartOverlay {
@@ -96,8 +98,8 @@ export interface ChartOverlay {
   onArmedClick: (price: number, keepArmed: boolean) => void;
   onModify: (id: string, price: number) => void; onCancel: (id: string) => void;
   onAction?: (id: string) => void;
-  /** Drag label text for a line at a candidate price (e.g. the P&L a TP/SL would book); null keeps the default. */
-  preview?: (id: string, price: number) => string | null;
+  /** Drag label for a line at a candidate price (e.g. the P&L a TP/SL would book); null keeps the default. */
+  preview?: (id: string, price: number) => { tone: 'tp' | 'sl'; text: string } | null;
 }
 export const NativeChart = memo(function NativeChart({ market, tick, alerts, source, canCreate, onRetarget, onCreateAt, overlay }: {
   market: { instrument: string; tickSize: string; venue?: 'binance' | 'okx' | 'mexc'; type?: 'spot' | 'swap' }; tick: MarketQuote | undefined; alerts: Alert[]; source: string; canCreate: boolean;
@@ -117,6 +119,9 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   overlayRef.current = overlay;
   const tradeLines = useRef(new Map<string, IPriceLine>());
   const tradeDrag = useRef<{ id: string; pointerId: number; from: number; price: number } | null>(null);
+  // Chip grips live outside the chart host, so they start drags through this hook.
+  const startTradeDrag = useRef<((id: string, event: { pointerId: number; clientY: number }) => void) | null>(null);
+  const spawnLine = useRef<IPriceLine | null>(null);
   const [tradeDragLabel, setTradeDragLabel] = useState<{ id: string; y: number; price: number } | null>(null);
   // y per chip; off marks a line outside the visible price range, pinned to that edge.
   const [chipYs, setChipYs] = useState<Record<string, { y: number; off: -1 | 0 | 1 }>>({});
@@ -441,7 +446,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const keep = new Set<string>();
     for (const item of overlayRef.current?.lines ?? []) {
       keep.add(item.id);
-      const dragging = tradeDrag.current?.id === item.id;
+      const dragging = tradeDrag.current?.id === item.id && !item.spawn;
       const options = { price: dragging ? tradeDrag.current!.price : item.price, color: colors[item.tone], lineStyle: styles[item.style], lineWidth: (dragging ? 2 : 1) as 1 | 2, axisLabelVisible: true, title: item.title ?? '' };
       const existing = tradeLines.current.get(item.id);
       if (existing) existing.applyOptions(options); else tradeLines.current.set(item.id, current.candles.createPriceLine(options));
@@ -460,7 +465,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         const height = current.chart.paneSize(0).height, edge = 16;
         for (const item of overlayRef.current?.lines ?? []) {
           if (!item.chip) continue;
-          const price = tradeDrag.current?.id === item.id ? tradeDrag.current.price : item.price;
+          const price = tradeDrag.current?.id === item.id && !item.spawn ? tradeDrag.current.price : item.price;
           const y = current.candles.priceToCoordinate(price);
           if (y === null || height <= edge * 2) continue;
           next[item.id] = y < edge ? { y: edge, off: -1 } : y > height - edge ? { y: height - edge, off: 1 } : { y: Math.round(y), off: 0 };
@@ -505,6 +510,16 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     };
     const lock = (locked: boolean) => current.chart.applyOptions({ handleScroll: !locked, handleScale: !locked });
     const consume = (event: PointerEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
+    const begin = (item: ChartTradeLine, pointerId: number, y: number) => {
+      tradeDrag.current = { id: item.id, pointerId, from: item.price, price: item.price };
+      lock(true); setHover(null);
+      try { container.setPointerCapture(pointerId); } catch { /* pointer already released */ }
+      setTradeDragLabel({ id: item.id, y, price: item.price });
+    };
+    startTradeDrag.current = (id, event) => {
+      const item = overlayRef.current?.lines.find(line => line.id === id);
+      if (item?.draggable && !tradeDrag.current) begin(item, event.pointerId, event.clientY - container.getBoundingClientRect().top);
+    };
     const down = (event: PointerEvent) => {
       const live = overlayRef.current;
       if (!live || event.button > 0 || toolRef.current) return;
@@ -520,11 +535,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       const id = nearest(y, event.pointerType === 'mouse' ? 7 : 14);
       const item = id ? live.lines.find(line => line.id === id) : undefined;
       if (!item) return;
-      tradeDrag.current = { id: item.id, pointerId: event.pointerId, from: item.price, price: item.price };
-      lock(true); setHover(null);
-      container.setPointerCapture(event.pointerId);
       consume(event);
-      setTradeDragLabel({ id: item.id, y, price: item.price });
+      begin(item, event.pointerId, y);
     };
     const move = (event: PointerEvent) => {
       const active = tradeDrag.current;
@@ -538,7 +550,13 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       const y = localY(event), price = priceAt(y);
       if (price === null) return;
       active.price = price;
-      tradeLines.current.get(active.id)?.applyOptions({ price });
+      const item = overlayRef.current?.lines.find(line => line.id === active.id);
+      if (item?.spawn) {
+        // The source line stays put; a dashed level in the leg's colour follows the pointer.
+        const tone = overlayRef.current?.preview?.(item.id, price)?.tone ?? 'tp';
+        const options = { price, color: cssVar(tone === 'tp' ? '--signal' : '--danger', tone === 'tp' ? '#d6ff4f' : '#ff8b8b'), lineStyle: LineStyle.Dashed, lineWidth: 2 as const, axisLabelVisible: true, title: '' };
+        if (spawnLine.current) spawnLine.current.applyOptions(options); else spawnLine.current = current.candles.createPriceLine(options);
+      } else tradeLines.current.get(active.id)?.applyOptions({ price });
       setTradeDragLabel({ id: active.id, y, price });
     };
     const up = (event: PointerEvent) => {
@@ -546,6 +564,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       if (!active || event.pointerId !== active.pointerId) return;
       consume(event);
       tradeDrag.current = null; lock(false); setTradeDragLabel(null);
+      if (spawnLine.current) { current.candles.removePriceLine(spawnLine.current); spawnLine.current = null; }
       if (container.hasPointerCapture(event.pointerId)) container.releasePointerCapture(event.pointerId);
       const item = overlayRef.current?.lines.find(line => line.id === active.id);
       if (item) tradeLines.current.get(item.id)?.applyOptions({ price: item.price });
@@ -561,6 +580,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       container.removeEventListener('pointerup', up, { capture: true });
       container.removeEventListener('pointercancel', up, { capture: true });
       container.classList.remove('is-order-hover');
+      startTradeDrag.current = null;
+      if (spawnLine.current) { current.candles.removePriceLine(spawnLine.current); spawnLine.current = null; }
       if (tradeDrag.current) { tradeDrag.current = null; lock(false); setTradeDragLabel(null); }
     };
   }, [market.instrument, market.tickSize]);
@@ -714,13 +735,15 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       {dragLabel && <div className="chart-drag-label" style={{ top: dragLabel.y }} aria-live="polite">{t('松开后确认')} · {formatQuotePrice(dragLabel.price)}</div>}
       {trading && state === 'ready' && <div className="chart-chips" aria-label={t('图上订单')}>{overlay!.lines.map(item => item.chip && chipYs[item.id] !== undefined && <div key={item.id}
         className={`chart-chip ${item.tone} ${item.chip.state ? 'is-pending' : ''} ${chipYs[item.id]!.off ? 'is-offscreen' : ''}`} style={{ top: chipYs[item.id]!.y }}>
+        {item.draggable && !item.chip.state && <span className="chip-grip" role="presentation" title={item.chip.grip ?? t('上下拖动改价')} onPointerDown={event => { if (event.button > 0) return; event.preventDefault(); event.stopPropagation(); startTradeDrag.current?.(item.id, event); }}><GripVertical aria-hidden="true"/></span>}
         <b>{chipYs[item.id]!.off ? `${chipYs[item.id]!.off < 0 ? '↑' : '↓'} ` : ''}{item.chip.badge}</b><span>{item.chip.text}</span>{item.chip.qty && <em>{item.chip.qty}</em>}
         {item.chip.pnl && <span className={`chip-pnl ${item.chip.pnl.positive ? 'signal-text' : 'danger-text'}`}>{item.chip.pnl.text}</span>}
         {item.chip.action && overlay!.onAction && <button type="button" className="chip-action" onClick={() => overlay!.onAction!(item.id)}>{item.chip.action}</button>}
         {item.chip.state ? <span className="chip-state">{item.chip.state}</span> : item.cancellable && <button type="button" aria-label={t('撤销 {0} {1}', item.chip.badge, formatQuotePrice(item.price))} onClick={() => overlay!.onCancel(item.id)}><X aria-hidden="true"/></button>}
       </div>)}</div>}
       {ghost && hover && !tradeDragLabel && state === 'ready' && <div className={`chart-ghost ${ghost.tone}`} style={{ top: hover.y }} aria-live="polite"><span>{ghost.text}<small>{ghost.hint}</small></span></div>}
-      {tradeDragLabel && <div className="chart-drag-label" style={{ top: tradeDragLabel.y }} aria-live="polite">{overlay?.preview?.(tradeDragLabel.id, tradeDragLabel.price) ?? `${t('松开后改价')} · ${formatQuotePrice(tradeDragLabel.price)}`}</div>}
+      {tradeDragLabel && (() => { const label = overlay?.preview?.(tradeDragLabel.id, tradeDragLabel.price) ?? null;
+        return <div className={`chart-drag-label ${label ? `is-${label.tone}` : ''}`} style={{ top: tradeDragLabel.y }} aria-live="polite">{label?.text ?? `${t('松开后改价')} · ${formatQuotePrice(tradeDragLabel.price)}`}</div>; })()}
       {canCreate && !trading && !overlay?.armed && hover && !dragLabel && !tool && state === 'ready' && <Button type="button" className="chart-create-at" style={{ top: hover.y }}
         onPointerEnter={() => { hoverHold.current = true; }} onPointerLeave={() => { hoverHold.current = false; setHover(null); }}
         onClick={() => { hoverHold.current = false; callbacks.current.onCreateAt(hover.price); setHover(null); }}
