@@ -1,5 +1,5 @@
-import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
-import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
+import type { HistogramData, IChartApi, IPriceLine, ISeriesApi, LineData, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
 import { DrawingManager } from 'lightweight-charts-drawing';
 import type { Drawing, DrawingKind } from 'lightweight-charts-drawing';
 import type { CSSProperties } from 'react';
@@ -9,6 +9,9 @@ import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
 import { bucketEnd, bucketStart, parseTimeframe, timeframeSupported } from '../../src/contracts/timeframes.js';
 import { TimeframeMenu } from './TimeframeMenu.js';
 import { DrawingEditBar } from './DrawingEditBar.js';
+import { IndicatorMenu, IndicatorRow } from './ChartIndicators.js';
+import { INDICATOR_COLORS, MAX_INDICATORS, computeIndicator, createIndicator, indicatorDefinition, parseIndicators } from '../indicators.js';
+import type { IndicatorInstance, IndicatorKind, IndicatorResult } from '../indicators.js';
 import { ALL_TOOLS, DrawingToolbar } from './DrawingToolbar.js';
 import type { MarketQuote } from '../../src/markets/quotes.js';
 import { request, errorText } from '../api.js';
@@ -21,6 +24,10 @@ import { Button } from './ui/button.js';
 const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
 const LOG_KEY = 'open-alert-chart-log';
+const INDICATORS_KEY = 'open-alert-chart-indicators';
+// Fallbacks match the light-theme tokens in chart.css.
+const INDICATOR_FALLBACKS = ['#2f6fd6', '#b8650f', '#8a45c4', '#c2357a', '#13857a'];
+type IndicatorSeries = ISeriesApi<'Line'> | ISeriesApi<'Histogram'>;
 type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 // Lightweight Charts renders UTC; shift into the viewer's zone so axis labels read as local time.
@@ -30,6 +37,17 @@ function readFrame(): CandleTimeframe {
   try { const saved = localStorage.getItem(FRAME_KEY); if (saved && parseTimeframe(saved) === saved) return saved; } catch { /* default */ }
   return '4h';
 }
+function readIndicators() { try { return parseIndicators(localStorage.getItem(INDICATORS_KEY)); } catch { return []; } }
+const indicatorColor = (index: number) => cssVar(`--indicator-${index % INDICATOR_COLORS + 1}`, INDICATOR_FALLBACKS[index % INDICATOR_COLORS]!);
+/** Line colours per indicator output, in definition order; MACD's histogram is coloured per bar instead. */
+function indicatorColors(item: IndicatorInstance) {
+  const own = indicatorColor(item.color);
+  return indicatorDefinition(item.kind).lines.map(line => item.kind === 'macd' && line.key === 'signal' ? indicatorColor(item.color + 1) : own);
+}
+const macdBar = (value: number, previous: number | null | undefined) => {
+  const strong = previous === null || previous === undefined || Math.abs(value) >= Math.abs(previous);
+  return (value >= 0 ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b')) + (strong ? 'cc' : '66');
+};
 function readLog() { try { return localStorage.getItem(LOG_KEY) === '1'; } catch { return false; } }
 function decimals(tickSize: string) {
   // Market metadata uses scientific notation for small ticks (e.g. "1e-8").
@@ -90,8 +108,13 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [, setRevision] = useState(0);
   const [now, setNow] = useState(() => Date.now());
-  const [axis, setAxis] = useState<{ width: number; timeHeight: number; lastY: number | null; autoScale: boolean }>({ width: 0, timeHeight: 0, lastY: null, autoScale: true });
+  const [axis, setAxis] = useState<{ width: number; timeHeight: number; lastY: number | null; autoScale: boolean; mainBottom: number; paneTops: number[] }>({ width: 0, timeHeight: 0, lastY: null, autoScale: true, mainBottom: 0, paneTops: [] });
   const [logScale, setLogScale] = useState(readLog);
+  const [indicators, setIndicators] = useState(readIndicators);
+  const indicatorSeries = useRef(new Map<string, IndicatorSeries[]>());
+  const indicatorData = useRef(new Map<string, IndicatorResult>());
+  const indicatorsRef = useRef(indicators);
+  indicatorsRef.current = indicators;
   const logRef = useRef(logScale);
   logRef.current = logScale;
   const [tool, setTool] = useState<DrawingKind | null>(null);
@@ -139,6 +162,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       setHoverIndex(param.point && param.time !== undefined ? barIndexAt(bars.current, param.time) : null);
       if (drag.current || toolRef.current) return;
       if (!param.point) { window.setTimeout(() => { if (!hoverHold.current) setHover(null); }, 500); return; }
+      // Indicator panes have their own scales; only the price pane offers create-at-price.
+      if (param.paneIndex) { setHover(null); return; }
       const price = candles.coordinateToPrice(param.point.y);
       if (price !== null) setHover({ y: param.point.y, price: round(price) });
     };
@@ -147,6 +172,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       chart.unsubscribeCrosshairMove(onCrosshair);
       for (const off of offDrawing) off();
       drawings.destroy(); drawingsRef.current = null; setManager(null);
+      indicatorSeries.current.clear(); indicatorData.current.clear();
       lines.current.clear(); chartRef.current = null; chart.remove();
     };
   }, [market.instrument, market.tickSize]);
@@ -166,8 +192,76 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const upVolume = cssVar('--signal', '#d6ff4f') + '55', downVolume = cssVar('--danger', '#ff8b8b') + '55';
     current.candles.setData(bars.current.map(b => ({ time: toChart(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
     current.volume.setData(bars.current.map(b => ({ time: toChart(b.time), value: b.volume, color: b.close >= b.open ? upVolume : downVolume })));
+    fillIndicators();
     drawingsRef.current?.redraw();
     setRevision(value => value + 1);
+  }
+  // Indicators: one series per output line; price overlays share the main pane, oscillators get a pane each.
+  function syncIndicatorSeries() {
+    const current = chartRef.current;
+    if (!current) return;
+    for (const list of indicatorSeries.current.values()) for (const series of list) current.chart.removeSeries(series);
+    indicatorSeries.current.clear();
+    const precision = decimals(market.tickSize), muted = cssVar('--muted-foreground', '#959c94');
+    let sub = 0;
+    for (const item of indicatorsRef.current) {
+      const definition = indicatorDefinition(item.kind), colors = indicatorColors(item);
+      const pane = definition.pane === 'main' ? 0 : ++sub;
+      const priceFormat = item.kind === 'rsi' ? { type: 'price' as const, precision: 2, minMove: 0.01 } : { type: 'price' as const, precision: Math.max(2, precision), minMove: 10 ** -Math.max(2, precision) };
+      const list = definition.lines.map((line, i): IndicatorSeries => line.style === 'histogram'
+        ? current.chart.addSeries(HistogramSeries, { priceFormat, priceLineVisible: false, lastValueVisible: false }, pane)
+        : current.chart.addSeries(LineSeries, { color: colors[i]!, lineWidth: 1, lineStyle: line.style === 'dashed' ? LineStyle.Dashed : LineStyle.Solid, priceFormat,
+          priceLineVisible: false, lastValueVisible: pane > 0, crosshairMarkerVisible: false,
+          ...(item.kind === 'rsi' ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) } : {}) }, pane));
+      // New panes copy the price pane's scale options, including log mode and a manual (auto-off) range.
+      // Oscillators cross zero or sit in 0–100, so their pane always starts linear and auto-fitted.
+      if (pane > 0) list[0]!.priceScale().applyOptions({ mode: PriceScaleMode.Normal, autoScale: true, scaleMargins: item.kind === 'rsi' ? { top: 0.08, bottom: 0.08 } : { top: 0.1, bottom: 0.1 } });
+      if (item.kind === 'rsi') for (const level of [70, 30]) list[0]!.createPriceLine({ price: level, color: muted, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+      indicatorSeries.current.set(item.id, list);
+    }
+    const panes = current.chart.panes();
+    panes[0]?.setStretchFactor(sub > 1 ? 2.5 : 3);
+    for (const pane of panes.slice(1)) pane.setStretchFactor(1);
+    fillIndicators();
+    // The library lays new panes out on its next frame; measure legend positions after that.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => setRevision(value => value + 1)));
+  }
+  function fillIndicators() {
+    const closes = bars.current.map(bar => bar.close), times = bars.current.map(bar => toChart(bar.time));
+    for (const item of indicatorsRef.current) {
+      const result = computeIndicator(item, closes), list = indicatorSeries.current.get(item.id);
+      indicatorData.current.set(item.id, result);
+      indicatorDefinition(item.kind).lines.forEach((line, i) => {
+        const values = result[line.key]!, series = list?.[i];
+        if (!series) return;
+        if (line.style === 'histogram') series.setData(values.flatMap((value, j): HistogramData[] => value === null ? [] : [{ time: times[j]!, value, color: macdBar(value, values[j - 1]) }]));
+        else (series as ISeriesApi<'Line'>).setData(values.flatMap((value, j): LineData[] => value === null ? [] : [{ time: times[j]!, value }]));
+      });
+    }
+  }
+  // A live trade only moves the forming bar, so earlier indicator values are unchanged; update the last point.
+  function updateIndicators() {
+    const closes = bars.current.map(bar => bar.close), last = bars.current.length - 1, time = toChart(bars.current[last]!.time);
+    for (const item of indicatorsRef.current) {
+      const result = computeIndicator(item, closes), list = indicatorSeries.current.get(item.id);
+      indicatorData.current.set(item.id, result);
+      indicatorDefinition(item.kind).lines.forEach((line, i) => {
+        const values = result[line.key]!, value = values[last], series = list?.[i];
+        if (!series || value === null || value === undefined) return;
+        if (line.style === 'histogram') series.update({ time, value, color: macdBar(value, values[last - 1]) });
+        else series.update({ time, value });
+      });
+    }
+  }
+  useEffect(() => { syncIndicatorSeries(); }, [indicators, market.instrument, market.tickSize, theme]);
+  function saveIndicators(next: IndicatorInstance[]) {
+    setIndicators(next);
+    try { if (next.length) localStorage.setItem(INDICATORS_KEY, JSON.stringify(next)); else localStorage.removeItem(INDICATORS_KEY); } catch { /* keep in-memory choice */ }
+  }
+  function addIndicator(kind: IndicatorKind) {
+    if (indicators.length >= MAX_INDICATORS) return;
+    const id = `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    saveIndicators([...indicators, createIndicator(kind, indicators, id)]);
   }
   const merge = (incoming: Bar[]) => {
     const byTime = new Map(bars.current.map(b => [b.time, b]));
@@ -229,6 +323,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     if (bar.time === last.time) bars.current[bars.current.length - 1] = bar; else bars.current.push(bar);
     current.candles.update({ time: toChart(bar.time), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
     current.volume.update({ time: toChart(bar.time), value: bar.volume, color: (bar.close >= bar.open ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b')) + '55' });
+    updateIndicators();
     setRevision(value => value + 1);
   }
   // One-second clock for the candle-close countdown; the layout effect re-reads the axis geometry it is pinned to.
@@ -243,8 +338,14 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const timeHeight = current.chart.timeScale().height();
     const autoScale = current.chart.priceScale('right').options().autoScale;
     const lastY = last && state === 'ready' ? current.candles.priceToCoordinate(last.close) : null;
+    // Each indicator pane's legend sits at that pane's top edge; the scale toggles follow the price pane's bottom edge.
+    const rect = host.current!.getBoundingClientRect(), top = rect.top, panes = current.chart.panes();
+    const mainRect = panes.length > 1 ? panes[0]!.getHTMLElement()?.getBoundingClientRect() : undefined;
+    const mainBottom = mainRect ? Math.round(rect.bottom - mainRect.bottom) : timeHeight;
+    const paneTops = panes.slice(1).map(pane => Math.round((pane.getHTMLElement()?.getBoundingClientRect().top ?? top) - top));
     setAxis(previous => previous.width === width && previous.timeHeight === timeHeight && previous.lastY === lastY && previous.autoScale === autoScale
-      ? previous : { width, timeHeight, lastY, autoScale });
+      && previous.mainBottom === mainBottom && previous.paneTops.join() === paneTops.join()
+      ? previous : { width, timeHeight, lastY, autoScale, mainBottom, paneTops });
   });
   // Dragging or wheeling the price axis switches auto-scale off inside the library; re-read it right after.
   useEffect(() => {
@@ -309,6 +410,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const container = host.current!, current = chartRef.current;
     if (!current) return;
     const nearest = (y: number, radius: number) => {
+      if (y > current.chart.paneSize(0).height) return null;
       let best: { id: string; distance: number } | null = null;
       for (const [id, entry] of lines.current) {
         if (!draggable(entry.alert)) continue;
@@ -406,12 +508,25 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const sign = change >= 0 ? '+' : '−';
   const remaining = last ? countdown(bucketEnd(last.time, frame) - now) : '';
   const toolLabel = ALL_TOOLS.find(item => item.kind === tool)?.label;
+  const mainIndicators = indicators.filter(item => indicatorDefinition(item.kind).pane === 'main');
+  const subIndicators = indicators.filter(item => indicatorDefinition(item.kind).pane === 'sub');
+  const formatIndicator = (item: IndicatorInstance) => (value: number) => item.kind === 'rsi' ? value.toFixed(2) : formatQuotePrice(Number(value.toPrecision(item.kind === 'macd' ? 5 : 10)));
+  const indicatorRow = (item: IndicatorInstance) => {
+    const result = indicatorData.current.get(item.id), definition = indicatorDefinition(item.kind);
+    const values = definition.lines.map(line => result?.[line.key]?.[index] ?? null);
+    const colors = indicatorColors(item).map((color, i) => definition.lines[i]!.style === 'histogram' ? (values[i] ?? 0) >= 0 ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b') : color);
+    return <IndicatorRow key={item.id} item={item} values={values} colors={colors} format={formatIndicator(item)}
+      onChange={params => saveIndicators(indicators.map(entry => entry.id === item.id ? { ...entry, params } : entry))}
+      onRemove={() => saveIndicators(indicators.filter(entry => entry.id !== item.id))}/>;
+  };
   return <>
     <div className="native-chart-bar" role="group" aria-label={t('K 线周期')}>
       <TimeframeMenu value={frame} onChange={chooseFrame} supported={supported} keyboardScope={shell}/>
+      <span className="native-chart-divider" aria-hidden="true"/>
+      <IndicatorMenu count={indicators.length} onAdd={addIndicator}/>
       <span className="native-chart-status" role="status">{olderState === 'loading' ? t('正在加载更早的 K 线…') : olderState === 'done' ? t('已到交易所最早数据') : ''}</span>
     </div>
-    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px` } as CSSProperties}>
+    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px`, '--main-pane-bottom': `${axis.mainBottom || axis.timeHeight}px`, '--indicator-panes': subIndicators.length } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
       {manager && state !== 'failed' && <DrawingToolbar manager={manager} tool={tool} state={drawState} scope={shell}/>}
       {manager && state === 'ready' && !textEdit && <DrawingEditBar manager={manager} scope={shell} onEditText={editText}/>}
@@ -424,7 +539,9 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         <span className="chart-legend-row"><span className="chart-legend-ohl"><b>O</b><em>{formatQuotePrice(shown.open)}</em><b>H</b><em>{formatQuotePrice(shown.high)}</em><b>L</b><em>{formatQuotePrice(shown.low)}</em></span><b>C</b><em>{formatQuotePrice(shown.close)}</em>
           <em className="chart-legend-change">{sign}{formatQuotePrice(Math.abs(Number(change.toPrecision(8))))} ({sign}{Math.abs(change / base * 100).toFixed(2)}%)</em></span>
         <span className="chart-legend-row"><b>{t('量')}</b><em className="plain">{volumeFormat.format(shown.volume)}</em>{index === bars.current.length - 1 && <><b>{t('收盘倒计时')}</b><em className="plain" data-testid="chart-countdown">{remaining}</em></>}</span>
+        {mainIndicators.map(item => indicatorRow(item))}
       </div>}
+      {state === 'ready' && subIndicators.map((item, i) => axis.paneTops[i] !== undefined && <div key={item.id} className="chart-legend chart-pane-legend" style={{ top: axis.paneTops[i]! + 4 }}>{indicatorRow(item)}</div>)}
       {state === 'ready' && axis.lastY !== null && <div className={`chart-countdown ${last && last.close >= last.open ? 'up' : 'down'}`} style={{ top: axis.lastY }} aria-hidden="true">{remaining}</div>}
       {state !== 'failed' && <div className="chart-scale-modes" role="group" aria-label={t('价格坐标')}>
         <button type="button" aria-pressed={logScale} title={t('对数坐标')} aria-label={t('对数坐标')} onClick={toggleLogScale}>log</button>

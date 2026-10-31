@@ -1,0 +1,43 @@
+---
+// Same formula as src/anomaly/rules.ts: relative = (1 + coin) / (1 + btc) - 1.
+---
+<div class="oa-calc" data-oa-calc>
+  <div class="oa-row"><label for="oa-btc">BTC 涨跌</label><input id="oa-btc" type="range" min="-10" max="10" step="0.5" value="2"/><output data-btc>+2.0%</output></div>
+  <div class="oa-row"><label for="oa-coin">币种涨跌</label><input id="oa-coin" type="range" min="-40" max="60" step="0.5" value="12.5"/><output data-coin>+12.5%</output></div>
+  <div class="oa-result">
+    <span>相对 BTC 的幅度</span><b data-rel>+10.3%</b><span class="oa-verdict" data-verdict>达到系统门槛 10%</span>
+  </div>
+  <p class="oa-note">拖动滑块试试。这里只演示幅度这一项，真正触发还要同时满足波动倍数和放量。</p>
+</div>
+<style>
+  .oa-calc { margin: 20px 0 26px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .oa-row { display: grid; grid-template-columns: 110px 1fr 74px; align-items: center; gap: 14px; margin: 8px 0; font-size: 13px; }
+  .oa-row label { color: var(--muted-fg); }
+  .oa-row output { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .oa-row input { width: 100%; accent-color: var(--signal); }
+  .oa-result { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .oa-result > span:first-child { font-size: 13px; color: var(--muted-fg); }
+  .oa-result b { font-family: var(--mono); font-weight: 500; font-size: 26px; font-variant-numeric: tabular-nums; color: var(--text); }
+  .oa-result b.up { color: var(--signal); } .oa-result b.down { color: var(--danger); }
+  .oa-verdict { font-family: var(--mono); font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted-fg); }
+  .oa-verdict.ok { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--signal-bg); }
+  .oa-note { margin: 12px 0 0; font-size: 12px; color: var(--muted-fg); }
+  @media (max-width: 860px) { .oa-row { grid-template-columns: 84px 1fr 64px; } }
+</style>
+<script>
+  const pct = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  for (const root of document.querySelectorAll<HTMLElement>('[data-oa-calc]')) {
+    const [btc, coin] = root.querySelectorAll<HTMLInputElement>('input');
+    const out = (s: string) => root.querySelector<HTMLElement>(s)!;
+    const update = () => {
+      const b = Number(btc!.value) / 100, c = Number(coin!.value) / 100, r = (1 + c) / (1 + b) - 1, a = Math.abs(r);
+      out('[data-btc]').textContent = pct(b * 100);
+      out('[data-coin]').textContent = pct(c * 100);
+      const rel = out('[data-rel]'); rel.textContent = pct(r * 100); rel.classList.toggle('up', r >= 0); rel.classList.toggle('down', r < 0);
+      const v = out('[data-verdict]');
+      v.textContent = a >= 0.25 ? '达到默认过滤 25%' : a >= 0.10 ? '达到系统门槛 10%' : '未达到 10%';
+      v.classList.toggle('ok', a >= 0.10);
+    };
+    btc!.addEventListener('input', update); coin!.addEventListener('input', update); update();
+  }
+</script>

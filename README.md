@@ -77,6 +77,7 @@ The user then enters a personal Pushover user key, chooses a private application
 
 ### Deployment and operations
 
+- [User guide](https://docs.cryptotool.bar): end-user documentation site, sourced from [`docs-site/`](docs-site/README.md).
 - [Runtime](docs/RUNTIME.md): Node with SQLite or PostgreSQL, Docker, Cloudflare D1 plus one Durable Object, bootstrap order, and capacity.
 - [Configuration](docs/CONFIGURATION.md): production `.env`, Worker vars and secrets, Google callback, email and invitations, and every limit.
 - [Backup](docs/BACKUP.md): encrypted storage, separate database and key backups, consistency, and restore checks.
@@ -182,6 +183,7 @@ npm run admin:invite -- you@example.com
 
 ### 部署与备份
 
+- [用户文档](https://docs.cryptotool.bar)：面向用户的使用说明，源码在 [`docs-site/`](docs-site/README.md)。
 - [部署说明](docs/RUNTIME.md)：Node SQLite/PostgreSQL、Docker、Cloudflare D1 + 单个 Durable Object、初始化顺序和容量边界。
 - [配置模板](docs/CONFIGURATION.md)：生产 `.env`、Worker vars/Secrets、Google 回调、邮箱与邀请策略、全部限额。
 - [备份与恢复](docs/BACKUP.md)：加密存储范围、数据库与密钥分开备份、一致性与恢复验证。

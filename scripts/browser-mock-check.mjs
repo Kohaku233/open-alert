@@ -1544,6 +1544,61 @@ try {
       await editbar.getByRole('button',{name:'删除画线',exact:true}).tap();
       await check('mobile: delete removes the drawing',async()=>expect.poll(()=>p.evaluate(()=>localStorage.getItem('open-alert-drawings:BTC-USDT-SWAP'))).toBe(null));
     }
+    // Indicators: overlays (MA/EMA/BOLL) share the price pane; RSI and MACD each get a pane under it.
+    {
+      await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
+      await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();
+      const trigger=p.locator('.native-chart-bar').getByRole('button',{name:'指标',exact:true}),menu=p.getByRole('dialog',{name:'添加指标'});
+      const saved=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-chart-indicators')||'[]'));
+      const panes=()=>p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40).length);
+      const add=async name=>{await trigger.click();await expect(menu).toBeVisible();await menu.getByRole('button',{name:new RegExp('^添加 '+name+' ·')}).click();await expect(menu).toHaveCount(0);};
+      const panesBefore=await panes();
+      await check('indicator menu lists MA, EMA, BOLL, RSI and MACD',async()=>{await trigger.click();await expect(menu).toBeVisible();await expect(menu.locator('.indicator-list b')).toHaveText(['MA','EMA','BOLL','RSI','MACD']);if(profile==='mobile'){await p.waitForTimeout(400);for(const b of await menu.locator('.indicator-list [data-slot="button"]').all()){const r=await b.boundingBox();assert(r.height>=44,'short target '+r.height);}}await p.waitForTimeout(250);await p.screenshot({path:join(outputs,`native-indicator-menu-${profile}-MOCK.png`)});await p.keyboard.press('Escape');await expect(menu).toHaveCount(0);});
+      await add('MA');await add('MA');await add('BOLL');
+      await check('overlays are saved with default lengths and stay in the price pane',async()=>{await expect.poll(async()=>(await saved()).map(i=>[i.kind,i.params.period])).toEqual([['ma',20],['ma',50],['boll',20]]);assert.equal(await panes(),panesBefore);});
+      const legend=p.getByTestId('chart-legend');
+      await check('overlay legend rows show name, lengths and numeric values',async()=>{await expect(legend.locator('.chart-indicator-row .chart-indicator-name')).toHaveText(['MA 20','MA 50','BOLL 20 2']);for(const v of await legend.locator('.chart-indicator-value').allTextContents())assert.match(v,/^[\d,.]+$/,v);});
+      // Regression: lightweight-charts creates a pane with a copy of the price pane's scale options. Oscillator panes
+      // added while log is on and auto is off must render exactly like ones added in the default state.
+      const modes=p.getByRole('group',{name:'价格坐标'}),logButton=modes.getByRole('button',{name:'对数坐标'}),autoButton=modes.getByRole('button',{name:'自动缩放价格坐标'});
+      const tap=async b=>{if(profile==='mobile')await b.tap();else await b.click();};
+      const subPixels=async()=>{await p.mouse.move(1,1);await p.waitForTimeout(300);return p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40).slice(1).map(tr=>tr.children[1].querySelector('canvas').toDataURL()));};
+      await add('RSI');await add('MACD');
+      await check('RSI and MACD each open their own pane under the price pane',async()=>expect.poll(panes).toBe(panesBefore+2));
+      const reference=await subPixels();
+      await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();await tap(p.getByRole('button',{name:'移除 MACD 12 26 9'}));await tap(p.getByRole('button',{name:'移除 RSI 14'}));
+      await expect.poll(panes).toBe(panesBefore);
+      await tap(logButton);await tap(autoButton);await expect(logButton).toHaveAttribute('aria-pressed','true');await expect(autoButton).toHaveAttribute('aria-pressed','false');
+      await add('RSI');await add('MACD');await expect.poll(panes).toBe(panesBefore+2);
+      await check('oscillator panes stay linear and auto-fitted when the price pane is log/manual',async()=>{const shown=await subPixels();assert.equal(shown.length,2);assert(shown[0]===reference[0],'RSI pane inherited the price pane scale');assert(shown[1]===reference[1],'MACD pane inherited the price pane scale');});
+      await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`native-indicators-log-${profile}-MOCK.png`)});
+      await tap(logButton);await tap(autoButton);await expect(logButton).toHaveAttribute('aria-pressed','false');await expect(autoButton).toHaveAttribute('aria-pressed','true');
+      const paneLegends=p.locator('.chart-pane-legend');
+      await check('oscillator pane legends sit at the top of their panes, in order',async()=>{await expect(paneLegends).toHaveCount(2);await expect(paneLegends.locator('.chart-indicator-name')).toHaveText(['RSI 14','MACD 12 26 9']);const main=await legend.boundingBox(),a=await paneLegends.nth(0).boundingBox(),b=await paneLegends.nth(1).boundingBox(),plot=await p.locator('.native-chart').boundingBox();assert(main.y<a.y&&a.y<b.y&&b.y+b.height<plot.y+plot.height,'legend order '+JSON.stringify([main,a,b,plot]));});
+      await check('RSI value is between 0 and 100 and MACD shows three values',async()=>{const rsi=Number(await paneLegends.nth(0).locator('.chart-indicator-value').textContent());assert(rsi>=0&&rsi<=100,String(rsi));const macd=await paneLegends.nth(1).locator('.chart-indicator-value').allTextContents();assert.equal(macd.length,3);for(const v of macd)assert.match(v,/^-?[\d,.]+$|^−?[\d,.]+$/,v);});
+      await noOverflow(p);await p.waitForTimeout(300);await p.screenshot({path:join(outputs,`native-indicators-${profile}-MOCK.png`)});
+      await check('price-scale toggles stay at the bottom-right of the price pane',async()=>{const m=await p.getByRole('group',{name:'价格坐标'}).boundingBox(),a=await paneLegends.nth(0).boundingBox();assert(m.y+m.height<=a.y+2,'toggles '+JSON.stringify([m,a]));});
+      // Settings: change RSI length; the legend and save follow.
+      const rsiRow=paneLegends.nth(0);
+      await rsiRow.getByRole('button',{name:'设置 RSI 14'}).click();
+      const settings=p.getByRole('dialog',{name:'RSI 参数'}),length=settings.getByLabel('周期');
+      await check('settings show the current length',()=>expect(length).toHaveValue('14'));
+      await length.fill('0');
+      await check('out-of-range input is flagged and not applied',async()=>{await expect(length).toHaveAttribute('aria-invalid','true');assert.equal((await saved()).find(i=>i.kind==='rsi').params.period,14);});
+      await length.fill('7');
+      await check('valid length applies immediately and is saved',async()=>{await expect(rsiRow.locator('.chart-indicator-name')).toHaveText('RSI 7');await expect.poll(async()=>(await saved()).find(i=>i.kind==='rsi').params.period).toBe(7);});
+      await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`native-indicator-settings-${profile}-MOCK.png`)});
+      await p.keyboard.press('Escape');await expect(settings).toHaveCount(0);
+      await check('indicators survive reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(p.locator('.chart-pane-legend .chart-indicator-name')).toHaveText(['RSI 7','MACD 12 26 9']);await expect(p.getByTestId('chart-legend').locator('.chart-indicator-name')).toHaveText(['MA 20','MA 50','BOLL 20 2']);await expect(trigger).toContainText('5');});
+      await check('timeframe switch recomputes indicators without dropping them',async()=>{await p.locator('.native-chart-bar').getByRole('button',{name:'1 小时',exact:true}).click();await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(p.locator('.chart-pane-legend')).toHaveCount(2);assert.equal(await panes(),panesBefore+2);});
+      await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();
+      const remove=async label=>{const button=p.getByRole('button',{name:'移除 '+label});if(profile==='mobile')await button.tap();else await button.click();};
+      await remove('MACD 12 26 9');
+      await check('removing MACD closes its pane',async()=>{await expect(p.locator('.chart-pane-legend')).toHaveCount(1);await expect.poll(panes).toBe(panesBefore+1);});
+      for(const label of ['RSI 7','MA 20','MA 50','BOLL 20 2'])await remove(label);
+      await check('removing every indicator restores the plain chart and clears the save',async()=>{await expect.poll(panes).toBe(panesBefore);await expect(p.locator('.chart-indicator-row')).toHaveCount(0);assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-chart-indicators')),null);});
+      await noOverflow(p);
+    }
     await p.locator('.chart-panel').getByRole('button',{name:'TradingView',exact:true}).click();
     await check('switching back restores TradingView embed',()=>expect(p.locator('.tradingview-widget-container script')).toHaveCount(1));
     await fixture.context.close();

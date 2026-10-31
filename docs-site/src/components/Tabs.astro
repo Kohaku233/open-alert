@@ -1,0 +1,27 @@
+---
+// Tabs. Children must be <TabItem label="...">.
+---
+<div class="tabs" data-tabs><div class="tab-bar" role="tablist"></div><slot /></div>
+<style>
+  .tabs{margin:20px 0 24px;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+  .tab-bar{display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--line);background:var(--field)}
+  .tab-bar :global(button){height:32px;padding:0 14px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--muted-fg);font:500 13px var(--body);cursor:pointer}
+  .tab-bar :global(button[aria-selected="true"]){color:var(--text);background:var(--selected);border-color:color-mix(in srgb,var(--signal) 35%,transparent)}
+  .tabs :global([role="tabpanel"]){padding:16px 18px 6px}
+</style>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root, n) => {
+    const bar = root.querySelector('.tab-bar')!;
+    const panels = [...root.querySelectorAll<HTMLElement>(':scope > [data-tab]')];
+    const buttons = panels.map((panel, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.role = 'tab'; b.id = `tab-${n}-${i}`; b.textContent = panel.dataset.tab!;
+      panel.role = 'tabpanel'; panel.setAttribute('aria-labelledby', b.id);
+      b.onclick = () => select(i);
+      b.onkeydown = (e) => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const j = (i + (e.key === 'ArrowRight' ? 1 : panels.length - 1)) % panels.length; select(j); buttons[j]!.focus(); } };
+      bar.append(b); return b;
+    });
+    const select = (k: number) => { buttons.forEach((b, i) => { b.setAttribute('aria-selected', String(i === k)); b.tabIndex = i === k ? 0 : -1; panels[i]!.hidden = i !== k; }); };
+    select(0);
+  });
+</script>
