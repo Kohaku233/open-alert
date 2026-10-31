@@ -521,3 +521,12 @@ test('actual CCXT metadata parsers yield explicit supported flags for all six ve
     assert.equal(native.mock.callCount(),0);
   } finally {await source.stop();native.mock.restore();}
 });
+
+test('node market source can expose unlimited business demand while keeping queue budgets finite', async () => {
+  const source=createPublicCcxtMarketSource({mode:'stream',maxDemand:null,maxQueue:123,now:()=>initial});
+  try {
+    const diagnostics=source.diagnostics();
+    assert.equal(diagnostics.demandCapacity,null);
+    assert.equal(diagnostics.queueCapacity,123);
+  } finally {await source.stop();}
+});

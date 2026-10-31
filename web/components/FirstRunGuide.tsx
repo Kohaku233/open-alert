@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { Button } from './ui/button.js';
 import { t } from '../i18n.js';
+import { DocsLink } from './DocsLink.js';
 
 /** First-run sequence derived only from server state: channel, rules, master switch.
  * It disappears once all three are true; collapsing it lasts for this page session
@@ -34,6 +35,7 @@ export function FirstRunGuide({ channelConfigured, alertCount, monitoring, canCr
         <h2 id="first-run-title">{t('三步开始价格监控')}</h2>
       </div>
       <div className="first-run-meta">
+        <DocsLink path="/start/" className="first-run-docs">{t('查看新手指南')}</DocsLink>
         <span className="first-run-progress" aria-label={t('已完成 {0} / 3 步', doneCount)}>{steps.map(step => <i key={step.key} className={step.done ? 'is-done' : ''}/>)}<b>{doneCount} / 3</b></span>
         <Button variant="ghost" className="text-button" aria-expanded={!collapsed} aria-controls="first-run-steps" onClick={() => setCollapsed(value => !value)}>{collapsed ? t('展开引导') : t('收起引导')}</Button>
       </div>

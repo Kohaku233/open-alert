@@ -121,16 +121,15 @@ export function createScheduler(options: SchedulerOptions) {
   async function refreshRules(): Promise<void> {
     if (refreshed === dirty && rulesAt !== null && now() - rulesAt < config.runtime.activeRulesRefreshMs) return;
     const version = dirty, next: SchedulableAlertRecord[] = [], users = new Set<string>(), instruments = new Set<string>();
+    const administrators = new Set((options.db ? await options.db.query<{id:string}>(`SELECT id FROM "user" WHERE role='admin'`) : []).map(u=>u.id));
     let cursor: string | undefined, count = 0;
     do {
-      const limit = Math.min(500, config.limits.activeAlerts - count);
-      if (limit <= 0) throw new Error('rules_limit_exceeded');
+      const limit = 500;
       const page = await r.alerts.listActiveWithProfiles(limit, cursor);
-      count += page.items.length;
-      for (const rule of page.items) { next.push(rule); users.add(rule.userId); instruments.add(rule.instrument); }
+      for (const rule of page.items) { next.push(rule); if(!administrators.has(rule.userId)){ count++; users.add(rule.userId); instruments.add(rule.instrument); } }
       cursor = page.cursor ?? undefined;
     } while (cursor);
-    if (instruments.size > config.limits.globalInstruments || users.size > config.limits.users) throw new Error('rules_limit_exceeded');
+    if (count > config.limits.activeAlerts || instruments.size > config.limits.globalInstruments || users.size > config.limits.users) throw new Error('rules_limit_exceeded');
     // Resume after the last evaluated key even when refresh/invalidation removes that row.
     const after = evaluationAfter;
     const resume = after ? next.findIndex(rule => rule.instrument > after.instrument || (rule.instrument === after.instrument && rule.id > after.id)) : 0;
@@ -269,7 +268,7 @@ export function createScheduler(options: SchedulerOptions) {
   }
   async function collectDue(): Promise<void> {
     // Bounded keyset scan, including multiple users before round-robin. Carry leftovers across drains.
-    const capacity = Math.min(config.limits.activeAlerts, cloudflare ? 64 : 2000);
+    const capacity = cloudflare ? 64 : 2000;
     const ids = new Set([...pending.values()].flatMap(events => events.map(e => e.triggerId)));
     let scanned = 0;
     while (pendingCount < capacity && scanned < maxDueRows) {

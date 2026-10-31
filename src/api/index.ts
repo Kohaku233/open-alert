@@ -27,13 +27,13 @@ const settingsSchema = z.strictObject({ expectedGeneration: generation, enabled:
 const anomalySettingsSchema = z.strictObject({ expectedGeneration: generation, enabled: z.boolean().optional(), crypto: z.boolean().optional(), tradfi: z.boolean().optional(),
   minMoveCrypto: z.number().min(0.10).max(1).optional(), minMoveTradfi: z.number().min(0.02).max(0.5).optional(),
   priority: z.union([z.literal(-1),z.literal(0),z.literal(1),z.literal(2)]).optional(), dailyLimit: z.number().int().min(1).max(50).optional(), notification: notificationOptionsSchema.nullable().optional() }).refine(v=>Object.keys(v).length>1);
-const favoritesSchema = z.strictObject({ favorites: z.array(z.strictObject({ base: z.string().regex(/^[A-Z0-9]{1,24}$/), preferred: instrumentSchema.nullable() })).max(50)
+const favoritesSchema = z.strictObject({ favorites: z.array(z.strictObject({ base: z.string().regex(/^[A-Z0-9]{1,24}$/), preferred: instrumentSchema.nullable() }))
   .refine(list=>new Set(list.map(f=>f.base)).size===list.length) });
 const channelSchema = putChannelSchema;
 const channelName = z.string().trim().min(1).max(40);
 const hubChannelCreateSchema = z.strictObject({ type: z.string().refine(v=>CHANNEL_TYPES.includes(v)), name: channelName, config: z.record(z.string(), z.unknown()) });
 const hubChannelPatchSchema = z.strictObject({ expectedGeneration: generation, name: channelName.optional(), enabled: z.boolean().optional(), config: z.record(z.string(), z.unknown()).optional() }).refine(v=>Object.keys(v).length>1);
-const hubRoutesSchema = z.strictObject({ routes: z.array(z.strictObject({ source: z.enum(ROUTABLE_SOURCES), channelId: z.string().min(1).max(200), enabled: z.boolean(), options: routeOptionsSchema })).max(40)
+const hubRoutesSchema = z.strictObject({ routes: z.array(z.strictObject({ source: z.enum(ROUTABLE_SOURCES), channelId: z.string().min(1).max(200), enabled: z.boolean(), options: routeOptionsSchema }))
   .refine(list=>new Set(list.map(r=>r.source+'\u0000'+r.channelId)).size===list.length) });
 const pageSchema = z.strictObject({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().min(1).max(200).optional()});
 const messages: Record<ApiErrorCode,string> = {
@@ -166,7 +166,9 @@ export function createApi(d:ApiDependencies) {
     }catch{return c.json({ok:true,data:{state:'unknown'},requestId:c.get('requestId')},503);}
   });
   app.use('/api/*',async(c,next)=>{
-    const principal=await d.auth.getPrincipal(c.req.raw);if(!principal)throw new HttpError(401,'unauthenticated');c.set('principal',principal);
+    const session=await d.auth.getPrincipal(c.req.raw);if(!session)throw new HttpError(401,'unauthenticated');
+    const account=await identity(session.userId);if(account.disabled)throw new HttpError(403,'forbidden');
+    const principal={...session,role:account.role};c.set('principal',principal);
     if(!['GET','HEAD','OPTIONS'].includes(c.req.method)){
       const origin=c.req.header('origin');const trusted=d.config.trustedOrigins;
       if(!origin||!trusted.includes(origin))throw new HttpError(403,'forbidden');
@@ -176,7 +178,7 @@ export function createApi(d:ApiDependencies) {
     if(!budget.allowed){c.header('Retry-After',String(budget.retryAfter));throw new HttpError(429,'rate_limited');}
     const settings=await d.repositories.settings.get(principal.userId)??await d.repositories.settings.initialize(principal.userId,Date.now());if(settings.disabled)throw new HttpError(403,'forbidden');
     c.set('settings',settings);
-    const access=betaAccess(d.config,settings.dailyLimit);
+    const access=betaAccess(d.config,settings.dailyLimit,principal.role);
     c.set('productAccess',access);
     const path=c.req.path;
     const feature:ProductFeature|null=path.startsWith('/api/alerts')?'price_alerts':path.startsWith('/api/anomaly')?'anomaly_crypto':path.startsWith('/api/notify')?'notification_channels':path.startsWith('/api/favorites')?'market_favorites':path.startsWith('/api/candles')?'native_charts':null;
@@ -199,7 +201,7 @@ export function createApi(d:ApiDependencies) {
     const userId=uid(c),settings=c.get('settings');const [user,daily,channel,runtime,records]=await Promise.all([identity(userId),d.repositories.settings.dailyUsage(userId,Date.now()),d.repositories.channels.get(userId),d.runtime.snapshot(),d.repositories.alerts.listForUser(userId)]);
     const health=await aggregateHealth(runtime);
     const own=new Set(records.map(v=>v.instrument));
-    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:settings.dailyLimit},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:d.hub?{...channelProfile(channel,d.config.sharedPushoverAppToken),configured:await d.hub.anomalyReachable(userId,'price_alert')}:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});
+    return ok(c,{user,settings:{enabled:settings.enabled,dailyLimit:settings.dailyLimit,notification:settings.notification},settingsGeneration:settings.generation,daily:{...daily,limit:c.get('productAccess').limits.priceAttemptsPerDay},health,scheduler:{pollIntervalMs:5000,lastPollAt:runtime.lastPollAt,coordinatorId:'coordinator-v1',...(runtime.marketMode?{marketMode:runtime.marketMode}:{})},prices:runtime.prices.filter(p=>own.has(p.instrument)),channel:d.hub?{...channelProfile(channel,d.config.sharedPushoverAppToken),configured:await d.hub.anomalyReachable(userId,'price_alert')}:channelProfile(channel,d.config.sharedPushoverAppToken),capabilities:{...d.auth.capabilities(),canAdmin:c.get('principal').role==='admin'},...(include==='alerts'?{alerts:await hydrateAll(userId,records)}:{})});
   });
   app.get('/api/markets',async c=>{
     const raw=c.req.queries();
@@ -261,17 +263,18 @@ export function createApi(d:ApiDependencies) {
   const hub=()=>{if(!d.hub)throw new HttpError(503,'service_unavailable');return d.hub;};
   const noQuery=(c:Context<Env>)=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');};
   app.get('/api/notify/deliveries',async c=>{noQuery(c);return ok(c,{deliveries:await hub().deliveries(uid(c))});});
-  app.get('/api/notify',async c=>{noQuery(c);const h=hub(),userId=uid(c),[channels,routes,settings,anomalySettings]=await Promise.all([h.channels(userId),h.routes(userId),d.repositories.settings.get(userId),d.anomaly?.store.getSettings(userId)]);const price=settings?.notification??DEFAULT_NOTIFICATION;const anomalyProfile=anomalySettings?.settings.notification??{...price,priority:anomalySettings?.settings.priority??1};return ok(c,{channels,routes,types:CHANNEL_TYPES,priceAttemptLimit:settings?.dailyLimit??20,profiles:{price_alert:price,anomaly_crypto:anomalyProfile,anomaly_tradfi:anomalyProfile}});});
+  app.get('/api/notify',async c=>{noQuery(c);const h=hub(),userId=uid(c),[channels,routes,settings,anomalySettings]=await Promise.all([h.channels(userId),h.routes(userId),d.repositories.settings.get(userId),d.anomaly?.store.getSettings(userId)]);const price=settings?.notification??DEFAULT_NOTIFICATION;const anomalyProfile=anomalySettings?.settings.notification??{...price,priority:anomalySettings?.settings.priority??1};return ok(c,{channels,routes,types:CHANNEL_TYPES,unlimited:c.get('principal').role==='admin',priceAttemptLimit:c.get('productAccess').limits.priceAttemptsPerDay,profiles:{price_alert:price,anomaly_crypto:anomalyProfile,anomaly_tradfi:anomalyProfile}});});
   app.post('/api/notify/channels',async c=>{const body=await json(c,hubChannelCreateSchema);return ok(c,{channel:await hub().createChannel(uid(c),body)},201);});
   app.patch('/api/notify/channels/:id',async c=>{const {expectedGeneration,...patch}=await json(c,hubChannelPatchSchema);return ok(c,{channel:await hub().patchChannel(uid(c),c.req.param('id'),expectedGeneration,Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined)))});});
   app.delete('/api/notify/channels/:id',async c=>{await hub().removeChannel(uid(c),c.req.param('id'));return ok(c,{deleted:true});});
   app.post('/api/notify/channels/:id/test',async c=>{await json(c,testNotificationSchema);const result=await hub().test(uid(c),c.req.param('id'));
     if(result.outcome==='uncertain')throw new HttpError(504,'notification_uncertain');if(result.outcome==='skipped')throw new HttpError(409,'channel_unconfigured');if(result.outcome==='failed')throw new HttpError(502,'notification_failed');return ok(c,{outcome:'sent',at:Date.now()});});
-  app.put('/api/notify/routes',async c=>{const body=await json(c,hubRoutesSchema);const routes=await hub().setRoutes(uid(c),body.routes);await wake(c);return ok(c,{routes});});
+  app.put('/api/notify/routes',async c=>{const body=await json(c,hubRoutesSchema);if(c.get('principal').role!=='admin'&&body.routes.length>40)throw new HttpError(400,'invalid_request');const routes=await hub().setRoutes(uid(c),body.routes);await wake(c);return ok(c,{routes});});
   // Starred underlyings (BTC, NVDA...) across every venue; the client opens `preferred` or any listed market.
   app.get('/api/favorites',async c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,{favorites:await anomaly().store.favorites(uid(c))});});
   app.put('/api/favorites',async c=>{
     const a=anomaly(),body=await json(c,favoritesSchema);
+    if(c.get('principal').role!=='admin'&&body.favorites.length>50)throw new HttpError(400,'invalid_request');
     return ok(c,{favorites:await a.store.setFavorites(uid(c),body.favorites)});
   });
   app.post('/api/alerts',async c=>{const body=await json(c,createAlertSchema);await market(body.instrument);const alert=await d.repositories.alerts.create(uid(c),body,Date.now());await wake(c);return ok(c,{alert:await hydrate(uid(c),alert)},201);});

@@ -636,3 +636,17 @@
   .settings-usage { gap: 0 16px; }
   .admin-runtime dl > div { grid-template-columns: 90px minmax(0,1fr); }
 }
+
+/* Links into the user guide at docs.cryptotool.bar. */
+.docs-link { display: inline-flex; align-items: center; gap: 2px; color: var(--link); font-size: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; white-space: nowrap; }
+.docs-link:hover { text-decoration-color: currentColor; }
+.docs-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+.docs-link svg { width: 12px; height: 12px; flex: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.account-menu-links .account-menu-external { width: 13px; height: 13px; margin-left: auto; }
+.first-run-meta .first-run-docs { color: var(--hero-muted); font-size: 12px; min-height: 44px; }
+.first-run-meta .first-run-docs:hover { color: var(--hero-text); }
+.settings-access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.settings-access-actions .docs-link { font-size: 13px; }
+.mobile-docs-link[data-slot="button"] { display: none; }
+@media (max-width: 900px) { .mobile-docs-link[data-slot="button"] { display: flex; min-height: 46px; } }
