@@ -1,0 +1,72 @@
+---
+title: Detection rules
+description: How the system decides something is an anomaly, how the move relative to BTC is calculated, and why alerts sometimes arrive late.
+---
+
+import Aside from '../../../../components/Aside.astro';
+import Pipeline from '../../../../components/Pipeline.astro';
+import RelativeCalc from '../../../../components/RelativeCalc.astro';
+import Formula from '../../../../components/Formula.astro';
+
+Each exchange's market data is analyzed separately, and a symbol becomes a candidate as soon as it meets the thresholds on any one exchange. If the same coin hits on several exchanges at once, the system merges them by CoinGecko coin into one push and shows only the strongest signal.
+
+<Pipeline
+  label="Anomaly detection flow"
+  steps={[
+    { tag: '1m candles', title: 'Live market data', text: "Candles that haven't closed yet count too" },
+    { tag: '4 windows', title: 'Rolling calculation', text: '15 minutes, 1 hour, 4 hours, 24 hours' },
+    { tag: '3 thresholds', title: 'System checks', text: 'Volatility multiple, volume surge, minimum move' },
+    { tag: '30 seconds', title: 'Grouping', text: 'One batch of candidates becomes one push' },
+    { tag: 'Your settings', title: 'Filters and cooldown', text: 'Move filters, 24-hour cooldown' },
+  ]}
+/>
+
+The system checks every 10 seconds. When it catches the first candidate, it opens a 30-second waiting window and bundles any other candidates that hit during that time into the same push. So from first detection to the notification reaching you usually takes 30 to 40 seconds.
+
+## Four time windows
+
+The system watches four rolling windows in parallel: 15 minutes, 1 hour, 4 hours and 24 hours. Each window counts back from the current moment, so it doesn't wait for the current candle to close. For the 1-hour window, for example, it compares the latest price with the price 60 minutes ago.
+
+## Three system thresholds
+
+A window counts as a hit only if it meets all three of these at once:
+
+| Condition | Crypto | Stocks & TradFi | Meaning |
+| --- | --- | --- | --- |
+| Volatility multiple | ≥ 6x | ≥ 4x | How many times bigger this move is than the usual move for this window |
+| Volume surge | ≥ 3x | ≥ 3x | How many times the usual trading volume this window has |
+| Minimum move | ≥ 10% | ≥ 2% | For crypto, measured after removing BTC's move |
+
+### Where "usual" comes from
+
+The system uses each contract's closed 1-hour candles from the past 30 days to work out two baselines:
+
+- **Usual volatility**: how much the price normally moves over this window length. Each window needs at least 100 samples. Contracts without enough samples are left out for now.
+- **Usual volume**: the median trading volume over this window length.
+
+The baselines are usually recalculated once a day. Stocks & TradFi contracts trade with very different liquidity and volatility at different times, so the system keeps separate baselines for US regular hours, off-hours and weekends.
+
+## Move relative to BTC
+
+For crypto, the move is measured after removing BTC's move on the same exchange over the same window. When the whole market rises or falls together, a token has to move much more on its own before it counts as an anomaly.
+
+<Formula name="relative-move" formula="relative move = (1 + coin move) / (1 + BTC move) − 1" example="BTC +2%, coin +12.2%  →  relative move ≈ +10%" />
+
+For example, if BTC is up 2%, a coin has to rise about 12.2% to reach a 10% relative move. With the default 25% filter, it has to rise about 27.5%.
+
+<RelativeCalc />
+
+BTC itself has nothing removed. Stocks & TradFi contracts don't remove BTC either; they use their own move directly.
+
+## Why alerts sometimes arrive late
+
+The anomaly rules are built to find **extreme** moves, so the thresholds are high. Together with the points below, this means the market has usually already moved a fair amount by the time the notification reaches you:
+
+- Volatility has to reach 6x usual, volume 3x usual, and the move has to be at least 10% relative to BTC. The default filter asks for 25%.
+- The system first picks the strongest of the four windows, then compares it with your filter. Longer windows like 4 hours and 24 hours build up bigger moves and often outweigh a short window that's just getting started.
+- After detection there's a 30-second wait for grouping, plus delivery time.
+- Within 24 hours, the same symbol only triggers again when the move doubles. Changes in between are blocked by cooldown. See [Cooldown and repeat alerts](/en/anomaly/cooldown/).
+
+<Aside>
+Loosening your personal filter can get you more possible anomalies. The system's 10% threshold and three checks still apply, though, so a lower filter won't make alerts arrive much earlier.
+</Aside>

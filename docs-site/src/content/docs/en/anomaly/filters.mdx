@@ -1,0 +1,43 @@
+---
+title: Filters
+description: The anomaly filters you can adjust, and how they relate to the system thresholds.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+The system detection thresholds are the same for every account. Filters are your personal preferences. After the system detects an anomaly, your filters screen it a second time to decide whether that alert reaches you.
+
+## What you can adjust
+
+| Setting | Default | Range | Notes |
+| --- | --- | --- | --- |
+| Crypto minimum move | 25% | 10% to 100% | Measured after removing BTC's move |
+| Stock minimum move | 3% | 2% to 50% | Uses the contract's own move |
+| Crypto contracts | On | On or off | When off, you get no crypto anomalies |
+| Stock & TradFi contracts | On | On or off | When off, you get no stock anomalies |
+
+The main **Anomaly pushes** switch is off by default. You need to turn it on before anything is sent.
+
+When you're done, click **Save filters**. To throw away your edits, click **Discard changes** to go back to your previous settings.
+
+## How filters apply
+
+Take crypto as an example. For an anomaly to reach you, it has to pass these checks in order:
+
+1. The three system thresholds: 6x volatility, 3x volume and at least 10% relative to BTC.
+2. Your filter: at least the percentage you set, relative to BTC.
+3. Your cooldown: no bigger move in the same direction was sent to you in the last 24 hours, or this move has at least doubled.
+
+<Aside type="tip" title="What happens at 10%">
+Setting 10% means no extra personal filtering, so you get every crypto anomaly the system detects. The system's own minimum is already 10%, so a lower value would do nothing. That's why 10% is the lowest value you can enter.
+</Aside>
+
+## Recent anomalies list
+
+**Recent anomalies**, at the bottom of the Anomalies page, shows the detection log shared by all users. Not every entry in the list was sent to you. Before sending, the system checks each one against your own switches, filter thresholds and cooldown rules.
+
+Each entry shows:
+
+- The move and window, for example `+18.4% / 1h`;
+- How many times usual the volatility is, and how many times usual the volume is;
+- For crypto, the move relative to BTC and the market cap. For stocks, the trading session (US regular hours, off-hours or weekend).

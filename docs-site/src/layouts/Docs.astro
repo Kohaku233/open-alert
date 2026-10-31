@@ -1,7 +1,8 @@
 ---
 import { ClientRouter } from 'astro:transitions';
 import '../styles/site.css';
-import { nav, href } from '../nav';
+import { nav } from '../nav';
+import { langOf, htmlLang, pageHref, counterpart, ui } from '../i18n';
 
 interface Heading { depth: number; slug: string; text: string }
 interface Props {
@@ -15,23 +16,35 @@ interface Props {
   noindex?: boolean;
 }
 const { title, description, current, group, meta = [], headings = [], pager, noindex } = Astro.props;
+const lang = langOf(Astro.url.pathname);
+const t = ui(lang);
+const home = pageHref(lang);
 const { getEntry } = await import('astro:content');
 const groups = await Promise.all(nav.map(async (g) => ({
-  label: g.label,
-  links: await Promise.all(g.items.map(async (id) => ({ id, href: href(id), title: (await getEntry('docs', id))?.data.title ?? id }))),
+  label: g.label[lang],
+  links: await Promise.all(g.items.map(async (id) => ({ id, href: pageHref(lang, id), title: (await getEntry('docs', lang === 'en' ? `en/${id}` : id))?.data.title ?? id }))),
 })));
 const toc = headings.filter((h) => h.depth === 2);
-const pageTitle = current === undefined && !group ? title : `${title} · 价格哨站文档`;
+const pageTitle = current === undefined && !group ? title : `${title} · ${t.siteSuffix}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
+// The other language's copy of this page. 404 pages link to the other home page.
+const otherPath = noindex ? pageHref(lang === 'en' ? 'zh' : 'en') : counterpart(Astro.url.pathname);
+const zhUrl = new URL(lang === 'zh' ? Astro.url.pathname : otherPath, Astro.site);
+const enUrl = new URL(lang === 'en' ? Astro.url.pathname : otherPath, Astro.site);
 ---
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang={htmlLang(lang)} data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{pageTitle}</title>
   <meta name="description" content={description} />
   <link rel="canonical" href={canonical} />
+  {!noindex && <>
+    <link rel="alternate" hreflang="zh-CN" href={zhUrl} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="x-default" href={zhUrl} />
+  </>}
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="sitemap" href="/sitemap-index.xml" />
   <link rel="preload" href="/fonts/Geist-400.woff2" as="font" type="font/woff2" crossorigin />
@@ -56,29 +69,31 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   <ClientRouter />
 </head>
 <body>
-  <a class="skip" href="#content">跳到正文</a>
+  <a class="skip" href="#content">{t.skip}</a>
   <header class="top" transition:animate="none">
-    <a class="brand" href="/" aria-label="价格哨站文档首页">
+    <a class="brand" href={home} aria-label={t.homeAria}>
       <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 22A16 16 0 0 1 40 22Z" fill="var(--mark-top)" transform="translate(3 -1.5)"/><path d="M8 26A16 16 0 0 0 40 26Z" fill="var(--mark-bottom)" transform="translate(-3 1.5)"/></svg>
-      <span>价格哨站<small>openalert</small></span><span class="tag">docs</span>
+      <span>{t.siteName}<small>{lang === 'en' ? 'price alerts' : 'openalert'}</small></span><span class="tag">docs</span>
     </a>
-    <button class="search" type="button" data-find-open aria-label="搜索文档">
+    <button class="search" type="button" data-find-open aria-label={t.search}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      搜索文档、规则、通知渠道…<kbd data-find-key>⌘K</kbd>
+      {t.searchHint}<kbd data-find-key>⌘K</kbd>
     </button>
-    <nav class="top-links" aria-label="站点">
-      <button class="pill find-btn" type="button" data-find-open aria-label="搜索文档">
+    <nav class="top-links" aria-label={t.site}>
+      <button class="pill find-btn" type="button" data-find-open aria-label={t.search}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
-      <button class="pill theme" id="theme" type="button" aria-label="切换明暗主题">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path class="moon" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg><span>深色</span></button>
-      <button class="pill menu" id="menu" type="button" aria-label="打开文档目录" aria-expanded="false" aria-controls="side">
+      <button class="pill theme" id="theme" type="button" aria-label={t.theme} data-dark={t.dark} data-light={t.light}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path class="moon" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg><span>{t.dark}</span></button>
+      <a class="pill lang" href={otherPath} hreflang={lang === 'en' ? 'zh-CN' : 'en'} lang={lang === 'en' ? 'zh-CN' : 'en'} aria-label={t.switchAria} data-astro-reload>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg><span>{t.switchTo}</span></a>
+      <button class="pill menu" id="menu" type="button" aria-label={t.menu} aria-expanded="false" aria-controls="side">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      <a class="pill solid" href="https://cryptotool.bar">打开控制台</a>
+      <a class="pill solid" href="https://cryptotool.bar">{t.console}</a>
     </nav>
   </header>
 
   <div class="shell">
-    <aside class="side" id="side" aria-label="文档目录" transition:persist transition:animate="none">
+    <aside class="side" id="side" aria-label={t.sidebar} transition:persist transition:animate="none">
       {groups.map((g) => (
         <div class="group"><h4>{g.label}</h4>
           {g.links.map((l) => <a href={l.href} aria-current={l.id === current ? 'page' : undefined}>{l.title}</a>)}
@@ -88,7 +103,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     <main id="content" transition:animate="fade">
       <div class="crumbs">
-        <a href="/">文档</a>
+        <a href={home}>{t.crumbsHome}</a>
         {group && <><span>/</span>{group}</>}
         {current !== undefined && <><span>/</span><b>{title}</b></>}
       </div>
@@ -99,27 +114,27 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         <div class="prose"><slot /></div>
       </article>
       {pager && (pager.prev || pager.next) && (
-        <nav class="pager" aria-label="上一篇和下一篇">
-          {pager.prev && <a href={pager.prev.href}><small>上一篇</small>{pager.prev.title}</a>}
-          {pager.next && <a class="next" href={pager.next.href}><small>下一篇</small>{pager.next.title}</a>}
+        <nav class="pager" aria-label={t.pager}>
+          {pager.prev && <a href={pager.prev.href}><small>{t.prev}</small>{pager.prev.title}</a>}
+          {pager.next && <a class="next" href={pager.next.href}><small>{t.next}</small>{pager.next.title}</a>}
         </nav>
       )}
     </main>
 
     {toc.length > 0 && (
-      <aside class="toc" aria-label="本页目录"><h4>本页内容</h4>
+      <aside class="toc" aria-label={t.toc}><h4>{t.tocTitle}</h4>
         {toc.map((h) => <a href={`#${h.slug}`}>{h.text}</a>)}
       </aside>
     )}
   </div>
 
-  <dialog class="find" id="find" aria-label="搜索文档">
+  <dialog class="find" id="find" aria-label={t.search} data-empty={t.searchEmpty} data-down={t.searchDown} data-none={t.searchNone}>
     <div class="find-head">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input type="search" placeholder="搜索文档、规则、通知渠道…" aria-label="搜索关键词" autocomplete="off" />
-      <button type="button" data-find-close>关闭</button>
+      <input type="search" placeholder={t.searchHint} aria-label={t.searchInput} autocomplete="off" />
+      <button type="button" data-find-close>{t.close}</button>
     </div>
-    <ul class="find-list" role="listbox" aria-label="搜索结果"></ul>
+    <ul class="find-list" role="listbox" aria-label={t.searchResults}></ul>
   </dialog>
 
   <script>
@@ -139,13 +154,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       document.querySelectorAll('.prose h2[id]').forEach((h) => {
         if (h.querySelector('.anchor')) return;
         const a = document.createElement('a'); a.className = 'anchor'; a.href = '#' + h.id; a.textContent = '#';
-        a.setAttribute('aria-label', '链接到本节'); a.setAttribute('data-pagefind-ignore', ''); h.append(a);
+        a.setAttribute('aria-label', root.lang === 'en' ? 'Link to this section' : '链接到本节'); a.setAttribute('data-pagefind-ignore', ''); h.append(a);
       });
 
       const themeButton = document.getElementById('theme')!;
       const paintTheme = () => {
         const dark = root.dataset.theme === 'dark';
-        themeButton.querySelector('span')!.textContent = dark ? '深色' : '浅色';
+        themeButton.querySelector('span')!.textContent = (dark ? themeButton.dataset.dark : themeButton.dataset.light) ?? '';
         themeButton.querySelector<SVGElement>('.moon')!.style.display = dark ? '' : 'none';
         themeButton.querySelector<SVGElement>('.sun')!.style.display = dark ? 'none' : '';
       };

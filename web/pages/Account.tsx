@@ -9,7 +9,7 @@ import { Badge } from '../components/ui/badge.js';
 import { FormError } from '../components/Dialog.js';
 import { errorText, request } from '../api.js';
 import { t } from '../i18n.js';
-import { DOCS_ORIGIN, DocsLink } from '../components/DocsLink.js';
+import { DocsLink, docsUrl } from '../components/DocsLink.js';
 
 export function Account({ model, navigate, logout, logoutBusy }: {
   model: WorkspaceModel; notify: (text: string) => void; navigate: (path: string) => void;
@@ -46,7 +46,7 @@ export function Account({ model, navigate, logout, logoutBusy }: {
           <div><dt>{t('可用登录方式')}</dt><dd>{[capabilities?.emailOtp?t('邮箱验证码'):null,capabilities?.google?'Google':null].filter(Boolean).join(' · ')||'—'}</dd></div></dl>
         <div className="settings-account-actions"><Button disabled={logoutBusy} loading={logoutBusy} onClick={logout}>{logoutBusy?t('正在退出…'):t('退出登录')}</Button>
           {admin&&<Button className="mobile-admin-link" onClick={()=>navigate('/admin')}>{t('进入管理台')} ↗</Button>}
-          <Button asChild className="mobile-docs-link"><a href={DOCS_ORIGIN+'/'} target="_blank" rel="noopener">{t('使用文档')} ↗<span className="sr-only">{t('（在新标签页打开）')}</span></a></Button></div>
+          <Button asChild className="mobile-docs-link"><a href={docsUrl()} target="_blank" rel="noopener">{t('使用文档')} ↗<span className="sr-only">{t('（在新标签页打开）')}</span></a></Button></div>
       </Panel>
       <Panel className="settings-panel settings-access"><div className="settings-section-head"><div><span className="section-index">02 — ACCESS</span><h2>{t('测试资格与用量')}</h2></div>{overview&&<Badge variant="outline" className="settings-beta-badge">Pro · {t('邀请测试版')}</Badge>}</div>
         {!overview&&loading?<ListSkeleton label={t('正在读取测试资格与用量…')} rows={3}/>:overview&&

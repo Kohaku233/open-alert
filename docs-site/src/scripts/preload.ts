@@ -49,6 +49,9 @@ export function setupPreload() {
 
   document.addEventListener('astro:before-preparation', (event) => {
     const e = event as Event & { to: URL; formData?: FormData; newDocument: Document; loader: () => Promise<void> };
+    // Switching language loads the page in full, so search picks up that language's index.
+    const isEn = (path: string) => /^\/en(\/|$)/.test(path);
+    if (isEn(e.to.pathname) !== isEn(location.pathname)) { e.preventDefault(); return; }
     const key = e.formData ? null : keyOf(e.to.href);
     const hit = key ? cache.get(key) : undefined;
     if (!hit || Date.now() - hit.at >= TTL) return;

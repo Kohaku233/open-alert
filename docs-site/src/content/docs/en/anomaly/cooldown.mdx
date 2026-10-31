@@ -1,0 +1,28 @@
+---
+title: Cooldown and repeat alerts
+description: When you'll be alerted again about the same symbol.
+---
+
+Cooldown is based strictly on the pushes **you** actually received. Whether other users got an alert has no effect on what you receive.
+
+## Rules
+
+| Situation | Will you be alerted again? |
+| --- | --- |
+| More than 24 hours since the last push | Yes, as long as it passes detection and your filters |
+| Within 24 hours, still moving the same direction | Only once the move reaches 2x the last one |
+| Within 24 hours, direction reverses | Yes, but it still has to pass detection and your filters |
+
+## An example
+
+At 10 a.m., a coin is up 15% relative to BTC, and you get an alert.
+
+- At noon it's up 25%: no alert, because that's not yet 2x 15%.
+- In the afternoon it's up 31%: alert, because it's past 30%.
+- In the evening it falls back, and the drop also meets the threshold: alert, because the direction reversed.
+
+## Good to know
+
+- One symbol shares a single cooldown across exchanges and calculation windows. If it triggered a push on Binance and shows up again on OKX shortly after, that counts as the same alert.
+- The system writes the cooldown record before the push goes out. So even if a push fails because a notification channel is down, smaller moves in the same direction within 24 hours won't be sent to make up for it.
+- Anomaly pushes don't retry automatically after a failure the way price alerts do. If a notification channel has a brief network problem, you may miss that alert entirely.

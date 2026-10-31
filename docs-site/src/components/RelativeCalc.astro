@@ -1,13 +1,20 @@
 ---
 // Same formula as src/anomaly/rules.ts: relative = (1 + coin) / (1 + btc) - 1.
+import { langOf } from '../i18n';
+const en = langOf(Astro.url.pathname) === 'en';
+const t = en
+  ? { btc: 'BTC move', coin: 'Coin move', rel: 'Move relative to BTC', filter: 'Meets the 25% default filter', floor: 'Meets the 10% system floor', below: 'Below 10%',
+      note: 'Drag the sliders to try it. This only shows the move check; a real trigger also needs the volatility multiple and the volume surge.' }
+  : { btc: 'BTC 涨跌', coin: '币种涨跌', rel: '相对 BTC 的幅度', filter: '达到默认过滤 25%', floor: '达到系统门槛 10%', below: '未达到 10%',
+      note: '拖动滑块试试。这里只演示幅度这一项，真正触发还要同时满足波动倍数和放量。' };
 ---
-<div class="oa-calc" data-oa-calc>
-  <div class="oa-row"><label for="oa-btc">BTC 涨跌</label><input id="oa-btc" type="range" min="-10" max="10" step="0.5" value="2"/><output data-btc>+2.0%</output></div>
-  <div class="oa-row"><label for="oa-coin">币种涨跌</label><input id="oa-coin" type="range" min="-40" max="60" step="0.5" value="12.5"/><output data-coin>+12.5%</output></div>
+<div class="oa-calc" data-oa-calc data-filter={t.filter} data-floor={t.floor} data-below={t.below}>
+  <div class="oa-row"><label for="oa-btc">{t.btc}</label><input id="oa-btc" type="range" min="-10" max="10" step="0.5" value="2"/><output data-btc>+2.0%</output></div>
+  <div class="oa-row"><label for="oa-coin">{t.coin}</label><input id="oa-coin" type="range" min="-40" max="60" step="0.5" value="12.5"/><output data-coin>+12.5%</output></div>
   <div class="oa-result">
-    <span>相对 BTC 的幅度</span><b data-rel>+10.3%</b><span class="oa-verdict" data-verdict>达到系统门槛 10%</span>
+    <span>{t.rel}</span><b data-rel>+10.3%</b><span class="oa-verdict" data-verdict>{t.floor}</span>
   </div>
-  <p class="oa-note">拖动滑块试试。这里只演示幅度这一项，真正触发还要同时满足波动倍数和放量。</p>
+  <p class="oa-note">{t.note}</p>
 </div>
 <style>
   .oa-calc { margin: 20px 0 26px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
@@ -36,7 +43,7 @@
       out('[data-coin]').textContent = pct(c * 100);
       const rel = out('[data-rel]'); rel.textContent = pct(r * 100); rel.classList.toggle('up', r >= 0); rel.classList.toggle('down', r < 0);
       const v = out('[data-verdict]');
-      v.textContent = a >= 0.25 ? '达到默认过滤 25%' : a >= 0.10 ? '达到系统门槛 10%' : '未达到 10%';
+      v.textContent = (a >= 0.25 ? root.dataset.filter : a >= 0.10 ? root.dataset.floor : root.dataset.below) ?? '';
       v.classList.toggle('ok', a >= 0.10);
     };
     btc!.addEventListener('input', update); coin!.addEventListener('input', update); update();

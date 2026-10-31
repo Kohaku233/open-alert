@@ -38,25 +38,28 @@ function bindDialog() {
   dialog.querySelector<HTMLElement>('[data-find-close]')!.onclick = () => dialog.close();
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
 
+  const text = (key: 'empty' | 'down' | 'none') => dialog.dataset[key] ?? '';
   let seq = 0;
   const show = (html: string) => { list.innerHTML = html; };
   const empty = (text: string) => show(`<li class="find-empty">${text}</li>`);
-  empty('输入关键词，例如“冷却”“Discord”“相对 BTC”。');
+  empty(text('empty'));
   input.addEventListener('input', async () => {
     const q = input.value.trim(); const id = ++seq;
-    if (!q) return empty('输入关键词，例如“冷却”“Discord”“相对 BTC”。');
+    if (!q) return empty(text('empty'));
     const pf = await load();
     if (id !== seq) return;
-    if (!pf) return empty('搜索暂时不可用，请刷新页面后再试。');
+    if (!pf) return empty(text('down'));
     const found = await pf.search(q);
     const items = await Promise.all(found.results.slice(0, 8).map((r) => r.data()));
     if (id !== seq) return;
-    if (!items.length) return empty('没有找到相关内容，换个说法试试。');
+    if (!items.length) return empty(text('none'));
     const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
     show(items.map((r) => `<li><a href="${esc(r.url)}"><b>${esc(r.meta.title ?? r.url)}</b><span>${r.excerpt}</span></a></li>`).join(''));
   });
   input.addEventListener('keydown', (e) => {
     const anchors = [...list.querySelectorAll<HTMLAnchorElement>('a')];
+    // A search field's first Escape only clears the text; close the dialog straight away instead.
+    if (e.key === 'Escape') { e.preventDefault(); dialog.close(); return; }
     if (e.key === 'Enter' && anchors[0]) { e.preventDefault(); dialog.close(); void navigate(anchors[0].href); }
     if (e.key === 'ArrowDown' && anchors[0]) { e.preventDefault(); anchors[0].focus(); }
   });

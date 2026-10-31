@@ -4,7 +4,7 @@ import { Button } from "./ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.js";
 import { Preferences } from "./Preferences.js";
 import { t } from "../i18n.js";
-import { DOCS_ORIGIN } from "./DocsLink.js";
+import { docsUrl } from "./DocsLink.js";
 
 export function AccountMenu({
   name,
@@ -66,7 +66,7 @@ export function AccountMenu({
               {t(label)}
             </a>
           ))}
-          <a className="account-menu-docs" href={DOCS_ORIGIN + "/"} target="_blank" rel="noopener" onClick={() => setOpen(false)}>
+          <a className="account-menu-docs" href={docsUrl()} target="_blank" rel="noopener" onClick={() => setOpen(false)}>
             <BookOpen aria-hidden="true" />
             {t("使用文档")}
             <ArrowUpRight aria-hidden="true" className="account-menu-external" />

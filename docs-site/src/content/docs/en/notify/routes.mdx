@@ -1,0 +1,52 @@
+---
+title: Delivery rules
+description: Choose which channels get each type of message, and set priority, daily limits and quiet hours.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+Delivery rules decide which channels receive each type of message. There are three types:
+
+| Message | When it is sent |
+| --- | --- |
+| Price alerts | The price reaches your target price |
+| Crypto anomalies | A crypto perpetual contract shows an anomaly |
+| Stock anomalies | A TradFi contract, such as a US stock, shows an anomaly |
+
+Under each message type, you will see all the notification channels you have added. Turn on a channel's switch to send that type of message to it. One message type can go to several channels, and one channel can receive several message types. After making changes, be sure to click **Save routing**.
+
+## Settings for each message type
+
+### Priority
+
+This only applies to Pushover:
+
+| Priority | What happens |
+| --- | --- |
+| Emergency | Keeps alerting you until you acknowledge it or it expires |
+| High priority | Alerts once and can get past some of your phone's silent settings |
+| Normal priority | Alerts once as usual |
+| Low priority | Shows the message without a sound |
+| Silent | No alert. The message just stays in Pushover |
+
+Expand **Pushover sound and emergency repeats** to set the sound name (for example `siren` or `pushover`). With Emergency selected, you can also set the retry interval (at least 30 seconds) and the expiry (up to 3 hours, and no shorter than the retry interval).
+
+<Aside type="tip">
+Give price alerts and anomaly notifications different sounds. Then you can tell them apart without looking at your screen.
+</Aside>
+
+### Daily limit
+
+This is the most messages of each type a channel can receive per day. You can set it anywhere from 1 to 50. Limits reset at 00:00 UTC (8:00 AM Beijing time).
+
+Price alerts also have a daily attempt count for the whole account, which includes failed retries. See [Limits](/en/account/limits/).
+
+### Quiet hours
+
+Turn on quiet hours to set a start and end time (23:00 to 07:00 by default). During that window, messages of that type are paused. The times use the local time zone of the device you used when you saved the setting. The start and end times cannot be the same.
+
+## Common setups
+
+**Price alerts to your phone, anomalies to a Discord channel.** For price alerts, turn on only the Pushover channel. For crypto anomalies, turn on only the Discord channel.
+
+**Only price alerts at night.** Turn on quiet hours for crypto anomalies and stock anomalies, and leave them off for price alerts.

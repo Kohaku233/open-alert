@@ -1,0 +1,43 @@
+---
+title: Create your first alert
+description: Pick a market, enter a target price, and turn on monitoring to set up your first price alert step by step.
+---
+
+import Steps from '../../../../components/Steps.astro';
+import Aside from '../../../../components/Aside.astro';
+
+<Steps>
+
+1. **Pick an asset**
+
+   Type a coin symbol, such as `BTC`, into the search box at the top of the Prices page. Results are grouped by asset. Clicking an asset name opens it on your preferred exchange (Binance first). Click an exchange tag on the right to switch quickly.
+
+2. **Check the exchange and market type**
+
+   Below the asset name, you can switch the exchange (Binance, OKX, MEXC) and the market type (spot or USDT perpetual). Your alert will use exactly the exchange and market you save here.
+
+3. **Create the alert**
+
+   Click **Create alert** and fill in:
+
+   - **Alert name**: a name that's easy for you to recognize, such as "Break above prior high".
+   - **Trigger condition**: choose "At or above" or "At or below".
+   - **Price**: your target price. It must be greater than zero.
+
+   You can also hover over or long-press a price level on the chart, then click the **+** that appears to create an alert right there.
+
+4. **Turn on the monitoring switch**
+
+   The monitoring switch is off by default for new accounts. Once you turn it on, the backend starts checking all of your enabled alerts.
+
+</Steps>
+
+## Will it trigger as soon as I save?
+
+It can. If the latest trade price on the exchange already meets your condition, the alert triggers on the first fresh price after you save. For example, if BTC is at 70,000 and your condition is "At or below 72,000", you'll get a notification within seconds of saving.
+
+<Aside type="caution" title="Chart drawings don't send alerts">
+Trend lines, horizontal lines, and other drawings on the chart are only there to help you read it. They never trigger notifications. If you want an alert at a key price, create an alert for it.
+</Aside>
+
+Next: learn [how price alerts trigger](/en/alerts/how-it-works/).

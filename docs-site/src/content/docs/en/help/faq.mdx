@@ -1,0 +1,45 @@
+---
+title: FAQ
+description: What to check when you miss an alert, get one twice, or see prices that don't match.
+---
+
+## The price hit my target but I got no alert
+
+Check these in order:
+
+1. Is the **Monitoring switch** on? It is off by default for new accounts.
+2. Is the alert **Armed**? An alert that has already triggered needs to be rearmed.
+3. Is the price the trade price on the **Selected exchange**? Prices differ between exchanges.
+4. In **Delivery rules**, are price alerts routed to at least one **Enabled** channel?
+5. What status does that notification show in **Delivery history**? "Skipped" usually means quiet hours or the daily limit blocked it.
+6. If the price only spiked for an instant, the server may have missed it. See [How fast alerts fire](/en/alerts/how-it-works/#how-quickly-prices-are-checked).
+
+## Anomaly alerts arrive too late
+
+Anomaly rules look for extreme moves, so the thresholds are high. After the first detection, the system also waits 30 seconds to group related moves. By the time the notification reaches you, the market has often already moved a good distance. See [Why alerts are sometimes late](/en/anomaly/rules/#why-alerts-sometimes-arrive-late) for details.
+
+## I saw a coin surge, so why no anomaly alert?
+
+Common reasons:
+
+- BTC rose at the same time, so the move relative to BTC wasn't big enough.
+- Trading volume didn't reach 3 times its usual level.
+- The contract's 24-hour volume or market cap is under $10 million, so it isn't monitored.
+- A move in the same direction was already sent in the past 24 hours, and this one hasn't doubled it yet.
+- The gain didn't reach your filters (25% by default).
+
+## I got "Delivery uncertain"
+
+This means the notification was sent to the provider, but no clear delivery receipt came back. The message may have reached your device. To avoid sending you the same message twice, the system **does not resend it automatically**. Check your phone or other receiving end first, then decide whether to rearm the alert or send a test.
+
+## Chart prices don't match alert prices
+
+Alerts are based only on the latest real trade prices the server collects. The TradingView chart is for reference, and its data source may differ slightly. Switch to the built-in chart instead. It uses data from the same exchange as your alerts.
+
+## Do I need to keep the page open?
+
+No. Checks and delivery all run on the server, so you still get alerts after you close your browser.
+
+## Still stuck?
+
+Contact the person who invited you to Open Alert. Include the time and status of the matching entry in your delivery history so they can look into it.
