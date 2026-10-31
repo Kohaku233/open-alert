@@ -184,6 +184,30 @@
   color: var(--card);
   pointer-events: none;
 }
+/* TradingView-style log/auto toggles in the plot's bottom-right corner, beside both axes. */
+.chart-scale-modes {
+  position: absolute;
+  z-index: 4;
+  right: calc(var(--price-scale-width, 60px) + 6px);
+  bottom: calc(var(--time-scale-height, 28px) + 6px);
+  display: flex;
+  gap: 2px;
+}
+.chart-scale-modes button {
+  min-width: 34px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  font: 11px/1 var(--mono-font);
+  letter-spacing: .02em;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.chart-scale-modes button:hover { color: var(--text); border-color: var(--control-border); }
+.chart-scale-modes button[aria-pressed="true"] { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--selected); }
+.chart-scale-modes button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .chart-countdown.up { background: var(--signal); }
 .chart-countdown.down { background: var(--danger); }
 .chart-tool-hint {
@@ -267,6 +291,7 @@
   .draw-rail [data-slot="button"] { width: 36px; height: 36px; min-height: 36px; }
   .draw-favbar [data-slot="button"] { width: 34px; height: 34px; min-height: 34px; }
   .chart-legend { top: 8px; left: 58px; font-size: 10px; }
+  .chart-scale-modes button { min-width: 44px; height: 36px; font-size: 12px; }
   .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
 }
 /* Phones: keep close + change on one line; full OHL appears from tablet width up. */

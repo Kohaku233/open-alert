@@ -1,4 +1,4 @@
-import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, createChart } from 'lightweight-charts';
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
 import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
 import { DrawingManager } from 'lightweight-charts-drawing';
 import type { Drawing, DrawingKind } from 'lightweight-charts-drawing';
@@ -19,6 +19,7 @@ import { Button } from './ui/button.js';
 
 const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
+const LOG_KEY = 'open-alert-chart-log';
 type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 // Lightweight Charts renders UTC; shift into the viewer's zone so axis labels read as local time.
@@ -28,6 +29,7 @@ function readFrame(): CandleTimeframe {
   try { const saved = localStorage.getItem(FRAME_KEY); if (saved && parseTimeframe(saved) === saved) return saved; } catch { /* default */ }
   return '4h';
 }
+function readLog() { try { return localStorage.getItem(LOG_KEY) === '1'; } catch { return false; } }
 function decimals(tickSize: string) {
   // Market metadata uses scientific notation for small ticks (e.g. "1e-8").
   const [coefficient = '', exponent = '0'] = tickSize.toLowerCase().split('e');
@@ -87,7 +89,10 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [, setRevision] = useState(0);
   const [now, setNow] = useState(() => Date.now());
-  const [axis, setAxis] = useState<{ width: number; lastY: number | null }>({ width: 0, lastY: null });
+  const [axis, setAxis] = useState<{ width: number; timeHeight: number; lastY: number | null; autoScale: boolean }>({ width: 0, timeHeight: 0, lastY: null, autoScale: true });
+  const [logScale, setLogScale] = useState(readLog);
+  const logRef = useRef(logScale);
+  logRef.current = logScale;
   const [tool, setTool] = useState<DrawingKind | null>(null);
   const toolRef = useRef<DrawingKind | null>(null);
   toolRef.current = tool;
@@ -107,7 +112,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--muted-foreground', '#959c94'), fontFamily: cssVar('--mono-font', 'monospace'), fontSize: 11, attributionLogo: true },
       grid: { vertLines: { color: 'transparent' }, horzLines: { color: cssVar('--line', 'rgba(128,128,128,.2)') } },
-      rightPriceScale: { borderColor: cssVar('--line', '#333') },
+      rightPriceScale: { borderColor: cssVar('--line', '#333'), mode: logRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
       timeScale: { borderColor: cssVar('--line', '#333'), timeVisible: true, secondsVisible: false, rightOffset: 6 },
       crosshair: { mode: CrosshairMode.Normal },
     });
@@ -234,9 +239,34 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const current = chartRef.current, last = bars.current.at(-1);
     if (!current) return;
     const width = current.chart.priceScale('right').width();
+    const timeHeight = current.chart.timeScale().height();
+    const autoScale = current.chart.priceScale('right').options().autoScale;
     const lastY = last && state === 'ready' ? current.candles.priceToCoordinate(last.close) : null;
-    setAxis(previous => previous.width === width && previous.lastY === lastY ? previous : { width, lastY });
+    setAxis(previous => previous.width === width && previous.timeHeight === timeHeight && previous.lastY === lastY && previous.autoScale === autoScale
+      ? previous : { width, timeHeight, lastY, autoScale });
   });
+  // Dragging or wheeling the price axis switches auto-scale off inside the library; re-read it right after.
+  useEffect(() => {
+    const container = host.current!;
+    const refresh = () => window.requestAnimationFrame(() => setRevision(value => value + 1));
+    container.addEventListener('pointerup', refresh);
+    container.addEventListener('wheel', refresh, { passive: true });
+    container.addEventListener('dblclick', refresh);
+    return () => { container.removeEventListener('pointerup', refresh); container.removeEventListener('wheel', refresh); container.removeEventListener('dblclick', refresh); };
+  }, []);
+  // TradingView-style corner toggles: "auto" fits the visible candles, "log" switches to a logarithmic price axis.
+  function toggleAutoScale() {
+    const scale = chartRef.current?.chart.priceScale('right');
+    if (!scale) return;
+    scale.setAutoScale(!scale.options().autoScale);
+    setRevision(value => value + 1);
+  }
+  function toggleLogScale() {
+    const next = !logScale;
+    setLogScale(next);
+    chartRef.current?.chart.priceScale('right').applyOptions({ mode: next ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal });
+    try { if (next) localStorage.setItem(LOG_KEY, '1'); else localStorage.removeItem(LOG_KEY); } catch { /* keep in-memory choice */ }
+  }
   // Each live trade moves the forming candle; a new bucket opens a fresh bar.
   useEffect(() => {
     if (!tick || tick.instrument !== market.instrument || state !== 'ready') return;
@@ -372,7 +402,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       <TimeframeMenu value={frame} onChange={chooseFrame} supported={supported} keyboardScope={shell}/>
       <span className="native-chart-status" role="status">{olderState === 'loading' ? t('正在加载更早的 K 线…') : olderState === 'done' ? t('已到交易所最早数据') : ''}</span>
     </div>
-    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px` } as CSSProperties}>
+    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px` } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
       {manager && state !== 'failed' && <DrawingToolbar manager={manager} tool={tool} state={drawState} scope={shell}/>}
       {textEdit && <form className="chart-text-edit" style={{ left: textEdit.x, top: textEdit.y }} onSubmit={event => { event.preventDefault(); commitText(true); }}>
@@ -386,6 +416,10 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         <span className="chart-legend-row"><b>{t('量')}</b><em className="plain">{volumeFormat.format(shown.volume)}</em>{index === bars.current.length - 1 && <><b>{t('收盘倒计时')}</b><em className="plain" data-testid="chart-countdown">{remaining}</em></>}</span>
       </div>}
       {state === 'ready' && axis.lastY !== null && <div className={`chart-countdown ${last && last.close >= last.open ? 'up' : 'down'}`} style={{ top: axis.lastY }} aria-hidden="true">{remaining}</div>}
+      {state !== 'failed' && <div className="chart-scale-modes" role="group" aria-label={t('价格坐标')}>
+        <button type="button" aria-pressed={logScale} title={t('对数坐标')} aria-label={t('对数坐标')} onClick={toggleLogScale}>log</button>
+        <button type="button" aria-pressed={axis.autoScale} title={t('自动缩放价格坐标')} aria-label={t('自动缩放价格坐标')} onClick={toggleAutoScale}>auto</button>
+      </div>}
       {tool && toolLabel && <div className="chart-tool-hint" role="status">{t('{0}：在图表上点击放置，Esc 取消', t(toolLabel))}</div>}
       {state === 'loading' && <div className="chart-loading"><LoadingStatus>{t('正在读取 {0} K 线…', source)}</LoadingStatus><div className="skeleton-chart-grid" aria-hidden="true"/></div>}
       {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t('K 线暂时不可用')}</strong><p>{error || t('交易所暂时没有返回数据。')}</p><Button variant="default" className="primary" onClick={() => setRetry(value => value + 1)}>{t('重试')}</Button></EmptyState>}

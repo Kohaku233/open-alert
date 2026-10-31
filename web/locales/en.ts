@@ -931,4 +931,7 @@ export const english: Record<string, string> = {
   "今日价格警报投递尝试": "Price-alert attempts today",
   "刷新用量": "Refresh usage",
   "行情来源": "Quote source",
+  "价格坐标": "Price scale",
+  "对数坐标": "Logarithmic scale",
+  "自动缩放价格坐标": "Auto-fit price scale",
 };
