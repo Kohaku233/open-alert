@@ -47,7 +47,6 @@ const journey = async (name, fn) => {
   }
 };
 const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ...['login','dashboard','alerts','notifications','settings','account','admin'].map(p => [`/${p}`, ['index.html','text/html']])]);
-assets.set('/fonts/Sora-Variable.ttf', ['fonts/Sora-Variable.ttf', 'font/ttf']);
 assets.set('/icon.svg', ['icon.svg', 'image/svg+xml']);
 for (const name of await readdir(join(root, 'dist/web/fonts/breakout'))) if (name.endsWith('.woff2')) assets.set('/fonts/breakout/'+name, ['fonts/breakout/'+name,'font/woff2']);
 for (const name of await readdir(join(root, 'dist/web/assets'))) assets.set(`/assets/${name}`, [`assets/${name}`, name.endsWith('.css') ? 'text/css' : 'application/javascript']);
@@ -377,6 +376,7 @@ try {
     await check('native OTP rejection', () => expect(page.getByRole('alert')).toContainText('验证码不正确或已过期'));
     await page.getByLabel('邮件中的验证码').fill('123456'); await page.getByRole('button', { name: '验证并继续' }).click();
     await check('signed in dashboard', () => expect(page.getByRole('switch')).toHaveAttribute('aria-checked','false'));
+    await check('sign-in does not replay the entrance', async () => assert.equal(await page.locator('[data-slot="boot-stage"]').count(), 0));
     await check('HttpOnly fixture cookie', async () => assert((await context.cookies(origin)).some(c => c.name === cookieName && c.httpOnly)));
     await refreshNavigation(page);
     await check('reload session persists', () => expect(page.getByRole('heading', { name: '行情与警报',exact:true })).toBeVisible());
@@ -840,6 +840,12 @@ try {
     await nav(m,'手机通知'); await noOverflow(m); await nav(m,'我的账户'); await noOverflow(m);
     await check('ordinary account hides admin nav', () => expect(m.getByRole('navigation').getByRole('link',{name:'管理',exact:true})).toHaveCount(0));
     await nav(m,'行情与警报'); await check('mobile navigation preserves chart', async () => assert(await frame.evaluate(n=>n.isConnected)));
+    await check('mobile summary opens and highlights that alert', async () => {
+      const summary=m.locator('.mobile-alert-summary').first(), name=(await summary.locator('strong').textContent())??'';
+      await summary.click(); await expect(m).toHaveURL(/\/alerts$/);
+      await expect(m.locator('.alert-row[data-focused="true"]')).toContainText(name);
+      await m.goBack(); await expect(m.locator('.mobile-market-alerts')).toBeVisible();
+    });
     await m.goto(origin+'/admin'); await check('ordinary user admin view guarded', () => expect(m.getByText('此页面仅供管理员使用。')).toBeVisible());
     await check('guard issues no admin API', async () => assert.equal(mobile.state.requests.filter(r=>r.path.startsWith('/api/admin/')).length,0));
     await mobile.context.close();

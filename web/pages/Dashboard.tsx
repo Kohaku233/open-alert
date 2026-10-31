@@ -1,8 +1,8 @@
 import { useCompactLayout } from '../useCompactLayout.js';
-import { useBootClaim } from '../components/BootStage.js';
+import { useBootClaim, useBootDone } from '../components/BootStage.js';
 import { SignalTrace, PriceDigits } from '../components/SignalTrace.js';
 import { DialogPresence, usePageMotion } from '../motion.js';
-import { Panel, PageHeader, EmptyState, Notice, Disclosure, PageError } from '../components/Surface.js';
+import { Panel, PageHeader, EmptyState, Notice, Disclosure, PageError, LoadingStatus } from '../components/Surface.js';
 import { Switch } from '../components/ui/switch.js';
 import { Badge } from '../components/ui/badge.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs.js';
@@ -23,6 +23,7 @@ import { MarketPicker } from '../components/MarketPicker.js';
 import { MarketSourceSelector } from '../components/MarketSourceSelector.js';
 import { FirstRunGuide } from '../components/FirstRunGuide.js';
 import { useMarketQuote } from '../useMarketQuote.js';
+import { useAlertLimit } from '../quotas.js';
 import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 type ConfirmAction = {
     kind: 'delete' | 'rearm';
@@ -52,6 +53,8 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     const [showAllAlerts, setShowAllAlerts] = useState(false);
     useEffect(() => { if (alertsOnly) setShowAllAlerts(true); }, [alertsOnly]);
     const [mobileChartOpen, setMobileChartOpen] = useState(false);
+    // Alert opened from the mobile market summary; the full list scrolls to it once.
+    const [focusAlert, setFocusAlert] = useState<string | null>(null);
     const [editor, setEditor] = useState<{
         alert: Alert | null;
         threshold?: number;
@@ -74,13 +77,28 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
         const linked = active ? new URLSearchParams(window.location.search).get('market') : null;
         if (linked && data?.markets.some(m => m.instrument === linked)) setSelected(linked);
     }, [active, data?.markets]);
+    useEffect(() => {
+        if (!alertsOnly || !focusAlert) return;
+        const frame = requestAnimationFrame(() => {
+            const row = pageRef.current?.querySelector<HTMLElement>(`[data-alert-id="${CSS.escape(focusAlert)}"]`);
+            if (row) {
+                row.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+                row.dataset.focused = 'true';
+                window.setTimeout(() => { delete row.dataset.focused; }, 1600);
+            }
+            setFocusAlert(null);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [alertsOnly, focusAlert]);
     const market = useRetainedMarket(data?.markets ?? [], selected);
+    const alertLimit = useAlertLimit(data);
+    const bootDone = useBootDone();
     const quoteState = useMarketQuote(selected, active && selectableMarket(findMarket(data?.markets ?? [], selected)));
     const tick = quoteState.quote;
     useBootClaim(t('正在读取交易所行情…'), active && !!selected && !tick && !quoteState.error && selectableMarket(findMarket(data?.markets ?? [], selected)), 'prices');
     const priceText = tick ? formatQuotePrice(tick.price) : '—,———.——';
     if (!data)
-        return error ? <PageError title={t("我的监控")}/> : null;
+        return error ? <PageError title={t("我的监控")}/> : active && bootDone ? <section className="route-surface"><LoadingStatus>{t("正在读取你的警报与行情…")}</LoadingStatus></section> : null;
     const available = selectableMarket(findMarket(data.markets, selected));
     const identity = marketIdentity(selected, market);
     const source = identity.venue ? venueLabels[identity.venue] : t("所选交易所");
@@ -148,15 +166,16 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     const nativeAvailable = !!market?.symbol && available;
     const tradingViewAvailable = !!market && safeChartSymbol(market.tradingViewSymbol, market);
     const showNative = chartVisited && !!market && nativeAvailable && (chartKind === 'native' || !tradingViewAvailable);
-    const canCreate = available && !busy && !error && data.alerts.length < 20;
+    const alertsFull = typeof alertLimit === 'number' && data.alerts.length >= alertLimit;
+    const canCreate = available && !busy && !error && !alertsFull;
     return <section ref={pageRef} className={`route-surface dashboard-v2 ${alertsOnly ? 'alerts-route' : ''}`} hidden={!active} data-mobile-chart={mobileChartOpen ? 'open' : 'closed'} aria-label={t("行情与警报")}>
     <PageHeader className="page-heading dashboard-heading">
-      <div className="heading-lockup"><span className="page-index">{alertsOnly ? '02 — ALERT RULES' : '01 — MARKETS · ALERTS'}</span><h1>{alertsOnly ? t("价格警报") : t("行情与警报")}</h1></div>
-      <div className="heading-actions"><Button variant="default" className="primary create-alert-button" onClick={() => setEditor({ alert: null })} disabled={busy || !available || !!error || data.alerts.length >= 20}><Icon name="plus"/>{t("创建警报")}</Button></div>
+      <div className="heading-lockup"><span className="page-index">{alertsOnly ? '01 — ALERT RULES' : '01 — MARKETS · ALERTS'}</span><h1>{alertsOnly ? t("价格警报") : t("行情与警报")}</h1></div>
+      <div className="heading-actions"><Button variant="default" className="primary create-alert-button" onClick={() => setEditor({ alert: null })} disabled={busy || !available || !!error || alertsFull}><Icon name="plus"/>{t("创建警报")}</Button></div>
     </PageHeader>
 
     {!alertsOnly && <FirstRunGuide channelConfigured={data.status.channel.configured} alertCount={data.alerts.length} monitoring={settings.enabled}
-      canCreate={available && !error && data.alerts.length < 20} canEnable={data.status.channel.configured && data.alerts.length > 0 && !settingsPending && !error} seasoned={data.alerts.some(alert => !!alert.last || alert.triggered)} busy={busy}
+      canCreate={available && !error && !alertsFull} canEnable={data.status.channel.configured && data.alerts.length > 0 && !settingsPending && !error} seasoned={data.alerts.some(alert => !!alert.last || alert.triggered)} busy={busy}
       onConfigure={() => navigate('/notifications')} onCreate={() => setEditor({ alert: null })} onEnable={() => void enableMonitoring()}/>}
 
     <section className="market-header signal-hero" aria-label={t("当前市场信号")}>
@@ -174,7 +193,7 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     </section>
 
     {quoteState.error && <Notice as="p" className="warning inline-warning" role="status">{t("行情报价更新失败，将自动重试。")}{quoteState.error}</Notice>}
-    {compact && !alertsOnly && <Panel className="mobile-market-alerts"><div className="mobile-alerts-heading"><h2>{t('本市场警报')} · {marketAlerts.length}</h2><Button variant="ghost" onClick={() => navigate('/alerts')}>{t('全部')} {data.alerts.length} →</Button></div>{marketAlerts.length ? marketAlerts.map(alert => <Button key={alert.id} variant="ghost" className={`mobile-alert-summary ${alert.side}`} onClick={() => navigate('/alerts')}><span><strong>{alert.name}</strong><small>{alert.triggered ? t('已锁定') : !settings.enabled ? t('总开关关闭') : tick ? `${t('距现价')} ${((alert.threshold / tick.price - 1) * 100).toFixed(2)}%` : t('等待报价')}</small></span><b>{alert.side === 'upper' ? '↑' : '↓'} {formatPrice(alert.threshold)}</b></Button>) : <p className="small muted">{t('此市场暂无警报')}</p>}<Button variant="ghost" className="mobile-chart-toggle" aria-expanded={mobileChartOpen} onClick={() => setMobileChartOpen(value => !value)}>{t('参考图表')} · {chartKind === 'native' ? t('内置图表') : 'TradingView'} <span>{mobileChartOpen ? '−' : '›'}</span></Button></Panel>}
+    {compact && !alertsOnly && <Panel className="mobile-market-alerts"><div className="mobile-alerts-heading"><h2>{t('本市场警报')} · {marketAlerts.length}</h2><Button variant="ghost" onClick={() => navigate('/alerts')}>{t('全部')} {data.alerts.length} →</Button></div>{marketAlerts.length ? marketAlerts.map(alert => <Button key={alert.id} variant="ghost" className={`mobile-alert-summary ${alert.side}`} onClick={() => { setFocusAlert(alert.id); navigate('/alerts'); }}><span><strong>{alert.name}</strong><small>{alert.triggered ? t('已锁定') : !settings.enabled ? t('总开关关闭') : tick ? `${t('距现价')} ${((alert.threshold / tick.price - 1) * 100).toFixed(2)}%` : t('等待报价')}</small></span><b>{alert.side === 'upper' ? '↑' : '↓'} {formatPrice(alert.threshold)}</b></Button>) : <p className="small muted">{t('此市场暂无警报')}</p>}<Button variant="ghost" className="mobile-chart-toggle" aria-expanded={mobileChartOpen} onClick={() => setMobileChartOpen(value => !value)}>{t('参考图表')} · {chartKind === 'native' ? t('内置图表') : 'TradingView'} <span>{mobileChartOpen ? '−' : '›'}</span></Button></Panel>}
     <div className="workspace dashboard-grid"><Panel className="chart-panel" aria-label={showNative ? t("内置图表") : t("TradingView 参考图表")}><div className="chart-panel-head"><div><h2>{t("参考图表")}</h2><p>{showNative ? t("拖动警报线可直接改价。") : t("显示用图表，不参与警报判断。")}</p></div><div className="chart-toolbar">{nativeAvailable && tradingViewAvailable ? <div className="chart-kind-switch" role="group" aria-label={t("图表类型")}>{(['native', 'tradingview'] as const).map(kind => <Button key={kind} type="button" variant="ghost" aria-pressed={(kind === 'native') === showNative} onClick={() => setChartKind(kind)}>{kind === 'native' ? t('内置图表') : 'TradingView'}</Button>)}</div> : <span>{showNative ? t('内置图表') : 'TradingView'}</span>}</div></div>
       {showNative && market ? <NativeChart market={market} tick={tick} alerts={marketAlerts} source={source} canCreate={canCreate}
           onRetarget={({ alert, price }) => openConfirm({ kind: 'retarget', alert, price })}
@@ -184,9 +203,9 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
       {data.marketStale && <Notice as="p" className="warning inline-warning">{t("市场目录已过期，新增市场仍需服务端确认支持。")}</Notice>}
     </Panel>{(!compact || alertsOnly) && <Panel as="aside" className="alerts-panel">
       <Tabs value={showAllAlerts ? 'all' : 'market'} onValueChange={value => setShowAllAlerts(value === 'all')} className="alert-market-tabs">
-      <div className="panel-heading"><h2>{t("价格警报 ")}<span>{data.alerts.length} / 20</span></h2><div className="alert-scope"><TabsList aria-label={t("警报范围")}>{(compact && alertsOnly ? ['all', 'market'] : ['market', 'all']).map(scope => <TabsTrigger key={scope} value={scope} aria-label={t(scope === 'all' ? '全部警报' : '当前市场')}>{scope === 'all' ? `${t('全部')} · ${data.alerts.length}` : `${identity.base || t('当前市场')}/${identity.quote || ''} · ${marketAlerts.length}`}</TabsTrigger>)}</TabsList><Badge variant="outline" className="alert-scope-count">{t("{0} 条", visibleAlerts.length)}</Badge></div></div>
+      <div className="panel-heading"><h2>{t("价格警报 ")}<span>{typeof alertLimit === 'number' ? `${data.alerts.length} / ${alertLimit}` : data.alerts.length}</span></h2><div className="alert-scope"><TabsList aria-label={t("警报范围")}>{(compact && alertsOnly ? ['all', 'market'] : ['market', 'all']).map(scope => <TabsTrigger key={scope} value={scope} aria-label={t(scope === 'all' ? '全部警报' : '当前市场')}>{scope === 'all' ? `${t('全部')} · ${data.alerts.length}` : `${identity.base || t('当前市场')}/${identity.quote || ''} · ${marketAlerts.length}`}</TabsTrigger>)}</TabsList><Badge variant="outline" className="alert-scope-count">{t("{0} 条", visibleAlerts.length)}</Badge></div></div>
       <TabsContent value={showAllAlerts ? 'all' : 'market'} className="alerts-list">{visibleAlerts.length ? visibleAlerts.map(alert => <AlertRow key={alert.id} alert={alert} markets={data.markets} settingsEnabled={settings.enabled} price={(sameMarket(alert.instrument, selected) ? tick?.price : undefined) ?? data.status.prices.find(price => sameMarket(price.instrument, alert.instrument))?.price} busy={busy} error={!!error} onSelect={() => setSelected(alert.instrument)} onEdit={() => setEditor({ alert })} onRearm={() => openConfirm({ kind: 'rearm', alert })} onDelete={() => openConfirm({ kind: 'delete', alert })}/>) : <EmptyState className="empty-list"><strong>{showAllAlerts ? t("还没有价格警报") : t("此市场暂无警报")}</strong><p>{t("为这个交易对设置目标价格，创建后开启监控总开关。")}</p><Button onClick={() => setEditor({ alert: null })} disabled={!available || busy || !!error}>{t("设置价格警报")}</Button></EmptyState>}</TabsContent></Tabs>
-      <div className="monitor-control"><span>{t("后台监控 ")}{healthLabels[data.status.health.scheduler.state]}</span><span className="monitor-updated">{loadedAt ? t("更新于 {0}", new Date(loadedAt).toLocaleTimeString('zh-CN', { hour12: false })) : t("尚未更新")}</span></div></Panel>}</div>
+      <div className="monitor-control"><span>{t("后台监控 ")}{healthLabels[data.status.health.scheduler.state]}</span><span className="monitor-updated">{loadedAt ? t("更新于 {0}", new Date(loadedAt).toLocaleTimeString(undefined, { hour12: false })) : t("尚未更新")}</span></div></Panel>}</div>
     <Disclosure className="monitor-notes" title={t("监控说明与限制")}>    <div className={`banner ${settings.enabled && data.status.channel.configured ? 'active' : ''}`}>
       {!data.status.channel.configured ? <><strong>{t("先配置手机通知。")}</strong>{t(" 添加通知渠道并选择接收价格警报，再明确启用监控。")}<Button variant="ghost" className="text-button" onClick={() => navigate('/notifications')}>{t("配置通知")}</Button></> : settings.enabled ? t("监控已启用。每条警报触发一次，后台运行时无需保持页面打开。") : t("监控已暂停。已有警报不会触发，启用后首次满足条件的新鲜价格也会触发。")}
     </div>
@@ -222,13 +241,13 @@ function AlertRow({ alert, markets, settingsEnabled, price, busy, error, onSelec
     const market = findMarket(markets, alert.instrument);
     const quote = marketQuote(alert.instrument, market);
     const state = alertState(alert);
-    return <article className={`alert-row ${alert.triggered ? 'is-triggered' : ''} ${alert.pending ? 'is-pending' : ''}`}>
-      <div className="alert-top"><div className="alert-title-block"><strong className="alert-name">{alert.name}</strong><span className={`state-label ${alert.triggered ? 'latched' : ''} ${alert.last?.outcome === 'uncertain' ? 'uncertain' : ''}`}>{!settingsEnabled && !alert.triggered && !alert.pending ? t("总开关关闭") : state}</span></div></div>
+    const paused = !alert.triggered && !alert.pending && (!settingsEnabled || !alert.enabled);
+    return <article data-alert-id={alert.id} className={`alert-row ${alert.triggered ? 'is-triggered' : ''} ${alert.pending ? 'is-pending' : ''}`}>
+      <div className="alert-top"><div className="alert-title-block"><strong className="alert-name">{alert.name}</strong><span className={`state-label ${alert.triggered ? 'latched' : ''} ${alert.last?.outcome === 'uncertain' ? 'uncertain' : ''} ${paused ? 'paused' : ''}`}>{!settingsEnabled && !alert.triggered && !alert.pending ? t("总开关关闭") : state}</span></div></div>
       <Button className="instrument-button" onClick={onSelect}>{marketLabel(alert.instrument, market)}</Button>
       <div className={`alert-detail ${alert.side}`}><span>{alert.side === 'upper' ? '↑ ' : '↓ '}{alert.side === 'upper' ? t("达到或高于") : t("达到或低于")}</span><strong>{formatPrice(alert.threshold)} <small>{quote}</small></strong>{price && <span className="alert-distance">{t("距现价")} {((alert.threshold - price) / price * 100) >= 0 ? '+' : ''}{((alert.threshold - price) / price * 100).toFixed(2)}%</span>}</div>
       {alert.pending && <p className="pending-inline">{alert.pending.phase === 'queued' ? t("已排队，等待投递") : t("已开始发送，请勿重复操作")}{t(" · 已尝试 ")}{alert.pending.attempts}{t(" 次")}</p>}
-      {alert.triggered && <div className="latch-bar"><span>{t("已触发并锁定；编辑不会解除锁定。")}{alert.last?.outcome === 'uncertain' ? t("可能已经送达，请先查看手机。") : ''}</span><Button className="rearm-button" disabled={busy || !!alert.pending || error} onClick={onRearm}>{t("重新武装")}</Button></div>}
-      {!settingsEnabled && !alert.triggered && <p className="pending-inline">{t("总开关关闭时不会触发。")}</p>}
+      {alert.triggered && <div className="latch-bar"><span>{alert.last?.outcome === 'uncertain' ? t("已触发并锁定；编辑不会解除锁定。可能已经送达，请先查看手机。") : t("已触发并锁定；编辑不会解除锁定。")}</span><Button className="rearm-button" disabled={busy || !!alert.pending || error} onClick={onRearm}>{t("重新武装")}</Button></div>}
       <div className={`rule-result ${alert.triggered ? 'trigger-result' : ''}`}>{alert.last && <><span className={alert.last.outcome === "uncertain" ? "uncertain" : "muted"}>{outcomeLabels[alert.last.outcome]}</span><time dateTime={new Date(alert.last.at).toISOString()}>{formatTime(alert.last.at)}</time></>}</div>
       <div className="alert-buttons"><Button disabled={busy || !!alert.pending || error} onClick={onEdit}>{t("编辑")}</Button><Button disabled={busy || !!alert.pending || error} onClick={onDelete}>{t("删除")}</Button></div>
     </article>;

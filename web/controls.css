@@ -15,7 +15,7 @@
 [data-slot="input"]::placeholder { color:var(--muted-foreground); }
 [data-slot="input"]:disabled { opacity:.55;cursor:not-allowed; }
 .public-shell { --field-height:48px; }
-.threshold-input { --field-height:56px;--field-size:26px;--field-padding:0 160px 0 16px; }
+.threshold-input { --field-height:56px;--field-size:26px;--field-padding:0 214px 0 16px; }
 .otp-input { --field-size:22px; }
 .ui-field-select { min-width:0;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:var(--field);color:var(--text);border:1px solid var(--control-border);border-radius:12px;text-align:left; }
 .ui-field-select>span { min-width:0;overflow-wrap:anywhere; }

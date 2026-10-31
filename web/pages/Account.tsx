@@ -10,6 +10,7 @@ import { FormError } from '../components/Dialog.js';
 import { errorText, request } from '../api.js';
 import { t } from '../i18n.js';
 import { DocsLink, docsUrl } from '../components/DocsLink.js';
+import { rememberAlertLimit } from '../quotas.js';
 
 export function Account({ model, navigate, logout, logoutBusy }: {
   model: WorkspaceModel; notify: (text: string) => void; navigate: (path: string) => void;
@@ -21,7 +22,7 @@ export function Account({ model, navigate, logout, logoutBusy }: {
   usePageMotion(root,!!model.data,true,'settings');
   const load=useCallback(async(signal?:AbortSignal)=>{
     setLoading(true);setError('');
-    try { const value=await request<AccountOverview>('/api/account','GET',undefined,signal?{signal}:{});if(!signal?.aborted)setOverview(value); }
+    try { const value=await request<AccountOverview>('/api/account','GET',undefined,signal?{signal}:{});if(!signal?.aborted){setOverview(value);rememberAlertLimit(value.access.limits.alerts);} }
     catch(cause){if(!signal?.aborted)setError(errorText(cause));}
     finally{if(!signal?.aborted)setLoading(false);}
   },[]);
@@ -51,7 +52,7 @@ export function Account({ model, navigate, logout, logoutBusy }: {
       <Panel className="settings-panel settings-access"><div className="settings-section-head"><div><span className="section-index">02 — ACCESS</span><h2>{t('测试资格与用量')}</h2></div>{overview&&<Badge variant="outline" className="settings-beta-badge">Pro · {t('邀请测试版')}</Badge>}</div>
         {!overview&&loading?<ListSkeleton label={t('正在读取测试资格与用量…')} rows={3}/>:overview&&
           <dl className="settings-usage">{metrics.map(([label,value,limit])=><div key={label}><dt>{label}</dt><dd><strong>{value??'—'}</strong><span> / {limit === null ? t('无限') : limit}</span></dd></div>)}</dl>}
-        <FormError message={error}/><div className="settings-access-actions"><Button disabled={loading} loading={loading} onClick={()=>void load()}>{t('刷新用量')}</Button><DocsLink path="/account/limits/">{t('额度说明')}</DocsLink></div>
+        <FormError message={error}/><div className="settings-access-actions">{error&&<Button disabled={loading} loading={loading} onClick={()=>void load()}>{t('重试')}</Button>}<DocsLink path="/account/limits/">{t('额度说明')}</DocsLink></div>
       </Panel>
       <Panel className="settings-panel settings-preferences"><span className="section-index">03 — PREFERENCES</span><h2>{t('偏好设置')}</h2><Preferences labels/></Panel>
     </div>

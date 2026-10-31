@@ -52,7 +52,9 @@ The provider mounts routes immediately so requests can start, while
 completes and the assembled brand rests for 240ms. This includes the localized word
 stagger, subtitle, lock line, note and status, not just the SVG mark. Claims register
 before paint (`useBootClaim`); a new claim during an exit creates a fresh keyed stage,
-and stale timeline callbacks cannot dismiss it. The exit is a single transform-only curtain lift, and reduced
+and stale timeline callbacks cannot dismiss it. The entrance plays once per page load:
+claims after it has lifted are ignored, so sign-in, retries and market switches use
+inline loading states instead of replaying the curtain. The exit is a single transform-only curtain lift, and reduced
 motion keeps the resting state without any tween or formation wait.
 
 Use these patterns before adding a page-specific equivalent. Standard text,
