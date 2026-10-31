@@ -28,6 +28,27 @@ const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
 const LOG_KEY = 'open-alert-chart-log';
 const STUDIES_KEY = 'open-alert-chart-studies';
+// Dragged pane heights, keyed by the ordered indicator panes they belong to ("rsi-…|macd-…").
+const PANE_HEIGHTS_KEY = 'open-alert-chart-pane-heights';
+const MAX_PANE_LAYOUTS = 20;
+type PaneHeights = Record<string, number[]>;
+function readPaneHeights(): PaneHeights {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(PANE_HEIGHTS_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => Array.isArray(value) && value.length > 1 && value.every(n => typeof n === 'number' && Number.isFinite(n) && n > 0)));
+  } catch { return {}; }
+}
+function writePaneHeights(signature: string, factors: number[] | null) {
+  try {
+    const all = readPaneHeights();
+    delete all[signature];
+    if (factors) all[signature] = factors;
+    // Most recent last; drop the oldest layouts beyond the cap.
+    const entries = Object.entries(all).slice(-MAX_PANE_LAYOUTS);
+    if (entries.length) localStorage.setItem(PANE_HEIGHTS_KEY, JSON.stringify(Object.fromEntries(entries))); else localStorage.removeItem(PANE_HEIGHTS_KEY);
+  } catch { /* keep in-memory layout */ }
+}
 const LEGACY_INDICATORS_KEY = 'open-alert-chart-indicators';
 type ShownStudy = SavedStudy & { hidden?: boolean };
 type StudyOutput = { title: string; color: string; values: Map<number, number> };
@@ -145,8 +166,22 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const [editing, setEditing] = useState<string | null>(null);
   // One renderer per shown study; outputs keep each plot's values by chart time for the legend.
   const renderers = useRef(new Map<string, IndicatorRenderer>());
-  // Pane layout (count + chart instance) the default heights were last applied to; drag-resized heights survive refreshes.
-  const paneLayout = useRef<{ chart: unknown; count: number } | null>(null);
+  // Pane layout (chart instance + pane signature) heights were last applied to; drag-resized heights survive live re-renders.
+  const paneLayout = useRef<{ chart: unknown; signature: string } | null>(null);
+  // Reads refs only, so the mount-time listeners below always see the current chart.
+  function savePaneHeights() {
+    const current = chartRef.current, layout = paneLayout.current;
+    if (!current || !layout?.signature || layout.chart !== current.chart) return;
+    const panes = current.chart.panes();
+    if (panes.length < 2) return;
+    const factors = panes.map(p => Number(p.getStretchFactor().toFixed(4)));
+    const main = panes.length > 2 ? 2.5 : 3;
+    const isDefault = factors.every((value, i) => Math.abs(value - (i === 0 ? main : 1)) < 1e-3);
+    const stored = readPaneHeights()[layout.signature];
+    if (isDefault) { if (stored) writePaneHeights(layout.signature, null); return; }
+    if (stored && stored.length === factors.length && stored.every((value, i) => Math.abs(value - factors[i]!) < 1e-4)) return;
+    writePaneHeights(layout.signature, factors);
+  }
   const outputs = useRef(new Map<string, StudyOutput[]>());
   const logRef = useRef(logScale);
   logRef.current = logScale;
@@ -279,11 +314,13 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     // Panes copy the price pane's scale options (log, manual range) when created; oscillators need linear, auto-fitted axes.
     const panes = current.chart.panes();
     for (const sub of panes.slice(1)) sub.priceScale('right').applyOptions({ mode: PriceScaleMode.Normal, autoScale: true });
-    // Only reset heights when panes are added or removed; live ticks re-render studies every update and must not undo a drag.
-    if (paneLayout.current?.chart !== current.chart || paneLayout.current.count !== panes.length) {
-      panes[0]?.setStretchFactor(pane > 1 ? 2.5 : 3);
-      for (const sub of panes.slice(1)) sub.setStretchFactor(1);
-      paneLayout.current = { chart: current.chart, count: panes.length };
+    // Apply heights only when the set of panes changes; live ticks re-render studies every update and must not undo a drag.
+    const signature = plan.filter(entry => entry.pane > 0).map(entry => entry.saved.id).join('|');
+    if (paneLayout.current?.chart !== current.chart || paneLayout.current.signature !== signature) {
+      const saved = signature ? readPaneHeights()[signature] : undefined;
+      if (saved && saved.length === panes.length) panes.forEach((p, i) => p.setStretchFactor(saved[i]!));
+      else { panes[0]?.setStretchFactor(pane > 1 ? 2.5 : 3); for (const sub of panes.slice(1)) sub.setStretchFactor(1); }
+      paneLayout.current = { chart: current.chart, signature };
     }
     // The library lays new panes out on its next frame; measure legend positions after that.
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => setRevision(value => value + 1)));
@@ -385,11 +422,18 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   // Dragging or wheeling the price axis switches auto-scale off inside the library; re-read it right after.
   useEffect(() => {
     const container = host.current!;
-    const refresh = () => window.requestAnimationFrame(() => setRevision(value => value + 1));
+    const refresh = () => window.requestAnimationFrame(() => { savePaneHeights(); setRevision(value => value + 1); });
     container.addEventListener('pointerup', refresh);
     container.addEventListener('wheel', refresh, { passive: true });
     container.addEventListener('dblclick', refresh);
-    return () => { container.removeEventListener('pointerup', refresh); container.removeEventListener('wheel', refresh); container.removeEventListener('dblclick', refresh); };
+    // A separator drag can end outside the chart; catch the release anywhere to save pane heights.
+    const released = () => window.requestAnimationFrame(savePaneHeights);
+    document.addEventListener('mouseup', released);
+    document.addEventListener('touchend', released);
+    return () => {
+      container.removeEventListener('pointerup', refresh); container.removeEventListener('wheel', refresh); container.removeEventListener('dblclick', refresh);
+      document.removeEventListener('mouseup', released); document.removeEventListener('touchend', released);
+    };
   }, []);
   // TradingView-style corner toggles: "auto" fits the visible candles, "log" switches to a logarithmic price axis.
   function toggleAutoScale() {

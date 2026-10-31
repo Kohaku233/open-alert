@@ -1608,9 +1608,16 @@ try {
         const quotes=requests(s,'GET','/api/quote').length;s.quotePrice=60900;await expect.poll(()=>requests(s,'GET','/api/quote').length,{timeout:15000}).toBeGreaterThan(quotes);await p.waitForTimeout(400);
         await check('resized panes keep their height after a live price update',async()=>assert.deepEqual(await paneHeights(),dragged));
         s.quotePrice=undefined;
+        await check('resized pane heights are saved in this browser',async()=>{const saved=await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-chart-pane-heights')||'{}'));assert.equal(Object.keys(saved).length,1,JSON.stringify(saved));});
+        await p.reload();await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect.poll(panes,{timeout:20000}).toBe(panesBefore+2);
+        await expect.poll(async()=>{const now=await paneHeights();return now.length===dragged.length&&now.every((h,i)=>Math.abs(h-dragged[i])<=1);},{timeout:10000}).toBe(true);
+        await check('resized pane heights come back after reload',async()=>{const now=await paneHeights();for(let i=0;i<now.length;i++)assert(Math.abs(now[i]-dragged[i])<=1,JSON.stringify([dragged,now]));});
         // Drag back so the later reload comparison sees the default layout.
-        await p.mouse.move(x,sepY-50);await p.mouse.down();await p.mouse.move(x,sepY,{steps:8});await p.mouse.up();
+        const restoredY=await p.evaluate(()=>[...document.querySelectorAll('.native-chart table tr')].filter(tr=>tr.querySelector('canvas')&&tr.getBoundingClientRect().height>40)[1].getBoundingClientRect().top-0.5);
+        await expect(p.locator('.boot-curtain')).toHaveCount(0,{timeout:10000});
+        await p.mouse.move(x,restoredY+20);await p.mouse.move(x,restoredY,{steps:4});await p.waitForTimeout(100);await p.mouse.down();await p.mouse.move(x,sepY,{steps:8});await p.mouse.up();
         await check('dragging back restores the default pane heights',async()=>{const back=await paneHeights();for(let i=0;i<back.length;i++)assert(Math.abs(back[i]-start[i])<=1,JSON.stringify([start,back]));});
+        await p.evaluate(()=>localStorage.removeItem('open-alert-chart-pane-heights'));
       }
       await check('studies survive reload',async()=>{await expect(p.getByTestId('chart-legend').locator('.chart-indicator-name')).toHaveCount(4);await expect(trigger).toContainText('6');});
       // Settings: generated from the study's own input list.
