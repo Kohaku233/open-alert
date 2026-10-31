@@ -124,8 +124,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
   <script>
     import { setupSearch } from '../scripts/search';
+    import { setupPreload } from '../scripts/preload';
     const root = document.documentElement;
     setupSearch();
+    setupPreload();
 
     // Runs on the first load and after every in-page navigation.
     document.addEventListener('astro:page-load', () => {

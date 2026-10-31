@@ -8,6 +8,6 @@ export default defineConfig({
   integrations: [mdx(), sitemap()],
   markdown: { syntaxHighlight: false },
   build: { format: 'directory' },
-  // The docs are small (about 20 pages): fetch every linked page once it scrolls into view so clicks open instantly.
-  prefetch: { prefetchAll: true, defaultStrategy: 'viewport' },
+  // Cloudflare refuses browser prefetch requests for Workers; src/scripts/preload.ts loads pages instead.
+  prefetch: false,
 });
