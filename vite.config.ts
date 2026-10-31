@@ -16,6 +16,9 @@ export default defineConfig({
       { name: 'react', test: /[\\/]node_modules[\\/](?:react|react-dom|scheduler)[\\/]/, priority: 30 },
       { name: 'motion', test: /[\\/]node_modules[\\/](?:gsap|@gsap)[\\/]/, priority: 25 },
       { name: 'ui', test: /[\\/]node_modules[\\/](?:@radix-ui|cmdk|sonner|lucide-react)[\\/]/, priority: 20 },
+      // ~9 MB of indicator code: its own chunk, fetched only when the chart shows or searches indicators.
+      // Its own dependencies (lightweight-charts) stay in their usual chunks, so the page does not import this one eagerly.
+      { name: 'indicators', test: /[\\/]node_modules[\\/](?:lightweight-charts-indicators|oakscriptjs)[\\/]/, priority: 40, includeDependenciesRecursively: false },
       { name: 'vendor', test: /[\\/]node_modules[\\/]/, priority: 10 },
     ] } } },
   },

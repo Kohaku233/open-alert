@@ -481,38 +481,60 @@
   .timeframe-list [data-slot="button"] { height: 36px; min-height: 36px; }
 }
 
-/* Indicators: "指标" menu in the chart bar, legend rows with settings/remove, oscillator pane legends. */
-:root { --indicator-1: #2f6fd6; --indicator-2: #b8650f; --indicator-3: #8a45c4; --indicator-4: #c2357a; --indicator-5: #13857a; }
-:root[data-theme="dark"] { --indicator-1: #6ea8ff; --indicator-2: #f0a35e; --indicator-3: #c49bff; --indicator-4: #ff7eb6; --indicator-5: #4fd1c5; }
+/* Indicators: "指标" button in the chart bar, TradingView-style search dialog, legend rows, oscillator pane legends. */
 .native-chart-divider { flex: none; width: 1px; height: 16px; margin: 0 6px; background: var(--line); }
 .native-chart-bar [data-slot="button"].indicator-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; }
 .indicator-trigger svg { width: 14px; height: 14px; }
 .indicator-trigger b { min-width: 16px; padding: 2px 4px; border-radius: 999px; background: var(--selected); font-weight: 400; color: var(--signal); }
-.indicator-trigger[aria-expanded="true"] { color: var(--signal); background: var(--selected); }
-[data-slot="popover-content"].indicator-popover { width: min(300px, calc(100vw - 24px)); padding: 10px; display: grid; gap: 8px; border-color: var(--line); border-radius: 14px; background: var(--card); }
-.indicator-hint { margin: 0; padding: 0 4px; font-size: 11px; line-height: 1.5; color: var(--muted-foreground); }
-.indicator-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.indicator-list [data-slot="button"] { width: 100%; height: 36px; min-height: 36px; justify-content: flex-start; gap: 10px; padding: 0 8px; border: 0; border-radius: 8px; background: none; }
-.indicator-list [data-slot="button"]:hover:not(:disabled) { background: var(--selected); }
-.indicator-list b { min-width: 42px; font: 400 12px/1 var(--mono-font); text-align: left; color: var(--text); }
-.indicator-list span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 12px; color: var(--muted-foreground); }
-.indicator-list svg { width: 14px; height: 14px; color: var(--muted-foreground); }
-.chart-indicator-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0; min-height: 18px; white-space: nowrap; }
-.chart-indicator-values { display: flex; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.chart-indicator-name { flex: none; color: var(--muted-foreground); }
+[data-slot="dialog-content"].app-dialog.indicator-dialog { width: min(640px, calc(100vw - 24px)); max-height: min(720px, calc(100dvh - 24px)); padding: 22px; grid-template-rows: auto minmax(0, 1fr); }
+.indicator-dialog .dialog-heading h2, .indicator-settings-dialog .dialog-heading h2 { font-size: 22px; }
+.indicator-search { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 10px; min-height: 0; }
+.indicator-search-field { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; padding: 0 12px; height: 42px; border: 1px solid var(--control-border); border-radius: 999px; background: var(--field); }
+.indicator-search-field:focus-within { border-color: var(--signal); }
+.indicator-search-field svg { flex: none; width: 16px; height: 16px; color: var(--muted-foreground); }
+.indicator-search-field input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; font-size: 14px; color: var(--text); outline: none; }
+.indicator-categories { display: flex; flex-wrap: wrap; gap: 4px; }
+.indicator-categories [data-slot="button"] { height: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: none; font-size: 12px; color: var(--muted-foreground); }
+.indicator-categories [data-slot="button"][aria-pressed="true"] { border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--selected); color: var(--signal); }
+.indicator-categories small { font: 10px/1 var(--mono-font); opacity: .7; }
+.indicator-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.indicator-retry[data-slot="button"] { justify-self: start; }
+.indicator-results { display: grid; align-content: start; gap: 1px; min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; border-top: 1px solid var(--line); }
+.indicator-results [data-slot="button"] { width: 100%; height: 38px; min-height: 38px; justify-content: flex-start; gap: 12px; padding: 0 10px; border: 0; border-radius: 8px; background: none; }
+.indicator-results [data-slot="button"]:hover:not(:disabled), .indicator-results [data-slot="button"]:focus-visible { background: var(--selected); }
+.indicator-results b { flex: none; width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1 var(--mono-font); text-align: left; color: var(--text); }
+.indicator-results span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 13px; color: var(--text); }
+.indicator-results small { flex: none; font-size: 11px; color: var(--muted-foreground); }
+.indicator-empty { padding: 18px 10px; font-size: 13px; color: var(--muted-foreground); }
+/* Values wrap under the title rather than being clipped: a cut-off "60" would misread "60,192". */
+.chart-indicator-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; min-height: 18px; }
+.chart-indicator-row[data-hidden="true"] .chart-indicator-name { opacity: .5; text-decoration: line-through; }
+.chart-indicator-values { display: flex; flex-wrap: wrap; gap: 0 6px; min-width: 0; white-space: nowrap; }
+.chart-indicator-name { flex: none; white-space: nowrap; color: var(--muted-foreground); }
 .chart-legend em.chart-indicator-value { margin-right: 2px; }
 .chart-indicator-actions { flex: none; display: inline-flex; gap: 1px; pointer-events: auto; opacity: .35; transition: opacity .12s; }
-.chart-indicator-row:hover .chart-indicator-actions, .chart-indicator-actions:focus-within, .chart-indicator-actions:has([aria-expanded="true"]) { opacity: 1; }
+.chart-indicator-row:hover .chart-indicator-actions, .chart-indicator-actions:focus-within { opacity: 1; }
 .chart-indicator-actions [data-slot="button"] { width: 20px; height: 18px; min-height: 18px; padding: 0; justify-content: center; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--card) 80%, transparent); color: var(--muted-foreground); }
 .chart-indicator-actions [data-slot="button"]:hover { color: var(--text); background: var(--selected); }
 .chart-indicator-actions svg { width: 12px; height: 12px; }
 .chart-pane-legend { right: calc(var(--price-scale-width, 60px) + 14px); }
-[data-slot="popover-content"].indicator-settings { width: 220px; padding: 12px; display: grid; gap: 10px; border-color: var(--line); border-radius: 14px; background: var(--card); }
-.indicator-settings strong { font: 400 12px/1.3 var(--mono-font); color: var(--text); }
-.indicator-field { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin: 0; font-size: 12px; color: var(--muted-foreground); }
-.indicator-field input { width: 84px; height: 30px; padding: 0 10px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--field); font: 12px/1 var(--mono-font); color: var(--text); text-align: right; }
+.chart-legend [data-slot="button"].chart-legend-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 4px; height: 18px; min-height: 18px; padding: 0 6px 0 2px; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--card) 80%, transparent); font: inherit; color: var(--muted-foreground); pointer-events: auto; }
+.chart-legend-toggle svg { width: 12px; height: 12px; transition: transform .12s; }
+.chart-legend-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.chart-legend-toggle:hover { color: var(--text); }
+[data-slot="dialog-content"].app-dialog.indicator-settings-dialog { width: min(440px, calc(100vw - 24px)); max-height: min(720px, calc(100dvh - 24px)); padding: 22px; overflow-y: auto; }
+.indicator-settings { display: grid; gap: 16px; margin-top: 12px; }
+.indicator-settings-section { display: grid; gap: 6px; }
+.indicator-settings-section h3 { margin: 0 0 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
+.indicator-field { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; margin: 0; font-size: 13px; color: var(--text); }
+.indicator-field > span { min-width: 0; overflow-wrap: anywhere; }
+.indicator-field input[type="number"], .indicator-field input[type="text"] { flex: none; width: 110px; height: 32px; padding: 0 10px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--field); font: 12px/1 var(--mono-font); color: var(--text); text-align: right; }
 .indicator-field input:focus-visible { outline: none; border-color: var(--signal); }
 .indicator-field input[aria-invalid="true"] { border-color: var(--danger); }
+.indicator-field input[type="color"] { flex: none; width: 40px; height: 30px; padding: 2px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--field); cursor: pointer; }
+.indicator-field button.ui-field-select { flex: none; width: 150px; min-height: 32px; height: 32px; padding: 0 10px; font-size: 12px; }
+.indicator-toggle { justify-content: flex-start; cursor: pointer; }
+.indicator-settings-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 @media (max-width: 900px) {
   /* Phones use a fixed chart height; each oscillator pane adds room so the price pane keeps its size. */
   .chart-panel .native-chart-shell { height: calc(330px + min(var(--indicator-panes, 0), 3) * 110px); }
@@ -520,7 +542,14 @@
   .chart-indicator-actions { opacity: 1; }
   .chart-indicator-actions [data-slot="button"] { width: 30px; height: 26px; min-height: 26px; background: none; }
   .chart-indicator-actions svg { width: 14px; height: 14px; }
-  .indicator-list [data-slot="button"] { height: 44px; min-height: 44px; }
-  .indicator-field input { height: 40px; font-size: 16px; }
+  .chart-legend [data-slot="button"].chart-legend-toggle { height: 28px; min-height: 28px; padding: 0 10px 0 6px; }
+  [data-slot="dialog-content"].app-dialog.indicator-dialog, [data-slot="dialog-content"].app-dialog.indicator-settings-dialog { padding: 18px 14px; }
+  .indicator-search-field input { font-size: 16px; }
+  .indicator-categories { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .indicator-categories [data-slot="button"] { flex: none; height: 36px; min-height: 36px; }
+  .indicator-results [data-slot="button"] { height: 44px; min-height: 44px; }
+  .indicator-results small { display: none; }
+  .indicator-field input[type="number"], .indicator-field input[type="text"] { height: 40px; font-size: 16px; }
+  .indicator-field button.ui-field-select { height: 40px; min-height: 40px; }
 }
-@media (prefers-reduced-motion: reduce) { .chart-indicator-actions { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .chart-indicator-actions, .chart-legend-toggle svg { transition: none; } }

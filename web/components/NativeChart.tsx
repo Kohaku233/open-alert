@@ -1,5 +1,6 @@
-import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
-import type { HistogramData, IChartApi, IPriceLine, ISeriesApi, LineData, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineStyle, PriceScaleMode, createChart } from 'lightweight-charts';
+import type { IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time, UTCTimestamp } from 'lightweight-charts';
+import type { IndicatorRenderer } from 'lightweight-charts-indicators/render';
 import { DrawingManager } from 'lightweight-charts-drawing';
 import type { Drawing, DrawingKind } from 'lightweight-charts-drawing';
 import type { CSSProperties } from 'react';
@@ -9,9 +10,9 @@ import type { CandlePage, CandleTimeframe } from '../../src/markets/candles.js';
 import { bucketEnd, bucketStart, parseTimeframe, timeframeSupported } from '../../src/contracts/timeframes.js';
 import { TimeframeMenu } from './TimeframeMenu.js';
 import { DrawingEditBar } from './DrawingEditBar.js';
-import { IndicatorMenu, IndicatorRow } from './ChartIndicators.js';
-import { INDICATOR_COLORS, MAX_INDICATORS, computeIndicator, createIndicator, indicatorDefinition, parseIndicators } from '../indicators.js';
-import type { IndicatorInstance, IndicatorKind, IndicatorResult } from '../indicators.js';
+import { IndicatorButton, IndicatorRow, IndicatorSearchDialog, IndicatorSettingsDialog } from './ChartIndicators.js';
+import { MAX_STUDIES, loadIndicatorLibrary, migrateLegacyIndicators, parseSavedStudies, resolveInputs, studyTitle } from '../indicatorLibrary.js';
+import type { IndicatorLibrary, SavedStudy, Study } from '../indicatorLibrary.js';
 import { ALL_TOOLS, DrawingToolbar } from './DrawingToolbar.js';
 import type { MarketQuote } from '../../src/markets/quotes.js';
 import { request, errorText } from '../api.js';
@@ -20,14 +21,16 @@ import { useTheme } from '../theme.js';
 import { formatQuotePrice } from '../utils.js';
 import { EmptyState, LoadingStatus } from './Surface.js';
 import { Button } from './ui/button.js';
+import { ChevronDown } from 'lucide-react';
+import { useCompactLayout } from '../useCompactLayout.js';
 
 const FRAME_KEY = 'open-alert-chart-frame';
 const DRAWINGS_KEY = 'open-alert-drawings:';
 const LOG_KEY = 'open-alert-chart-log';
-const INDICATORS_KEY = 'open-alert-chart-indicators';
-// Fallbacks match the light-theme tokens in chart.css.
-const INDICATOR_FALLBACKS = ['#2f6fd6', '#b8650f', '#8a45c4', '#c2357a', '#13857a'];
-type IndicatorSeries = ISeriesApi<'Line'> | ISeriesApi<'Histogram'>;
+const STUDIES_KEY = 'open-alert-chart-studies';
+const LEGACY_INDICATORS_KEY = 'open-alert-chart-indicators';
+type ShownStudy = SavedStudy & { hidden?: boolean };
+type StudyOutput = { title: string; color: string; values: Map<number, number> };
 type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 // Lightweight Charts renders UTC; shift into the viewer's zone so axis labels read as local time.
@@ -37,17 +40,33 @@ function readFrame(): CandleTimeframe {
   try { const saved = localStorage.getItem(FRAME_KEY); if (saved && parseTimeframe(saved) === saved) return saved; } catch { /* default */ }
   return '4h';
 }
-function readIndicators() { try { return parseIndicators(localStorage.getItem(INDICATORS_KEY)); } catch { return []; } }
-const indicatorColor = (index: number) => cssVar(`--indicator-${index % INDICATOR_COLORS + 1}`, INDICATOR_FALLBACKS[index % INDICATOR_COLORS]!);
-/** Line colours per indicator output, in definition order; MACD's histogram is coloured per bar instead. */
-function indicatorColors(item: IndicatorInstance) {
-  const own = indicatorColor(item.color);
-  return indicatorDefinition(item.kind).lines.map(line => item.kind === 'macd' && line.key === 'signal' ? indicatorColor(item.color + 1) : own);
+function readStudies(): ShownStudy[] {
+  try {
+    const saved = localStorage.getItem(STUDIES_KEY);
+    if (saved !== null) return parseSavedStudies(saved).map((entry, i) => ({ ...entry, hidden: (JSON.parse(saved) as { hidden?: unknown }[])[i]?.hidden === true }));
+    // One-time move from the first release's own five indicators.
+    const legacy = migrateLegacyIndicators(localStorage.getItem(LEGACY_INDICATORS_KEY));
+    if (legacy.length) localStorage.setItem(STUDIES_KEY, JSON.stringify(legacy));
+    localStorage.removeItem(LEGACY_INDICATORS_KEY);
+    return legacy;
+  } catch { return []; }
 }
-const macdBar = (value: number, previous: number | null | undefined) => {
-  const strong = previous === null || previous === undefined || Math.abs(value) >= Math.abs(previous);
-  return (value >= 0 ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b')) + (strong ? 'cc' : '66');
-};
+const IANA_ZONE = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Etc/UTC'; } catch { return 'Etc/UTC'; } })();
+/** Pine timeframe strings: minutes as a bare number, then D / W. */
+const pineTimeframe = (frame: string) => { const n = Number(frame.slice(0, -1)), unit = frame.slice(-1); return unit === 'm' ? String(n) : unit === 'h' ? String(n * 60) : unit === 'd' ? `${n}D` : `${n}W`; };
+/** Copy of an indicator result with every bar time passed through `move` (plots, drawings, markers, colours). */
+function remapTimes<T>(result: T, move: (time: number) => number): T {
+  const walk = (value: unknown, key = ''): unknown => {
+    if (Array.isArray(value)) return value.map(item => walk(item));
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) out[k] = walk(v, k);
+      return out;
+    }
+    return typeof value === 'number' && (key === 'time' || key === 'time1' || key === 'time2') ? move(value) : value;
+  };
+  return walk(result) as T;
+}
 function readLog() { try { return localStorage.getItem(LOG_KEY) === '1'; } catch { return false; } }
 function decimals(tickSize: string) {
   // Market metadata uses scientific notation for small ticks (e.g. "1e-8").
@@ -110,11 +129,23 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const [now, setNow] = useState(() => Date.now());
   const [axis, setAxis] = useState<{ width: number; timeHeight: number; lastY: number | null; autoScale: boolean; mainBottom: number; paneTops: number[] }>({ width: 0, timeHeight: 0, lastY: null, autoScale: true, mainBottom: 0, paneTops: [] });
   const [logScale, setLogScale] = useState(readLog);
-  const [indicators, setIndicators] = useState(readIndicators);
-  const indicatorSeries = useRef(new Map<string, IndicatorSeries[]>());
-  const indicatorData = useRef(new Map<string, IndicatorResult>());
-  const indicatorsRef = useRef(indicators);
-  indicatorsRef.current = indicators;
+  const [studies, setStudies] = useState(readStudies);
+  const studiesRef = useRef(studies);
+  studiesRef.current = studies;
+  const [library, setLibrary] = useState<IndicatorLibrary | null>(null);
+  const [libraryError, setLibraryError] = useState('');
+  const [libraryAttempt, setLibraryAttempt] = useState(0);
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
+  const [searching, setSearching] = useState(false);
+  // Phones have little room above the candles, so overlay legend rows start collapsed there (TradingView does the same).
+  const compact = useCompactLayout();
+  const [legendOpen, setLegendOpen] = useState<boolean | null>(null);
+  const overlaysShown = legendOpen ?? !compact;
+  const [editing, setEditing] = useState<string | null>(null);
+  // One renderer per shown study; outputs keep each plot's values by chart time for the legend.
+  const renderers = useRef(new Map<string, IndicatorRenderer>());
+  const outputs = useRef(new Map<string, StudyOutput[]>());
   const logRef = useRef(logScale);
   logRef.current = logScale;
   const [tool, setTool] = useState<DrawingKind | null>(null);
@@ -172,7 +203,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       chart.unsubscribeCrosshairMove(onCrosshair);
       for (const off of offDrawing) off();
       drawings.destroy(); drawingsRef.current = null; setManager(null);
-      indicatorSeries.current.clear(); indicatorData.current.clear();
+      for (const renderer of renderers.current.values()) renderer.clear();
+      renderers.current.clear(); outputs.current.clear();
       lines.current.clear(); chartRef.current = null; chart.remove();
     };
   }, [market.instrument, market.tickSize]);
@@ -192,76 +224,73 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const upVolume = cssVar('--signal', '#d6ff4f') + '55', downVolume = cssVar('--danger', '#ff8b8b') + '55';
     current.candles.setData(bars.current.map(b => ({ time: toChart(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
     current.volume.setData(bars.current.map(b => ({ time: toChart(b.time), value: b.volume, color: b.close >= b.open ? upVolume : downVolume })));
-    fillIndicators();
+    renderStudies();
     drawingsRef.current?.redraw();
     setRevision(value => value + 1);
   }
-  // Indicators: one series per output line; price overlays share the main pane, oscillators get a pane each.
-  function syncIndicatorSeries() {
-    const current = chartRef.current;
-    if (!current) return;
-    for (const list of indicatorSeries.current.values()) for (const series of list) current.chart.removeSeries(series);
-    indicatorSeries.current.clear();
-    const precision = decimals(market.tickSize), muted = cssVar('--muted-foreground', '#959c94');
-    let sub = 0;
-    for (const item of indicatorsRef.current) {
-      const definition = indicatorDefinition(item.kind), colors = indicatorColors(item);
-      const pane = definition.pane === 'main' ? 0 : ++sub;
-      const priceFormat = item.kind === 'rsi' ? { type: 'price' as const, precision: 2, minMove: 0.01 } : { type: 'price' as const, precision: Math.max(2, precision), minMove: 10 ** -Math.max(2, precision) };
-      const list = definition.lines.map((line, i): IndicatorSeries => line.style === 'histogram'
-        ? current.chart.addSeries(HistogramSeries, { priceFormat, priceLineVisible: false, lastValueVisible: false }, pane)
-        : current.chart.addSeries(LineSeries, { color: colors[i]!, lineWidth: 1, lineStyle: line.style === 'dashed' ? LineStyle.Dashed : LineStyle.Solid, priceFormat,
-          priceLineVisible: false, lastValueVisible: pane > 0, crosshairMarkerVisible: false,
-          ...(item.kind === 'rsi' ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) } : {}) }, pane));
-      // New panes copy the price pane's scale options, including log mode and a manual (auto-off) range.
-      // Oscillators cross zero or sit in 0–100, so their pane always starts linear and auto-fitted.
-      if (pane > 0) list[0]!.priceScale().applyOptions({ mode: PriceScaleMode.Normal, autoScale: true, scaleMargins: item.kind === 'rsi' ? { top: 0.08, bottom: 0.08 } : { top: 0.1, bottom: 0.1 } });
-      if (item.kind === 'rsi') for (const level of [70, 30]) list[0]!.createPriceLine({ price: level, color: muted, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
-      indicatorSeries.current.set(item.id, list);
+  // Indicators: lightweight-charts-indicators computes each study and its renderer draws it (plots, fills, hlines,
+  // markers, labels...). Overlays share the price pane; every other study gets its own pane, in list order.
+  useEffect(() => {
+    if (!studies.length && !searching) return;
+    let live = true;
+    setLibraryError('');
+    loadIndicatorLibrary().then(loaded => { if (live) setLibrary(loaded); }).catch(cause => { if (live) setLibraryError(t('指标库加载失败：{0}', errorText(cause))); });
+    return () => { live = false; };
+  }, [studies.length > 0 || searching, libraryAttempt]);
+  function chartBars() { return bars.current.map(b => ({ time: (b.time / 1000), open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume })); }
+  function renderStudies(reuseSeries = false) {
+    const current = chartRef.current, loaded = libraryRef.current;
+    if (!current || !loaded) return;
+    const keep = new Set<string>();
+    let pane = 0;
+    const plan: { saved: ShownStudy; study: Study; pane: number }[] = [];
+    for (const saved of studiesRef.current) {
+      const study = loaded.byId.get(saved.study);
+      if (!study || saved.hidden) continue;
+      plan.push({ saved, study, pane: study.overlay ? 0 : ++pane });
     }
+    // Drop renderers of removed/hidden studies first, highest pane first, so pane indexes stay valid.
+    for (const [id, renderer] of [...renderers.current].reverse()) if (!plan.some(entry => entry.saved.id === id)) { renderer.clear(); renderers.current.delete(id); outputs.current.delete(id); }
+    // Library bars are in UTC seconds (its session and VWAP logic expects real time); the chart shows local time.
+    const libBars = chartBars(), shift = new Map(libBars.map((bar, i) => [bar.time, toChart(bars.current[i]!.time) as number]));
+    const shifted = libBars.map(bar => ({ ...bar, time: shift.get(bar.time)! }));
+    const context = { timeframe: pineTimeframe(frame), timezone: IANA_ZONE, session: '24x7', mintick: Number(market.tickSize) || 0.01, symbolType: 'crypto',
+      tickerid: market.instrument, currency: 'USDT', lastBarConfirmed: false, foregroundColor: cssVar('--text', '#f3f0e5'), backgroundColor: cssVar('--deep', '#0d1113') };
+    for (const { saved, study, pane: index } of plan) {
+      keep.add(saved.id);
+      let renderer = renderers.current.get(saved.id);
+      if (!renderer) { renderer = new loaded.Renderer(current.chart, { paneIndex: Math.max(1, index), mainSeries: current.candles }); renderers.current.set(saved.id, renderer); }
+      else renderer.setPaneIndex(Math.max(1, index));
+      const inputs = resolveInputs(study, saved.inputs);
+      let result;
+      try { result = study.calculate(libBars, inputs, context); } catch { renderer.clear(); outputs.current.delete(saved.id); continue; }
+      // Move every output time from UTC onto the chart's local-time axis.
+      const move = (time: number) => shift.get(time) ?? time + (toChart(time * 1000) - time);
+      const remapped = remapTimes(result, move);
+      renderer.render(study, remapped, shifted, { inputs, reuseSeries, lastValueVisible: index > 0 });
+      outputs.current.set(saved.id, study.plotConfig.filter(plot => plot.display !== 'none' && remapped.plots?.[plot.id]).map(plot => ({
+        title: plot.title ?? plot.id, color: plot.color ?? cssVar('--text', '#f3f0e5'),
+        values: new Map((remapped.plots[plot.id] as { time: number; value: number }[]).filter(point => Number.isFinite(point.value)).map(point => [point.time, point.value])),
+      // Outputs switched off by default inputs (e.g. RSI's Bollinger bands) have no values; leave them out of the legend.
+      })).filter(output => output.values.size > 0));
+    }
+    // Panes copy the price pane's scale options (log, manual range) when created; oscillators need linear, auto-fitted axes.
     const panes = current.chart.panes();
-    panes[0]?.setStretchFactor(sub > 1 ? 2.5 : 3);
-    for (const pane of panes.slice(1)) pane.setStretchFactor(1);
-    fillIndicators();
+    for (const sub of panes.slice(1)) sub.priceScale('right').applyOptions({ mode: PriceScaleMode.Normal, autoScale: true });
+    panes[0]?.setStretchFactor(pane > 1 ? 2.5 : 3);
+    for (const sub of panes.slice(1)) sub.setStretchFactor(1);
     // The library lays new panes out on its next frame; measure legend positions after that.
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => setRevision(value => value + 1)));
   }
-  function fillIndicators() {
-    const closes = bars.current.map(bar => bar.close), times = bars.current.map(bar => toChart(bar.time));
-    for (const item of indicatorsRef.current) {
-      const result = computeIndicator(item, closes), list = indicatorSeries.current.get(item.id);
-      indicatorData.current.set(item.id, result);
-      indicatorDefinition(item.kind).lines.forEach((line, i) => {
-        const values = result[line.key]!, series = list?.[i];
-        if (!series) return;
-        if (line.style === 'histogram') series.setData(values.flatMap((value, j): HistogramData[] => value === null ? [] : [{ time: times[j]!, value, color: macdBar(value, values[j - 1]) }]));
-        else (series as ISeriesApi<'Line'>).setData(values.flatMap((value, j): LineData[] => value === null ? [] : [{ time: times[j]!, value }]));
-      });
-    }
+  useEffect(() => { renderStudies(); }, [studies, library, market.instrument, market.tickSize, theme, frame]);
+  function saveStudies(next: ShownStudy[]) {
+    setStudies(next);
+    try { if (next.length) localStorage.setItem(STUDIES_KEY, JSON.stringify(next)); else localStorage.removeItem(STUDIES_KEY); } catch { /* keep in-memory choice */ }
   }
-  // A live trade only moves the forming bar, so earlier indicator values are unchanged; update the last point.
-  function updateIndicators() {
-    const closes = bars.current.map(bar => bar.close), last = bars.current.length - 1, time = toChart(bars.current[last]!.time);
-    for (const item of indicatorsRef.current) {
-      const result = computeIndicator(item, closes), list = indicatorSeries.current.get(item.id);
-      indicatorData.current.set(item.id, result);
-      indicatorDefinition(item.kind).lines.forEach((line, i) => {
-        const values = result[line.key]!, value = values[last], series = list?.[i];
-        if (!series || value === null || value === undefined) return;
-        if (line.style === 'histogram') series.update({ time, value, color: macdBar(value, values[last - 1]) });
-        else series.update({ time, value });
-      });
-    }
-  }
-  useEffect(() => { syncIndicatorSeries(); }, [indicators, market.instrument, market.tickSize, theme]);
-  function saveIndicators(next: IndicatorInstance[]) {
-    setIndicators(next);
-    try { if (next.length) localStorage.setItem(INDICATORS_KEY, JSON.stringify(next)); else localStorage.removeItem(INDICATORS_KEY); } catch { /* keep in-memory choice */ }
-  }
-  function addIndicator(kind: IndicatorKind) {
-    if (indicators.length >= MAX_INDICATORS) return;
-    const id = `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    saveIndicators([...indicators, createIndicator(kind, indicators, id)]);
+  function addStudy(study: Study) {
+    if (studies.length >= MAX_STUDIES) return;
+    const id = `${study.id.slice(0, 40)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    saveStudies([...studies, { id, study: study.id, inputs: {} }]);
   }
   const merge = (incoming: Bar[]) => {
     const byTime = new Map(bars.current.map(b => [b.time, b]));
@@ -323,7 +352,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     if (bar.time === last.time) bars.current[bars.current.length - 1] = bar; else bars.current.push(bar);
     current.candles.update({ time: toChart(bar.time), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
     current.volume.update({ time: toChart(bar.time), value: bar.volume, color: (bar.close >= bar.open ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b')) + '55' });
-    updateIndicators();
+    renderStudies(true);
     setRevision(value => value + 1);
   }
   // One-second clock for the candle-close countdown; the layout effect re-reads the axis geometry it is pinned to.
@@ -508,25 +537,33 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const sign = change >= 0 ? '+' : '−';
   const remaining = last ? countdown(bucketEnd(last.time, frame) - now) : '';
   const toolLabel = ALL_TOOLS.find(item => item.kind === tool)?.label;
-  const mainIndicators = indicators.filter(item => indicatorDefinition(item.kind).pane === 'main');
-  const subIndicators = indicators.filter(item => indicatorDefinition(item.kind).pane === 'sub');
-  const formatIndicator = (item: IndicatorInstance) => (value: number) => item.kind === 'rsi' ? value.toFixed(2) : formatQuotePrice(Number(value.toPrecision(item.kind === 'macd' ? 5 : 10)));
-  const indicatorRow = (item: IndicatorInstance) => {
-    const result = indicatorData.current.get(item.id), definition = indicatorDefinition(item.kind);
-    const values = definition.lines.map(line => result?.[line.key]?.[index] ?? null);
-    const colors = indicatorColors(item).map((color, i) => definition.lines[i]!.style === 'histogram' ? (values[i] ?? 0) >= 0 ? cssVar('--signal', '#d6ff4f') : cssVar('--danger', '#ff8b8b') : color);
-    return <IndicatorRow key={item.id} item={item} values={values} colors={colors} format={formatIndicator(item)}
-      onChange={params => saveIndicators(indicators.map(entry => entry.id === item.id ? { ...entry, params } : entry))}
-      onRemove={() => saveIndicators(indicators.filter(entry => entry.id !== item.id))}/>;
+  const shownTime = shown ? toChart(shown.time) as number : null;
+  const formatValue = (value: number) => Math.abs(value) >= 1e6 ? volumeFormat.format(value) : formatQuotePrice(Number(value.toPrecision(6)));
+  const studyRow = (saved: ShownStudy) => {
+    const study = library?.byId.get(saved.study);
+    if (!study) return null;
+    const values = (outputs.current.get(saved.id) ?? []).slice(0, 6).map(output => {
+      const value = shownTime === null ? undefined : output.values.get(shownTime);
+      return { text: value === undefined ? '—' : formatValue(value), color: output.color, label: output.title };
+    });
+    const title = studyTitle(study, resolveInputs(study, saved.inputs));
+    return <IndicatorRow key={saved.id} title={title} values={values} hidden={saved.hidden === true}
+      onToggle={() => saveStudies(studies.map(entry => entry.id === saved.id ? { ...entry, hidden: !entry.hidden } : entry))}
+      onSettings={() => setEditing(saved.id)} onRemove={() => saveStudies(studies.filter(entry => entry.id !== saved.id))}/>;
   };
+  const known = studies.filter(saved => library?.byId.has(saved.study));
+  const mainStudies = known.filter(saved => library!.byId.get(saved.study)!.overlay || saved.hidden);
+  const subStudies = known.filter(saved => !library!.byId.get(saved.study)!.overlay && !saved.hidden);
+  const editingStudy = editing ? studies.find(entry => entry.id === editing) : undefined;
+  const editingDefinition = editingStudy ? library?.byId.get(editingStudy.study) : undefined;
   return <>
     <div className="native-chart-bar" role="group" aria-label={t('K 线周期')}>
       <TimeframeMenu value={frame} onChange={chooseFrame} supported={supported} keyboardScope={shell}/>
       <span className="native-chart-divider" aria-hidden="true"/>
-      <IndicatorMenu count={indicators.length} onAdd={addIndicator}/>
+      <IndicatorButton count={studies.length} onOpen={() => setSearching(true)}/>
       <span className="native-chart-status" role="status">{olderState === 'loading' ? t('正在加载更早的 K 线…') : olderState === 'done' ? t('已到交易所最早数据') : ''}</span>
     </div>
-    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px`, '--main-pane-bottom': `${axis.mainBottom || axis.timeHeight}px`, '--indicator-panes': subIndicators.length } as CSSProperties}>
+    <div ref={shell} className="chart-shell native-chart-shell" data-selected-line={selected ? 'true' : 'false'} data-drawing={tool ? 'true' : 'false'} style={{ '--price-scale-width': `${axis.width}px`, '--time-scale-height': `${axis.timeHeight}px`, '--main-pane-bottom': `${axis.mainBottom || axis.timeHeight}px`, '--indicator-panes': subStudies.length } as CSSProperties}>
       <div ref={host} className="native-chart" data-chart-state={state}/>
       {manager && state !== 'failed' && <DrawingToolbar manager={manager} tool={tool} state={drawState} scope={shell}/>}
       {manager && state === 'ready' && !textEdit && <DrawingEditBar manager={manager} scope={shell} onEditText={editText}/>}
@@ -539,9 +576,12 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         <span className="chart-legend-row"><span className="chart-legend-ohl"><b>O</b><em>{formatQuotePrice(shown.open)}</em><b>H</b><em>{formatQuotePrice(shown.high)}</em><b>L</b><em>{formatQuotePrice(shown.low)}</em></span><b>C</b><em>{formatQuotePrice(shown.close)}</em>
           <em className="chart-legend-change">{sign}{formatQuotePrice(Math.abs(Number(change.toPrecision(8))))} ({sign}{Math.abs(change / base * 100).toFixed(2)}%)</em></span>
         <span className="chart-legend-row"><b>{t('量')}</b><em className="plain">{volumeFormat.format(shown.volume)}</em>{index === bars.current.length - 1 && <><b>{t('收盘倒计时')}</b><em className="plain" data-testid="chart-countdown">{remaining}</em></>}</span>
-        {mainIndicators.map(item => indicatorRow(item))}
+        {mainStudies.length > 0 && <Button type="button" variant="ghost" className="chart-legend-toggle" aria-expanded={overlaysShown}
+          aria-label={overlaysShown ? t('收起 {0} 个指标', mainStudies.length) : t('展开 {0} 个指标', mainStudies.length)} onClick={() => setLegendOpen(!overlaysShown)}>
+          <ChevronDown aria-hidden="true"/>{!overlaysShown && <span>{t('{0} 个指标', mainStudies.length)}</span>}</Button>}
+        {overlaysShown && mainStudies.map(studyRow)}
       </div>}
-      {state === 'ready' && subIndicators.map((item, i) => axis.paneTops[i] !== undefined && <div key={item.id} className="chart-legend chart-pane-legend" style={{ top: axis.paneTops[i]! + 4 }}>{indicatorRow(item)}</div>)}
+      {state === 'ready' && subStudies.map((saved, i) => axis.paneTops[i] !== undefined && <div key={saved.id} className="chart-legend chart-pane-legend" style={{ top: axis.paneTops[i]! + 4 }}>{studyRow(saved)}</div>)}
       {state === 'ready' && axis.lastY !== null && <div className={`chart-countdown ${last && last.close >= last.open ? 'up' : 'down'}`} style={{ top: axis.lastY }} aria-hidden="true">{remaining}</div>}
       {state !== 'failed' && <div className="chart-scale-modes" role="group" aria-label={t('价格坐标')}>
         <button type="button" aria-pressed={logScale} title={t('对数坐标')} aria-label={t('对数坐标')} onClick={toggleLogScale}>log</button>
@@ -556,6 +596,10 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         onClick={() => { hoverHold.current = false; callbacks.current.onCreateAt(hover.price); setHover(null); }}
         aria-label={t('在 {0} 创建警报', formatQuotePrice(hover.price))}>+ {formatQuotePrice(hover.price)}</Button>}
     </div>
+    {searching && <IndicatorSearchDialog library={library} error={libraryError} count={studies.length} onAdd={addStudy} onClose={() => setSearching(false)} onRetry={() => setLibraryAttempt(value => value + 1)}/>}
+    {editingStudy && editingDefinition && <IndicatorSettingsDialog study={editingDefinition} inputs={resolveInputs(editingDefinition, editingStudy.inputs)}
+      onChange={inputs => saveStudies(studies.map(entry => entry.id === editingStudy.id ? { ...entry, inputs } : entry))}
+      onReset={() => saveStudies(studies.map(entry => entry.id === editingStudy.id ? { ...entry, inputs: {} } : entry))} onClose={() => setEditing(null)}/>}
     <div className="chart-bottom"><div className="chart-caption"><span role="status">{selectedAlert ? t('已选中「{0}」，按住这条线上下拖动改价。', selectedAlert.name) : t('拖动警报线改价；悬停或长按图表后点 + 在该价位创建警报。')}</span></div><span className="chart-disclaimer">{t('内置图表 · K 线来自 {0}，与警报使用同一交易所数据。', source)}</span></div>
   </>;
 });
