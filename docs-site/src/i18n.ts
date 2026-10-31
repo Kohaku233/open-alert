@@ -12,6 +12,9 @@ export const pageHref = (lang: Lang, id = '') => `${lang === 'en' ? '/en' : ''}/
 export const counterpart = (pathname: string) =>
   langOf(pathname) === 'en' ? pathname.replace(/^\/en(?=\/|$)/, '') || '/' : `/en${pathname}`;
 
+/** Names shown in the language menu, always in their own language. */
+export const langNames: Record<Lang, string> = { zh: '简体中文', en: 'English' };
+
 const strings = {
   zh: {
     siteName: '价格哨站', siteSuffix: '价格哨站文档', homeAria: '价格哨站文档首页',
@@ -22,7 +25,7 @@ const strings = {
     sidebar: '文档目录', crumbsHome: '文档', pager: '上一篇和下一篇', prev: '上一篇', next: '下一篇',
     toc: '本页目录', tocTitle: '本页内容', anchor: '链接到本节',
     group: '分类', reading: '阅读约', minutes: (n: number) => `${n} 分钟`, updated: '更新于',
-    switchTo: 'English', switchAria: 'Read this page in English', copy: '复制', copied: '已复制', copyFailed: '复制失败',
+    language: '语言', languageAria: '选择文档语言', auto: '跟随系统', copy: '复制', copied: '已复制', copyFailed: '复制失败',
   },
   en: {
     siteName: 'Open Alert', siteSuffix: 'Open Alert Docs', homeAria: 'Open Alert docs home',
@@ -33,7 +36,7 @@ const strings = {
     sidebar: 'Docs menu', crumbsHome: 'Docs', pager: 'Previous and next page', prev: 'Previous', next: 'Next',
     toc: 'On this page', tocTitle: 'On this page', anchor: 'Link to this section',
     group: 'Section', reading: 'Reading time', minutes: (n: number) => `${n} min`, updated: 'Updated',
-    switchTo: '中文', switchAria: '阅读本页中文版', copy: 'Copy', copied: 'Copied', copyFailed: 'Copy failed',
+    language: 'Language', languageAria: 'Choose the docs language', auto: 'Match system', copy: 'Copy', copied: 'Copied', copyFailed: 'Copy failed',
   },
 } as const;
 

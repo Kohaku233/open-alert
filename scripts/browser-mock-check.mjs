@@ -904,9 +904,9 @@ try {
       assert.equal(await p.getByRole('button',{name:'Copy feedback template',exact:true}).count(),0);
     });
     const docsHrefs=()=>p.locator('a[href^="https://docs.cryptotool.bar"]').evaluateAll(links=>links.map(link=>link.getAttribute('href')));
-    await check('English interface opens the English user guide',async()=>{const hrefs=await docsHrefs();assert(hrefs.length>0);assert(hrefs.every(href=>href.startsWith('https://docs.cryptotool.bar/en/')),hrefs.join(' '));});
+    await check('English interface opens the English user guide',async()=>{const hrefs=await docsHrefs();assert(hrefs.length>0);assert(hrefs.every(href=>href.startsWith('https://docs.cryptotool.bar/en/')&&href.endsWith('?lang=en')),hrefs.join(' '));});
     await languageChoice(p,'中文');
-    await check('Chinese interface opens the Chinese user guide',async()=>{const hrefs=await docsHrefs();assert(hrefs.length>0);assert(hrefs.every(href=>!href.includes('/en/')),hrefs.join(' '));});
+    await check('Chinese interface opens the Chinese user guide',async()=>{const hrefs=await docsHrefs();assert(hrefs.length>0);assert(hrefs.every(href=>!href.includes('/en/')&&href.endsWith('?lang=zh')),hrefs.join(' '));});
     await nav(p,'手机通知');
     await expect(p).toHaveURL(origin+'/notifications');
     await nav(p,'设置');await expect(p.getByRole('heading',{name:'设置',level:1})).toBeVisible();
