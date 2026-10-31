@@ -28,7 +28,12 @@ function readFrame(): CandleTimeframe {
   try { const saved = localStorage.getItem(FRAME_KEY); if (saved && parseTimeframe(saved) === saved) return saved; } catch { /* default */ }
   return '4h';
 }
-function decimals(tickSize: string) { const [, fraction = ''] = tickSize.split('.'); return Math.min(10, fraction.replace(/0+$/, '').length); }
+function decimals(tickSize: string) {
+  // Market metadata uses scientific notation for small ticks (e.g. "1e-8").
+  const [coefficient = '', exponent = '0'] = tickSize.toLowerCase().split('e');
+  const [, fraction = ''] = coefficient.split('.');
+  return Math.min(10, Math.max(0, fraction.replace(/0+$/, '').length - Number(exponent)));
+}
 function cssVar(name: string, fallback: string) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
 const volumeFormat = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });
 function countdown(ms: number) {
