@@ -1351,6 +1351,37 @@ try {
     await check('OHLC legend shows the latest candle',()=>expect(p.getByTestId('chart-legend')).toContainText(/O.+H.+L.+C.+%/));
     await check('candle close countdown ticks',async()=>{const first=await p.getByTestId('chart-countdown').textContent();assert.match(first,/^(\d+D )?\d{2}:\d{2}(:\d{2})?$/);await expect.poll(()=>p.getByTestId('chart-countdown').textContent(),{timeout:3000}).not.toBe(first);});
     await noOverflow(p);await p.waitForTimeout(400);await p.screenshot({path:join(outputs,`native-chart-${profile}-MOCK.png`),fullPage:profile==='mobile'});
+    // TradingView-style log/auto toggles in the plot's bottom-right corner.
+    const modes=p.getByRole('group',{name:'价格坐标'}),logButton=modes.getByRole('button',{name:'对数坐标'}),autoButton=modes.getByRole('button',{name:'自动缩放价格坐标'});
+    const axisPixels=()=>p.evaluate(()=>{const shell=document.querySelector('.native-chart');const canvases=[...shell.querySelectorAll('canvas')];const axis=canvases.filter(c=>{const r=c.getBoundingClientRect();return r.width>20&&r.width<140&&r.height>100;}).sort((a,b)=>b.getBoundingClientRect().x-a.getBoundingClientRect().x)[0];return axis?axis.toDataURL():'';});
+    await check('scale toggles sit bottom-right, left of the price axis and above the time axis',async()=>{await expect(modes).toBeVisible();const m=await modes.boundingBox(),plot=await p.locator('.native-chart').boundingBox();const widths=await p.locator('.native-chart-shell').evaluate(el=>({price:parseFloat(getComputedStyle(el).getPropertyValue('--price-scale-width')),time:parseFloat(getComputedStyle(el).getPropertyValue('--time-scale-height'))}));assert(widths.price>20&&widths.time>10,JSON.stringify(widths));assert(m.x+m.width<=plot.x+plot.width-widths.price+1,'overlaps price axis');assert(m.x+m.width>=plot.x+plot.width-widths.price-20,'not at the right edge');assert(m.y+m.height<=plot.y+plot.height-widths.time+1,'overlaps time axis');assert(m.y+m.height>=plot.y+plot.height-widths.time-20,'not at the bottom edge');});
+    await check('auto is on and log is off by default',async()=>{await expect(autoButton).toHaveAttribute('aria-pressed','true');await expect(logButton).toHaveAttribute('aria-pressed','false');await expect(autoButton).toHaveText('auto');await expect(logButton).toHaveText('log');});
+    if(profile==='mobile')await check('scale toggles keep touch-sized targets on phones',async()=>{for(const b of [logButton,autoButton]){const r=await b.boundingBox();assert(r.width>=44&&r.height>=36,JSON.stringify(r));}});
+    const linearAxis=await axisPixels();
+    await logButton.click();
+    await check('log toggle switches the price axis to logarithmic and persists',async()=>{await expect(logButton).toHaveAttribute('aria-pressed','true');assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-chart-log')),'1');await expect.poll(axisPixels).not.toBe(linearAxis);});
+    await p.waitForTimeout(300);await p.screenshot({path:join(outputs,`native-scale-log-${profile}-MOCK.png`)});
+    if(profile==='desktop'){
+      const plot=await p.locator('.native-chart').boundingBox(),priceWidth=await p.locator('.native-chart-shell').evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--price-scale-width')));
+      const ax=plot.x+plot.width-priceWidth/2,ay=plot.y+plot.height*0.4;
+      await p.mouse.move(ax,ay);await p.mouse.down();await p.mouse.move(ax,ay+80,{steps:8});await p.mouse.up();
+      await check('dragging the price axis turns auto off, like TradingView',()=>expect(autoButton).toHaveAttribute('aria-pressed','false'));
+      const manualAxis=await axisPixels();
+      await autoButton.click();
+      await check('auto toggle refits the price axis',async()=>{await expect(autoButton).toHaveAttribute('aria-pressed','true');await expect.poll(axisPixels).not.toBe(manualAxis);});
+      await autoButton.click();
+      await check('auto toggle can be switched off directly',()=>expect(autoButton).toHaveAttribute('aria-pressed','false'));
+      await autoButton.click();await expect(autoButton).toHaveAttribute('aria-pressed','true');
+    }else{
+      await autoButton.click();
+      await check('tapping auto turns auto-scale off on phones',()=>expect(autoButton).toHaveAttribute('aria-pressed','false'));
+      await autoButton.click();
+      await check('tapping auto again restores auto-scale on phones',()=>expect(autoButton).toHaveAttribute('aria-pressed','true'));
+    }
+    await check('log scale survives reload',async()=>{await p.reload();if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');await expect(logButton).toHaveAttribute('aria-pressed','true');await expect(autoButton).toHaveAttribute('aria-pressed','true');});
+    await logButton.click();
+    await check('turning log off restores the linear axis and clears the saved choice',async()=>{await expect(logButton).toHaveAttribute('aria-pressed','false');assert.equal(await p.evaluate(()=>localStorage.getItem('open-alert-chart-log')),null);});
+    await noOverflow(p);
     await p.locator('.native-chart-bar').getByRole('button',{name:'1 小时',exact:true}).click();
     await check('timeframe switch requests 1h',async()=>expect.poll(()=>requests(s,'GET','/api/candles').some(r=>r.timeframe==='1h')).toBe(true));
     await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
