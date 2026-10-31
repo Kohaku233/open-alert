@@ -1548,6 +1548,112 @@ try {
     await check('switching back restores TradingView embed',()=>expect(p.locator('.tradingview-widget-container script')).toHaveCount(1));
     await fixture.context.close();
   });
+  for (const profile of ['desktop','mobile']) await journey('17b drawing settings: fibonacci levels, colours, fill, display and defaults ('+profile+')',async()=>{
+    const fixture=await setup(browser,profile,true,{chart:'native'}),p=fixture.page,s=fixture.state;
+    s.markets=s.markets.map(m=>({...m,venue:'okx',type:'swap',nativeId:m.instrument,symbol:`${m.base}/USDT:USDT`,settle:'USDT'}));
+    await p.goto(origin+'/dashboard');await expect(p.getByRole('switch')).toBeVisible();
+    if(profile==='mobile')await p.getByRole('button',{name:/参考图表/}).click();
+    await expect(p.locator('.native-chart')).toHaveAttribute('data-chart-state','ready');
+    await p.locator('.native-chart-shell').scrollIntoViewIfNeeded();
+    const box=await p.locator('.native-chart').boundingBox(),key='open-alert-drawings:BTC-USDT-SWAP';
+    const saved=()=>p.evaluate(k=>JSON.parse(localStorage.getItem(k)||'[]'),key);
+    const tap=(fx,fy)=>profile==='mobile'?p.touchscreen.tap(box.x+box.width*fx,box.y+box.height*fy):p.mouse.click(box.x+box.width*fx,box.y+box.height*fy);
+    const rail=p.getByRole('toolbar',{name:'画线工具'}),editbar=p.getByRole('toolbar',{name:'画线设置'}),dialog=p.getByRole('dialog',{name:'斐波那契回撤设置'});
+    const placeFib=async()=>{if(profile==='mobile'&&await p.getByRole('button',{name:'展开画线工具'}).count())await p.getByRole('button',{name:'展开画线工具'}).click();
+      await rail.getByRole('button',{name:'更多斐波那契与江恩'}).click();await p.locator('.draw-flyout').getByRole('button',{name:/^斐波那契回撤/}).click();
+      // The flyout fades out; a click on it would be swallowed instead of placing the first point.
+      await expect(p.locator('.draw-flyout')).toHaveCount(0);await expect(p.locator('.chart-tool-hint')).toBeVisible();
+      await tap(0.35,0.3);await tap(0.6,0.62);};
+    await placeFib();
+    await check(profile+': placed fibonacci shows the edit bar',()=>expect(editbar).toBeVisible());
+    // Issue 1: the bar's colour reaches every fibonacci level and band, not just the unused drawing colour.
+    await editbar.getByRole('button',{name:'线条颜色',exact:true}).click();await p.locator('.draw-edit-pop').getByRole('button',{name:'颜色 #ff9800'}).click();
+    await check(profile+': edit-bar colour recolours every level',async()=>expect.poll(async()=>[...new Set((await saved())[0]?.style.levels.map(l=>l.color))]).toEqual(['#ff9800']));
+    await p.keyboard.press('Escape');await expect(p.locator('.draw-edit-pop')).toHaveCount(0);
+    await editbar.getByRole('button',{name:'画线设置…',exact:true}).click();
+    await check(profile+': settings dialog opens for the fibonacci',async()=>{await expect(dialog).toBeVisible();await expect(editbar).toHaveCount(0);});
+    const total=(await saved())[0].style.levels.length,shownBefore=(await saved())[0].style.levels.filter(l=>l.visible).length;
+    await check(profile+': dialog lists visible levels and folds the hidden ones',async()=>{await expect(dialog.locator('.draw-settings-levels li')).toHaveCount(shownBefore);await expect(dialog.locator('.draw-settings-count')).toHaveText(`显示 ${shownBefore} / ${total}`);await expect(dialog.getByRole('button',{name:`显示其余 ${total-shownBefore} 个层级`})).toBeVisible();});
+    await dialog.getByRole('button',{name:`显示其余 ${total-shownBefore} 个层级`}).click();
+    await check(profile+': expanding shows every level',()=>expect(dialog.locator('.draw-settings-levels li')).toHaveCount(total));
+    await dialog.getByRole('button',{name:'收起未显示的层级'}).click();await expect(dialog.locator('.draw-settings-levels li')).toHaveCount(shownBefore);
+    await p.waitForTimeout(250);await p.screenshot({path:join(outputs,`draw-settings-fib-${profile}-MOCK.png`),fullPage:false});
+    // Issue 2: fewer levels — hide all, then show only 0, 0.618 and 1.
+    await dialog.getByRole('button',{name:'全不选',exact:true}).click();
+    for(const c of ['0','0.618','1'])await dialog.getByRole('checkbox',{name:`显示层级 ${c}`,exact:true}).first().click();
+    await check(profile+': rows toggled in the dialog stay in place',()=>expect(dialog.locator('.draw-settings-levels li')).toHaveCount(total));
+    await check(profile+': only the chosen levels stay visible',async()=>expect.poll(async()=>(await saved())[0].style.levels.filter(l=>l.visible).map(l=>l.coeff).sort((a,b)=>a-b)).toEqual([0,0.618,1]));
+    // Rows follow the saved level order; address the 0.618 row by its index.
+    const idx=(await saved())[0].style.levels.findIndex(l=>l.coeff===0.618),row=dialog.locator(`.draw-settings-levels li[data-index="${idx}"]`),field=row.getByRole('spinbutton');
+    await field.fill('0.65');
+    await check(profile+': a level coefficient is editable',async()=>expect.poll(async()=>(await saved())[0].style.levels.filter(l=>l.visible).map(l=>l.coeff).sort((a,b)=>a-b)).toEqual([0,0.65,1]));
+    await check(profile+': Backspace in a field never deletes the drawing',async()=>{await field.focus();await field.press('End');await field.press('Backspace');await field.press('Delete');await expect.poll(async()=>(await saved()).length).toBe(1);await field.fill('0.65');await field.blur();await expect(field).toHaveValue('0.65');});
+    await row.getByRole('button',{name:'层级颜色',exact:true}).click();await p.locator('.draw-edit-pop').getByRole('button',{name:'颜色 #2962ff'}).click();
+    await check(profile+': one level takes its own colour',async()=>expect.poll(async()=>(await saved())[0].style.levels[idx]?.color).toBe('#2962ff'));
+    await p.keyboard.press('Escape');
+    await check(profile+': Esc closes only the colour menu',async()=>{await expect(p.locator('.draw-edit-pop')).toHaveCount(0);await expect(dialog).toBeVisible();});
+    await dialog.getByRole('button',{name:'添加层级',exact:true}).click();
+    await check(profile+': a level can be added',async()=>expect.poll(async()=>(await saved())[0].style.levels.length).toBe(total+1));
+    await dialog.locator(`.draw-settings-levels li[data-index="${total}"]`).getByRole('button',{name:/^删除层级/}).click();
+    await check(profile+': a level can be removed',async()=>expect.poll(async()=>(await saved())[0].style.levels.length).toBe(total));
+    await dialog.getByRole('checkbox',{name:'填充背景',exact:true}).click();
+    await check(profile+': background fill switches off',async()=>expect.poll(async()=>(await saved())[0].style.fillBackground).toBe(false));
+    await dialog.getByRole('checkbox',{name:'反转',exact:true}).click();await dialog.getByRole('checkbox',{name:'显示价格',exact:true}).click();
+    await check(profile+': display switches are saved',async()=>expect.poll(async()=>{const st=(await saved())[0].style;return [st.reverse,st.showPrices];}).toEqual([true,false]));
+    if(profile==='mobile'){
+      await check('mobile: dialog fits the viewport with 44px targets',async()=>{const r=await p.locator('[data-slot="dialog-content"]').boundingBox(),vw=await p.evaluate(()=>innerWidth),vh=await p.evaluate(()=>innerHeight);assert(r.x>=0&&r.x+r.width<=vw+1&&r.height<=vh,'dialog '+JSON.stringify(r));
+        for(const el of await dialog.locator('.draw-settings-swatch, .draw-settings-remove, .draw-settings-number, [data-slot="checkbox"]').all()){const b=await el.boundingBox();if(!b)continue;if(await el.getAttribute('data-slot')==='checkbox'){const l=await el.evaluate(n=>{const r=(n.closest('label')||n.closest('li')).getBoundingClientRect();return r.height;});assert(l>=44,'checkbox row '+l);}else assert(b.height>=44,'short target '+JSON.stringify(b));}});
+      await noOverflow(p);
+    }
+    await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`draw-settings-fib-edited-${profile}-MOCK.png`)});
+    await dialog.getByRole('button',{name:'设为默认',exact:true}).click();
+    await check(profile+': set as default saves the style for new fibonacci drawings',async()=>{await expect(dialog.getByRole('button',{name:'已设为默认 ✓'})).toBeVisible();const d=await p.evaluate(()=>JSON.parse(localStorage.getItem('open-alert-draw-defaults')||'{}'));assert.deepEqual(d['fib-retracement'].levels.filter(l=>l.visible).map(l=>l.coeff).sort((a,b)=>a-b),[0,0.65,1]);});
+    await dialog.getByRole('button',{name:'确定',exact:true}).click();
+    await check(profile+': OK keeps the edits',async()=>{await expect(dialog).toHaveCount(0);assert.equal((await saved())[0].style.reverse,true);});
+    // Cancel restores everything changed while the dialog was open.
+    await tap(0.47,0.46);await expect(editbar).toBeVisible();await editbar.getByRole('button',{name:'画线设置…',exact:true}).click();
+    await check(profile+': reopening folds the hidden levels again',async()=>{await expect(dialog.locator('.draw-settings-levels li')).toHaveCount(3);await expect(dialog.getByRole('button',{name:`显示其余 ${total-3} 个层级`})).toBeVisible();});
+    await p.waitForTimeout(250);await p.screenshot({path:join(outputs,`draw-settings-fib-folded-${profile}-MOCK.png`)});
+    await dialog.getByRole('button',{name:'全选',exact:true}).click();await dialog.getByRole('checkbox',{name:'反转',exact:true}).click();
+    await expect.poll(async()=>(await saved())[0].style.levels.every(l=>l.visible)).toBe(true);
+    await dialog.getByRole('button',{name:'取消',exact:true}).click();
+    await check(profile+': Cancel restores the drawing',async()=>{await expect(dialog).toHaveCount(0);const st=(await saved())[0].style;assert.equal(st.reverse,true);assert.deepEqual(st.levels.filter(l=>l.visible).map(l=>l.coeff).sort((a,b)=>a-b),[0,0.65,1]);});
+    if(profile==='desktop'){
+      await p.mouse.dblclick(box.x+box.width*0.47,box.y+box.height*0.46);
+      await check('desktop: double-clicking the drawing opens its settings',()=>expect(dialog).toBeVisible());
+      await p.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
+    }
+    // A new fibonacci starts from the saved default.
+    await p.keyboard.press('Escape');
+    await placeFib();
+    await check(profile+': the next fibonacci uses the saved default levels',async()=>expect.poll(async()=>{const all=await saved();return all.length===2?all[1].style.levels.filter(l=>l.visible).map(l=>l.coeff).sort((a,b)=>a-b):null;}).toEqual([0,0.65,1]));
+    if(profile==='desktop'){
+      // Other tool families: each dialog exposes the controls its renderer reads, and edits reach the saved drawing.
+      const byKind=async k=>(await saved()).find(d=>d.kind===k);
+      const pick=async(name,color)=>{await dialog2.getByRole('button',{name,exact:true}).first().click();await p.locator('.draw-settings-pop').getByRole('button',{name:'颜色 '+color}).click();await p.keyboard.press('Escape');await expect(p.locator('.draw-settings-pop')).toHaveCount(0);};
+      let dialog2;
+      const cases=[
+        {group:'更多形状与画笔',tool:'矩形',kind:'rectangle',clicks:[[0.15,0.15],[0.3,0.3]],run:async()=>{await pick('填充颜色','#4caf50');await expect.poll(async()=>(await byKind('rectangle')).style.backgroundColor).toBe('#4caf50');await dialog2.getByRole('checkbox',{name:'中线',exact:true}).click();await expect.poll(async()=>(await byKind('rectangle')).style.rectMiddleLine?.visible).toBe(true);}},
+        {group:'更多线条',tool:'平行通道',kind:'parallel-channel',clicks:[[0.15,0.7],[0.35,0.75],[0.3,0.85]],run:async()=>{await pick('全部层级颜色','#e91e63');await expect.poll(async()=>[...new Set((await byKind('parallel-channel')).style.levels.map(l=>l.color))]).toEqual(['#e91e63']);await expect(dialog2.locator('.draw-settings-levels li').first()).toBeVisible();await pick('填充颜色','#ffeb3b');await expect.poll(async()=>(await byKind('parallel-channel')).style.backgroundColor).toBe('#ffeb3b');}},
+        {group:'更多线条',tool:'回归趋势',kind:'regression-trend',clicks:[[0.7,0.2],[0.85,0.3]],run:async()=>{await dialog2.getByRole('spinbutton',{name:'上偏差'}).fill('3');await expect.poll(async()=>(await byKind('regression-trend')).style.upperDeviation).toBe(3);await pick('上轨','#ff9800');await expect.poll(async()=>(await byKind('regression-trend')).style.regressionLines.up.color).toBe('#ff9800');}},
+        {group:'更多预测与测量',tool:'多头仓位',kind:'long-position',clicks:[[0.7,0.75]],run:async()=>{await dialog2.getByRole('spinbutton',{name:'账户规模'}).fill('5000');await expect.poll(async()=>(await byKind('long-position')).style.accountSize).toBe(5000);await pick('止损颜色','#9c27b0');await expect.poll(async()=>(await byKind('long-position')).style.stopColor).toBe('#9c27b0');}},
+      ];
+      for(const c of cases){
+        await p.keyboard.press('Escape');
+        await rail.getByRole('button',{name:'更多'+c.group.slice(2)}).click();await p.locator('.draw-flyout').getByRole('button',{name:new RegExp('^'+c.tool)}).click();
+        await expect(p.locator('.draw-flyout')).toHaveCount(0);await expect(p.locator('.chart-tool-hint')).toBeVisible();
+        for(const [fx,fy] of c.clicks)await tap(fx,fy);
+        await expect(editbar).toBeVisible();await editbar.getByRole('button',{name:'画线设置…',exact:true}).click();
+        dialog2=p.getByRole('dialog',{name:c.tool+'设置'});
+        await check('desktop: '+c.kind+' settings edit the right fields',async()=>{await expect(dialog2).toBeVisible();await c.run();});
+        await p.waitForTimeout(200);await p.screenshot({path:join(outputs,`draw-settings-${c.kind}-${profile}-MOCK.png`)});
+        await dialog2.getByRole('button',{name:'确定',exact:true}).click();await expect(dialog2).toHaveCount(0);
+        await editbar.getByRole('button',{name:'删除画线',exact:true}).click();
+        await check('desktop: '+c.kind+' deleted after its check',async()=>expect.poll(async()=>!!(await byKind(c.kind))).toBe(false));
+      }
+    }
+    await fixture.context.close();
+  });
   await journey('16 invite recovery, email failure states and sandbox login stays available after logout',async()=>{
     const fixture=await setup(browser,'desktop',true),p=fixture.page,s=fixture.state;
     s.status.user.role='admin';s.status.capabilities.canAdmin=true;s.status.capabilities.google=true;
