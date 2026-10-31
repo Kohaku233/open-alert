@@ -58,3 +58,17 @@ test('vault round-trips credentials and rejects a wrong password', async () => {
   assert.deepEqual(await openRecord(record, 'correct horse'), creds);
   await assert.rejects(openRecord(record, 'wrong horse'));
 });
+
+test('TP/SL helpers: P&L in USDT, wrong-side prices and decimal drafts', async () => {
+  const { pnlAt, protectProblem, decimalDraft } = await import('../web/trade/useTradeDesk.js');
+  assert.ok(Math.abs(pnlAt('long', 66800, 68000, 0.02) - 24) < 1e-9);
+  assert.ok(Math.abs(pnlAt('short', 66800, 68000, 0.02) + 24) < 1e-9);
+  assert.equal(protectProblem('long', 'tp', 68000, 67420), null);
+  assert.match(protectProblem('long', 'sl', 68500, 67420)!, /做多的止损价要低于/);
+  assert.match(protectProblem('short', 'tp', 68000, 67420)!, /做空的止盈价要低于/);
+  assert.equal(protectProblem('short', 'sl', 68000, 67420), null);
+  assert.equal(decimalDraft('1,653.5abc'), '1653.5');
+  assert.equal(decimalDraft('-1e5'), '15');
+  assert.equal(decimalDraft('1.2.3'), '1.23');
+  assert.equal(decimalDraft('67 420。5'), '67420.5');
+});

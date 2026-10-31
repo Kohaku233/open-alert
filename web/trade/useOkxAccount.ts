@@ -14,20 +14,37 @@ export type TradeStatus = 'empty' | 'locked' | 'connecting' | 'ready';
 export interface TradeOrder {
   id: string; algo: boolean; instId: string; clOrdId: string; side: TradeSide; posSide: string; kind: TradeKind;
   price: number; contracts: number; qty: number; filled: number; reduceOnly: boolean; status: 'open' | 'sending' | 'uncertain'; createdAt: number;
+  /** Take-profit / stop-loss attached to a resting order; they become a TP/SL order once it fills. */
+  tp: number | null; sl: number | null;
 }
+/** A resting TP/SL (OKX conditional or oco algo). full = closes the whole position (closeFraction 1). */
+export interface TradeProtect { id: string; instId: string; posSide: string; side: TradeSide; ordType: 'conditional' | 'oco'; contracts: number; qty: number; full: boolean; tp: number | null; sl: number | null }
+export interface ProtectInput { tp: number | null; sl: number | null }
 export interface TradePosition { instId: string; side: 'long' | 'short'; posSide: string; contracts: number; qty: number; entry: number; mark: number; liq: number | null; upnl: number; uplRatio: number; lever: number; mgnMode: string }
 export interface TradeFill { id: string; instId: string; side: TradeSide; qty: number; price: number; fee: number; liquidity: 'maker' | 'taker'; pnl: number; at: number }
-export interface TradeAccount { equity: number; available: number; upnl: number; positions: TradePosition[]; orders: TradeOrder[]; fills: TradeFill[]; updatedAt: number }
-export interface TradeConfig { posMode: 'net_mode' | 'long_short_mode'; uid: string; label: string }
-export interface PlaceInput { instId: string; side: TradeSide; kind: TradeKind; price?: number; qty: number; reduceOnly: boolean }
+export interface TradeAccount { equity: number; available: number; upnl: number; positions: TradePosition[]; orders: TradeOrder[]; protects: TradeProtect[]; fills: TradeFill[]; updatedAt: number }
+export interface TradeConfig { posMode: 'net_mode' | 'long_short_mode'; acctLv: string; uid: string; label: string }
+export interface PlaceInput { instId: string; side: TradeSide; kind: TradeKind; price?: number; qty: number; reduceOnly: boolean; tp?: number | null; sl?: number | null }
 export type PlaceResult = { state: 'placed' | 'uncertain'; label: string } | { state: 'rejected'; message: string };
 
 const POLL_MS = 4000;
 // OKX refuses a request whose timestamp is older than 30s; after this a lost write can no longer execute.
 const EXPIRY_MS = 35_000;
-const AUTH_CODES = new Set(['50103', '50104', '50105', '50111', '50113', '50119']);
+const AUTH_CODES = new Set(['50101', '50103', '50104', '50105', '50111', '50113', '50119']);
 type Raw = Record<string, string>;
 const num = (value: string | undefined) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
+const priceOrNull = (value: string | undefined) => { const n = num(value); return n > 0 ? n : null; };
+/** OKX TP/SL legs; '-1' executes at market once triggered. Amend calls use the newTp… / newSl… names. */
+const legs = (input: ProtectInput, tick: string, amend = false) => {
+  const name = (leg: 'tp' | 'sl', field: string) => amend ? `new${leg === 'tp' ? 'Tp' : 'Sl'}${field}` : `${leg}${field}`;
+  const out: Record<string, string> = {};
+  for (const leg of ['tp', 'sl'] as const) {
+    const price = input[leg];
+    if (!price) continue;
+    out[name(leg, 'TriggerPx')] = roundTo(price, tick); out[name(leg, 'OrdPx')] = '-1'; out[name(leg, 'TriggerPxType')] = 'last';
+  }
+  return out;
+};
 
 export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; instId: string | null; notify: (text: string) => void }) {
   const [vault, setVault] = useState<VaultSummary | null>(vaultSummary);
@@ -85,7 +102,7 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     // acctLv 1 is OKX "simple" mode, which cannot hold perpetual positions.
     if (raw.acctLv === '1') throw new OkxError('account_mode', t('OKX 账户处于简单交易模式，无法交易永续合约。请先在 OKX 切换到合约模式。'));
     await loadInstruments(using);
-    return { posMode: raw.posMode === 'long_short_mode' ? 'long_short_mode' : 'net_mode', uid: raw.uid ?? '', label: raw.label ?? '' };
+    return { posMode: raw.posMode === 'long_short_mode' ? 'long_short_mode' : 'net_mode', acctLv: raw.acctLv ?? '', uid: raw.uid ?? '', label: raw.label ?? '' };
   }
   const describe = (error: unknown) => error instanceof OkxError || error instanceof OkxUncertainError ? error.message : errorText(error);
 
@@ -111,17 +128,26 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
   };
   const forget = () => { lock(); forgetVault(); setVault(null); setStatus('empty'); };
 
-  const toOrder = (raw: Raw, algo: boolean): TradeOrder | null => {
+  const toOrder = (raw: Raw & { attachAlgoOrds?: Raw[] }, algo: boolean): TradeOrder | null => {
     const inst = instruments.current.get(raw.instId ?? '');
     if (!inst) return null;
     const contracts = num(raw.sz);
+    const attached = raw.attachAlgoOrds?.[0];
     return {
       id: (algo ? raw.algoId : raw.ordId) ?? '', algo, instId: inst.instId, clOrdId: (algo ? raw.algoClOrdId : raw.clOrdId) ?? '',
       side: raw.side === 'sell' ? 'sell' : 'buy', posSide: raw.posSide ?? 'net',
       kind: algo ? 'trigger' : raw.ordType === 'market' ? 'market' : 'limit',
       price: num(algo ? raw.triggerPx : raw.px), contracts, qty: baseFor(contracts, inst), filled: baseFor(num(raw.accFillSz), inst),
       reduceOnly: raw.reduceOnly === 'true', status: 'open', createdAt: num(raw.cTime),
+      tp: priceOrNull(attached?.tpTriggerPx), sl: priceOrNull(attached?.slTriggerPx),
     };
+  };
+  const toProtect = (raw: Raw, ordType: TradeProtect['ordType']): TradeProtect | null => {
+    const inst = instruments.current.get(raw.instId ?? '');
+    if (!inst || !raw.algoId) return null;
+    const contracts = num(raw.sz);
+    return { id: raw.algoId, instId: inst.instId, posSide: raw.posSide || 'net', side: raw.side === 'buy' ? 'buy' : 'sell', ordType, contracts, qty: baseFor(contracts, inst),
+      full: raw.closeFraction === '1', tp: priceOrNull(raw.tpTriggerPx), sl: priceOrNull(raw.slTriggerPx) };
   };
   const refreshing = useRef(false);
   const ticks = useRef(0);
@@ -130,11 +156,14 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     refreshing.current = true;
     try {
       const withFills = ticks.current++ % 3 === 0;
-      const [balance, positions, pending, algos, fills] = await Promise.all([
+      const [balance, positions, pending, algos, conditional, oco, fills] = await Promise.all([
         call('GET', 'account/balance', { ccy: 'USDT' }),
         call('GET', 'account/positions', { instType: 'SWAP' }),
         call('GET', 'trade/orders-pending', { instType: 'SWAP' }),
         call('GET', 'trade/orders-algo-pending', { ordType: 'trigger', instType: 'SWAP' }),
+        // TP/SL orders: one-way stops and one-cancels-the-other pairs.
+        call('GET', 'trade/orders-algo-pending', { ordType: 'conditional', instType: 'SWAP' }),
+        call('GET', 'trade/orders-algo-pending', { ordType: 'oco', instType: 'SWAP' }),
         withFills ? call('GET', 'trade/fills', { instType: 'SWAP', limit: 30 }) : Promise.resolve(null),
       ]);
       if (!creds.current) return;
@@ -159,6 +188,7 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
       setAccount(previous => ({
         equity: num(total?.totalEq), available: num(usdt?.availEq || usdt?.availBal), upnl: openPositions.reduce((sum, p) => sum + p.upnl, 0),
         positions: openPositions, orders,
+        protects: [...conditional.map(raw => toProtect(raw, 'conditional')), ...oco.map(raw => toProtect(raw, 'oco'))].filter((item): item is TradeProtect => !!item),
         fills: fills ? fills.flatMap((raw): TradeFill[] => {
           const inst = instruments.current.get(raw.instId ?? '');
           return inst ? [{ id: raw.tradeId ?? raw.billId ?? `${raw.ordId}-${raw.ts}`, instId: inst.instId, side: raw.side === 'sell' ? 'sell' : 'buy', qty: baseFor(num(raw.fillSz), inst), price: num(raw.fillPx),
@@ -236,13 +266,16 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     const algo = input.kind === 'trigger';
     const qty = baseFor(Number(sz), inst);
     const label = `${input.side === 'buy' ? t('买入') : t('卖出')} ${input.kind === 'limit' ? t('限价') : input.kind === 'market' ? t('市价') : input.side === 'buy' ? t('突破触发') : t('跌破触发')} ${qty}${px ? ` @ ${px}` : ''}`;
+    // TP/SL can ride a new limit or market order; OKX refuses them on reduce-only orders (51100).
+    const protect = { tp: input.tp ?? null, sl: input.sl ?? null };
+    const attach = !algo && !input.reduceOnly && (protect.tp || protect.sl) ? [{ attachAlgoClOrdId: clientOrderId(), ...legs(protect, inst.tickSz) }] : null;
     const draft: TradeOrder = { id: clOrdId, algo, instId: inst.instId, clOrdId, side: input.side, posSide: posSide ?? 'net', kind: input.kind, price: Number(px ?? 0), contracts: Number(sz), qty, filled: 0,
-      reduceOnly: input.reduceOnly, status: 'sending', createdAt: Date.now() };
+      reduceOnly: input.reduceOnly, status: 'sending', createdAt: Date.now(), tp: attach ? protect.tp : null, sl: attach ? protect.sl : null };
     if (input.kind !== 'market') setLocal(list => [...list, draft]);
     const common = { instId: inst.instId, tdMode: 'cross', side: input.side, sz, ...(posSide ? { posSide } : {}), ...(!hedge && input.reduceOnly ? { reduceOnly: true } : {}) };
     try {
       if (algo) await call('POST', 'trade/order-algo', { ...common, ordType: 'trigger', triggerPx: px, orderPx: '-1', triggerPxType: 'last', algoClOrdId: clOrdId });
-      else await call('POST', 'trade/order', { ...common, ordType: input.kind, clOrdId, ...(input.kind === 'limit' ? { px } : {}) });
+      else await call('POST', 'trade/order', { ...common, ordType: input.kind, clOrdId, ...(input.kind === 'limit' ? { px } : {}), ...(attach ? { attachAlgoOrds: attach } : {}) });
       if (input.kind === 'market') setLocal(list => list.filter(order => order.clOrdId !== clOrdId));
       void refresh();
       return { state: 'placed', label };
@@ -257,10 +290,10 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     }
   };
   /** Amend and cancel are idempotent on OKX, so an unknown result only needs a refresh. */
-  const writeThenRefresh = async (send: () => Promise<unknown>, success: string): Promise<boolean> => {
+  const writeThenRefresh = async (send: () => Promise<unknown>, success: string, failurePrefix = ''): Promise<boolean> => {
     try { await send(); notifyRef.current(success); return true; }
     catch (error) {
-      notifyRef.current(error instanceof OkxUncertainError || (error instanceof AppError && error.code === 'request_uncertain') ? t('交易所结果未知，已刷新委托列表，请核对后再操作。') : describe(error));
+      notifyRef.current(failurePrefix + (error instanceof OkxUncertainError || (error instanceof AppError && error.code === 'request_uncertain') ? t('交易所结果未知，已刷新委托列表，请核对后再操作。') : describe(error)));
       return false;
     } finally { void refresh(); }
   };
@@ -285,7 +318,38 @@ export function useOkxAccount({ enabled, instId, notify }: { enabled: boolean; i
     }, t('已撤销本市场 {0} 笔挂单', open.length));
   };
 
+  /** The TP/SL that closes this whole position, if any (closeFraction 1, or a size equal to the position). */
+  const protectionFor = (position: TradePosition) => (account?.protects ?? []).find(item => item.instId === position.instId && (item.posSide === position.posSide || item.posSide === 'net')
+    && (item.full || Math.abs(item.contracts - position.contracts) < 1e-9)) ?? null;
+  /** Sets or clears the whole-position TP/SL. Same legs -> amend prices in place; a different leg set -> cancel, then place anew. */
+  const protectPosition = async (position: TradePosition, input: ProtectInput): Promise<boolean> => {
+    const inst = instrument(position.instId), cfg = configRef.current;
+    if (!inst || !cfg) return false;
+    const current = protectionFor(position);
+    const cancelCurrent = () => current ? call('POST', 'trade/cancel-algos', [{ instId: current.instId, algoId: current.id }]) : Promise.resolve([]);
+    if (!input.tp && !input.sl) return current ? writeThenRefresh(cancelCurrent, t('已删除止盈止损')) : true;
+    if (current && !!current.tp === !!input.tp && !!current.sl === !!input.sl)
+      return writeThenRefresh(() => call('POST', 'trade/amend-algos', { instId: current.instId, algoId: current.id, ...legs(input, inst.tickSz, true) }), t('止盈止损已更新'));
+    const net = cfg.posMode !== 'long_short_mode';
+    // closeFraction=1 follows the position size and is cancelled with it; OKX allows it in net mode outside portfolio margin only.
+    const size = net && cfg.acctLv !== '4' ? { closeFraction: '1', reduceOnly: true } : net ? { sz: String(position.contracts), reduceOnly: true } : { sz: String(position.contracts), posSide: position.posSide };
+    // A net-mode conditional order with both legs runs only the stop loss, so two legs always use oco.
+    const body = { instId: position.instId, tdMode: position.mgnMode === 'isolated' ? 'isolated' : 'cross', side: position.side === 'long' ? 'sell' : 'buy',
+      ordType: input.tp && input.sl ? 'oco' : 'conditional', algoClOrdId: clientOrderId(), ...size, ...legs(input, inst.tickSz) };
+    // OKX keeps one whole-position TP/SL, so the old one goes first; a failed placement leaves the position unprotected and says so.
+    if (current && !await writeThenRefresh(cancelCurrent, t('已撤销旧的止盈止损'))) return false;
+    return writeThenRefresh(() => call('POST', 'trade/order-algo', body), t('止盈止损已设置'), current ? t('旧的止盈止损已撤销，新的设置失败，当前持仓没有止盈止损：') : '');
+  };
+  /** Chart drag moves one leg; × removes it (the other leg, if any, stays). */
+  const amendProtect = (position: TradePosition, item: TradeProtect, leg: 'tp' | 'sl', price: number | null) => {
+    const inst = instrument(item.instId);
+    if (!inst) return Promise.resolve(false);
+    if (price === null) return protectPosition(position, { tp: leg === 'tp' ? null : item.tp, sl: leg === 'sl' ? null : item.sl });
+    return writeThenRefresh(() => call('POST', 'trade/amend-algos', { instId: item.instId, algoId: item.id, ...legs(leg === 'tp' ? { tp: price, sl: null } : { tp: null, sl: price }, inst.tickSz, true) }),
+      t('{0}已改到 {1}', leg === 'tp' ? t('止盈') : t('止损'), roundTo(price, inst.tickSz)));
+  };
+
   const orders = [...(account?.orders ?? []), ...local.filter(order => !(account?.orders ?? []).some(item => item.clOrdId === order.clOrdId))];
-  return { vault, status, relay, config, account, orders, pollError, leverage, uncertain, instrument, unlock, save, forget, lock, place, amend, cancel, cancelAll, refresh };
+  return { vault, status, relay, config, account, orders, pollError, leverage, uncertain, instrument, unlock, save, forget, lock, place, amend, cancel, cancelAll, refresh, protectionFor, protectPosition, amendProtect };
 }
 export type OkxAccount = ReturnType<typeof useOkxAccount>;

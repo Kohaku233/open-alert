@@ -29,6 +29,24 @@ A click on the chart then sends at once; Shift+click keeps the side armed. A buy
 last price (or a sell below it) becomes a trigger-market order. Chart orders above the
 per-order notional cap (default 5000 USDT) are not sent. Keyboard hints are desktop only.
 
+## Position and TP/SL
+
+The current position is drawn on the chart (entry line, liquidation line and a chip with side,
+leverage, size and unrealized P&L) and summarised at the top of the order ticket.
+
+- Whole-position TP/SL: one OKX `conditional` (one leg) or `oco` (both legs) algo order that closes
+  the position at market. In net mode it uses `closeFraction=1`, so the size follows the position;
+  hedge mode and portfolio margin send the current size instead. Changing which legs exist cancels
+  the old order and places a new one (OKX keeps one whole-position TP/SL).
+- TP and SL lines can be dragged (`amend-algos`) and removed with ×. The drag label and every field
+  show the estimated P&L in USDT: `(exit - entry) * size` for longs, reversed for shorts, before fees.
+- New orders can carry TP/SL through `attachAlgoOrds`; OKX places it once the order fills.
+  Reduce-only orders cannot carry TP/SL (OKX 51100), so the option is disabled for them.
+- Prices on the wrong side (a long TP below the reference price, etc.) are blocked in the UI.
+
+Price and size fields are text inputs with a decimal keypad: no spinner, no wheel or arrow-key
+stepping, and pasted separators or full-width digits are cleaned.
+
 ## Configuration
 
 `TRADE_EGRESS_IP` (optional) is shown to users as the address to whitelist on their key.

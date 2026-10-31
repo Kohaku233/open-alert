@@ -84,8 +84,9 @@ export type ChartLineAction = { alert: Alert; price: number };
 export type ChartArmed = 'buy' | 'sell' | 'alert' | null;
 /** A trading price line: an order (draggable to amend), the position entry or its liquidation price. */
 export interface ChartTradeLine {
-  id: string; price: number; tone: 'buy' | 'sell' | 'position' | 'liq'; style: 'solid' | 'dashed' | 'dotted'; title?: string;
-  chip?: { badge: string; text: string; qty: string; pnl?: { text: string; positive: boolean }; state?: string };
+  id: string; price: number; tone: 'buy' | 'sell' | 'position' | 'liq' | 'tp' | 'sl'; style: 'solid' | 'dashed' | 'dotted'; title?: string;
+  /** action: a labelled button on the chip that calls overlay.onAction (e.g. open the position's TP/SL editor). */
+  chip?: { badge: string; text: string; qty: string; pnl?: { text: string; positive: boolean }; state?: string; action?: string };
   draggable?: boolean; cancellable?: boolean;
 }
 /** Host-owned overlay: when armed, one click on the price pane is handed to onArmedClick instead of the chart. */
@@ -94,6 +95,9 @@ export interface ChartOverlay {
   ghost: (price: number) => { tone: 'buy' | 'sell' | 'alert'; text: string; hint: string } | null;
   onArmedClick: (price: number, keepArmed: boolean) => void;
   onModify: (id: string, price: number) => void; onCancel: (id: string) => void;
+  onAction?: (id: string) => void;
+  /** Drag label text for a line at a candidate price (e.g. the P&L a TP/SL would book); null keeps the default. */
+  preview?: (id: string, price: number) => string | null;
 }
 export const NativeChart = memo(function NativeChart({ market, tick, alerts, source, canCreate, onRetarget, onCreateAt, overlay }: {
   market: { instrument: string; tickSize: string; venue?: 'binance' | 'okx' | 'mexc'; type?: 'spot' | 'swap' }; tick: MarketQuote | undefined; alerts: Alert[]; source: string; canCreate: boolean;
@@ -114,7 +118,8 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   const tradeLines = useRef(new Map<string, IPriceLine>());
   const tradeDrag = useRef<{ id: string; pointerId: number; from: number; price: number } | null>(null);
   const [tradeDragLabel, setTradeDragLabel] = useState<{ id: string; y: number; price: number } | null>(null);
-  const [chipYs, setChipYs] = useState<Record<string, number>>({});
+  // y per chip; off marks a line outside the visible price range, pinned to that edge.
+  const [chipYs, setChipYs] = useState<Record<string, { y: number; off: -1 | 0 | 1 }>>({});
   const supported = (value: CandleTimeframe) => !market.venue || !market.type || timeframeSupported(market.venue, market.type, value);
   const [chosenFrame, setFrame] = useState(readFrame);
   // A frame saved on another venue may not exist here (e.g. 3m on MEXC); fall back without overwriting the choice.
@@ -431,7 +436,7 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
   useEffect(() => {
     const current = chartRef.current;
     if (!current) return;
-    const colors = { buy: cssVar('--signal', '#d6ff4f'), sell: cssVar('--amber', '#f0a36b'), position: cssVar('--foreground', '#f3f0e5'), liq: cssVar('--danger', '#ff8b8b') };
+    const colors = { buy: cssVar('--signal', '#d6ff4f'), sell: cssVar('--amber', '#f0a36b'), position: cssVar('--foreground', '#f3f0e5'), liq: cssVar('--danger', '#ff8b8b'), tp: cssVar('--signal', '#d6ff4f'), sl: cssVar('--danger', '#ff8b8b') };
     const styles = { solid: LineStyle.Solid, dashed: LineStyle.Dashed, dotted: LineStyle.Dotted };
     const keep = new Set<string>();
     for (const item of overlayRef.current?.lines ?? []) {
@@ -451,12 +456,24 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
     const loop = () => {
       const current = chartRef.current;
       if (current) {
-        const next: Record<string, number> = {};
+        const next: Record<string, { y: number; off: -1 | 0 | 1 }> = {};
+        const height = current.chart.paneSize(0).height, edge = 16;
         for (const item of overlayRef.current?.lines ?? []) {
           if (!item.chip) continue;
           const price = tradeDrag.current?.id === item.id ? tradeDrag.current.price : item.price;
           const y = current.candles.priceToCoordinate(price);
-          if (y !== null && y >= 0 && y <= current.chart.paneSize(0).height) next[item.id] = Math.round(y);
+          if (y === null || height <= edge * 2) continue;
+          next[item.id] = y < edge ? { y: edge, off: -1 } : y > height - edge ? { y: height - edge, off: 1 } : { y: Math.round(y), off: 0 };
+        }
+        // Chips on the same side (orders left; position, TP and SL right) must not cover each other:
+        // walk them top to bottom and push each one below the previous by at least one chip height.
+        const gap = 30;
+        for (const right of [false, true]) {
+          const column = (overlayRef.current?.lines ?? []).filter(item => next[item.id] && (item.tone === 'buy' || item.tone === 'sell') !== right).sort((a, b) => next[a.id]!.y - next[b.id]!.y);
+          for (let i = 1; i < column.length; i++) {
+            const above = next[column[i - 1]!.id]!, here = next[column[i]!.id]!;
+            if (here.y - above.y < gap) next[column[i]!.id] = { ...here, y: above.y + gap };
+          }
         }
         const key = JSON.stringify(next);
         if (key !== previous) { previous = key; setChipYs(next); }
@@ -696,13 +713,14 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
       {state === 'failed' && <EmptyState className="chart-fallback" role="status"><strong>{t('K 线暂时不可用')}</strong><p>{error || t('交易所暂时没有返回数据。')}</p><Button variant="default" className="primary" onClick={() => setRetry(value => value + 1)}>{t('重试')}</Button></EmptyState>}
       {dragLabel && <div className="chart-drag-label" style={{ top: dragLabel.y }} aria-live="polite">{t('松开后确认')} · {formatQuotePrice(dragLabel.price)}</div>}
       {trading && state === 'ready' && <div className="chart-chips" aria-label={t('图上订单')}>{overlay!.lines.map(item => item.chip && chipYs[item.id] !== undefined && <div key={item.id}
-        className={`chart-chip ${item.tone} ${item.chip.state ? 'is-pending' : ''}`} style={{ top: chipYs[item.id] }}>
-        <b>{item.chip.badge}</b><span>{item.chip.text}</span><em>{item.chip.qty}</em>
-        {item.chip.pnl && <span className={item.chip.pnl.positive ? 'signal-text' : 'amber-text'}>{item.chip.pnl.text}</span>}
+        className={`chart-chip ${item.tone} ${item.chip.state ? 'is-pending' : ''} ${chipYs[item.id]!.off ? 'is-offscreen' : ''}`} style={{ top: chipYs[item.id]!.y }}>
+        <b>{chipYs[item.id]!.off ? `${chipYs[item.id]!.off < 0 ? '↑' : '↓'} ` : ''}{item.chip.badge}</b><span>{item.chip.text}</span>{item.chip.qty && <em>{item.chip.qty}</em>}
+        {item.chip.pnl && <span className={`chip-pnl ${item.chip.pnl.positive ? 'signal-text' : 'danger-text'}`}>{item.chip.pnl.text}</span>}
+        {item.chip.action && overlay!.onAction && <button type="button" className="chip-action" onClick={() => overlay!.onAction!(item.id)}>{item.chip.action}</button>}
         {item.chip.state ? <span className="chip-state">{item.chip.state}</span> : item.cancellable && <button type="button" aria-label={t('撤销 {0} {1}', item.chip.badge, formatQuotePrice(item.price))} onClick={() => overlay!.onCancel(item.id)}><X aria-hidden="true"/></button>}
       </div>)}</div>}
       {ghost && hover && !tradeDragLabel && state === 'ready' && <div className={`chart-ghost ${ghost.tone}`} style={{ top: hover.y }} aria-live="polite"><span>{ghost.text}<small>{ghost.hint}</small></span></div>}
-      {tradeDragLabel && <div className="chart-drag-label" style={{ top: tradeDragLabel.y }} aria-live="polite">{t('松开后改价')} · {formatQuotePrice(tradeDragLabel.price)}</div>}
+      {tradeDragLabel && <div className="chart-drag-label" style={{ top: tradeDragLabel.y }} aria-live="polite">{overlay?.preview?.(tradeDragLabel.id, tradeDragLabel.price) ?? `${t('松开后改价')} · ${formatQuotePrice(tradeDragLabel.price)}`}</div>}
       {canCreate && !trading && !overlay?.armed && hover && !dragLabel && !tool && state === 'ready' && <Button type="button" className="chart-create-at" style={{ top: hover.y }}
         onPointerEnter={() => { hoverHold.current = true; }} onPointerLeave={() => { hoverHold.current = false; setHover(null); }}
         onClick={() => { hoverHold.current = false; callbacks.current.onCreateAt(hover.price); setHover(null); }}

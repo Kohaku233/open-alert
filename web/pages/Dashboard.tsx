@@ -24,7 +24,7 @@ import { MarketSourceSelector } from '../components/MarketSourceSelector.js';
 import { FirstRunGuide } from '../components/FirstRunGuide.js';
 import { useMarketQuote } from '../useMarketQuote.js';
 import { useDashboardMode, useTradeDesk, tradableMarket } from '../trade/useTradeDesk.js';
-import { ArmGroup, BookPanel, KeyDialog, OrderPanel, TradeTelemetry } from '../trade/TradePanels.js';
+import { ArmGroup, BookPanel, KeyDialog, OrderPanel, ProtectDialog, TradeTelemetry } from '../trade/TradePanels.js';
 import { findMarket, marketIdentity, marketLabel, marketQuote, sameMarket, selectableMarket, typeLabels, useRetainedMarket, venueLabels } from '../markets.js';
 type ConfirmAction = {
     kind: 'delete' | 'rearm';
@@ -211,6 +211,7 @@ export function Dashboard({ model, active, alertsOnly = false, notify, navigate 
     </Disclosure>}
     {!confirm && <FormError message={actionError}/>}
     <DialogPresence present={desk.keyDialog}>{desk.keyDialog && <KeyDialog desk={desk} notify={notify}/>}</DialogPresence>
+    <DialogPresence present={desk.protectDialog}>{desk.protectDialog && <ProtectDialog desk={desk} last={tick && market && tick.instrument === market.instrument ? tick.price : undefined}/>}</DialogPresence>
     <DialogPresence present={!!editor}>{editor && <AlertEditor model={model} alert={editor.alert} instrument={selected} {...(editor.threshold !== undefined ? { initialThreshold: editor.threshold } : {})} {...(editor.side ? { initialSide: editor.side } : {})} onClose={() => setEditor(null)} notify={notify}/>}</DialogPresence>
     <DialogPresence present={!!confirm}>{confirm && <Dialog title={confirm.kind === 'disable' ? t("暂停所有监控？") : confirm.kind === 'delete' ? t("删除这条警报？") : confirm.kind === 'retarget' ? t("修改目标价？") : t("重新武装这条警报？")} onClose={() => setConfirm(null)} busy={busy}>
       {confirm.kind === 'retarget' ? <div className="retarget-summary"><p>{t("「{0}」", confirm.alert.name)}</p><div className={`retarget-values ${confirm.alert.side}`}><span><small>{t("原目标价")}</small><s>{formatPrice(confirm.alert.threshold)}</s></span><b aria-hidden="true">→</b><span><small>{t("新目标价")}</small><strong>{formatPrice(confirm.price)}</strong></span></div>{tick && <p className="small muted">{t("距现价")} {((confirm.price - tick.price) / tick.price * 100) >= 0 ? '+' : ''}{((confirm.price - tick.price) / tick.price * 100).toFixed(2)}% · {confirm.alert.side === 'upper' ? t("达到或高于") : t("达到或低于")}</p>}</div>

@@ -29,8 +29,10 @@ export async function sign(secret: string, prehash: string): Promise<string> {
   return base64(await crypto.subtle.sign('HMAC', key, encoder.encode(prehash)));
 }
 
-type Params = Record<string, string | number | boolean | undefined>;
-export function queryString(params: Params = {}): string {
+type Scalar = string | number | boolean | undefined;
+/** Query values are scalars; POST bodies may also nest arrays of objects (e.g. attachAlgoOrds). */
+type Params = { [name: string]: Scalar | Record<string, Scalar>[] };
+export function queryString(params: Record<string, Scalar> = {}): string {
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(name, String(value));
   return search.toString();
@@ -38,6 +40,7 @@ export function queryString(params: Params = {}): string {
 
 // OKX rejects requests whose timestamp is more than 30s off; known codes get readable text.
 const okxMessages: Record<string, string> = {
+  get 50101() { return t('API Key 与当前环境不符：模拟盘 Key 需要勾选「模拟盘」，实盘 Key 不要勾选。'); },
   get 50102() { return t('本机时间与交易所相差过大，请校准系统时间后重试。'); },
   get 50103() { return t('API Key 无效或已删除。'); },
   get 50105() { return t('Passphrase 不正确。'); },
@@ -52,7 +55,7 @@ const okxMessages: Record<string, string> = {
 
 export async function okxCall<T = Record<string, string>>(creds: OkxCredentials, method: 'GET' | 'POST', path: string, params?: Params | Params[], options: { signal?: AbortSignal } = {}): Promise<T[]> {
   const full = `/api/v5/${path}`;
-  const query = method === 'GET' ? queryString(params as Params | undefined) : '';
+  const query = method === 'GET' ? queryString(params as Record<string, Scalar> | undefined) : '';
   const body = method === 'POST' ? JSON.stringify(params ?? {}) : '';
   const signedAt = Date.now(), timestamp = new Date(signedAt).toISOString();
   const signature = await sign(creds.secret, `${timestamp}${method}${full}${query ? `?${query}` : ''}${body}`);

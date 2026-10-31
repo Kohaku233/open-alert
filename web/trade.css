@@ -52,9 +52,16 @@
 .chart-chip { position:absolute;left:56px;transform:translateY(-50%);display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 4px 0 0;border:1px solid var(--chip);border-radius:7px;background:var(--card);font:11px/1 var(--mono-font);color:var(--text);pointer-events:auto;white-space:nowrap;overflow:hidden; }
 .chart-chip.buy { --chip:color-mix(in srgb,var(--signal) 70%,transparent); }
 .chart-chip.sell { --chip:color-mix(in srgb,var(--amber) 70%,transparent); }
-.chart-chip.position { --chip:var(--control-border);padding-right:10px;left:auto;right:calc(var(--price-scale-width,60px) + 10px); }
+.chart-chip.position { --chip:var(--text);height:28px;gap:10px;padding-right:4px;left:auto;right:calc(var(--price-scale-width,60px) + 10px);border-color:color-mix(in srgb,var(--text) 45%,transparent);box-shadow:0 8px 24px #0005; }
+.chart-chip.tp { --chip:color-mix(in srgb,var(--signal) 70%,transparent);left:auto;right:calc(var(--price-scale-width,60px) + 10px); }
+.chart-chip.sl { --chip:color-mix(in srgb,var(--danger) 75%,transparent);left:auto;right:calc(var(--price-scale-width,60px) + 10px); }
+.chart-chip > .chip-pnl { font-variant-numeric:tabular-nums; }
+.chart-chip > .chip-action { width:auto;height:20px;padding:0 8px;border:1px solid var(--line);border-radius:999px;font:11px/1 var(--body-font);color:var(--text); }
+.chart-chip > .chip-action:hover { border-color:var(--control-border);background:var(--secondary-hover);color:var(--text); }
 .chart-chip.is-pending { border-style:dashed;opacity:.85; }
-.chart-chip > b { display:grid;place-items:center;height:100%;padding:0 8px;background:var(--chip);color:var(--bg);font-weight:600; }
+/* Pinned to the pane edge: the line itself is out of view, so the chip reads as a pointer, not a level. */
+.chart-chip.is-offscreen { border-style:dashed;opacity:.9; }
+.chart-chip > b { display:grid;place-items:center;height:100%;padding:0 8px;background:var(--chip);color:var(--bg);font-weight:600;white-space:nowrap; }
 .chart-chip.position > b { background:var(--text); }
 .chart-chip > span { color:var(--muted-foreground); }
 .chart-chip > em { font-style:normal; }
@@ -79,7 +86,8 @@ span.book-market { cursor:default; }
 .book-side { font:500 13px var(--mono-font); }
 .book-side.buy { color:var(--signal); }
 .book-side.sell { color:var(--amber); }
-.book-row dl { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0; }
+.book-row dl { display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:12px;margin:0; }
+.book-protect dd { font-size:12px; }
 .book-row dt { font:10px/1.4 var(--mono-font);letter-spacing:.06em;color:var(--muted-foreground); }
 .book-row dd { margin:2px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums;white-space:nowrap; }
 .book-pnl { display:grid;justify-items:end;font:500 15px var(--mono-font);font-variant-numeric:tabular-nums; }
@@ -105,7 +113,9 @@ span.book-market { cursor:default; }
 .order-field { display:grid;gap:6px;font-size:12px;color:var(--muted-foreground); }
 .order-field > small { font-size:11px; }
 .order-input { position:relative;display:block; }
-.order-input [data-slot="input"] { height:48px;padding-right:64px;border-radius:12px;background:var(--field);border-color:var(--control-border);font:400 18px var(--mono-font);color:var(--text);font-variant-numeric:tabular-nums; }
+.order-input [data-slot="input"] { height:48px;padding:0 72px 0 14px;border-radius:12px;background:var(--field);border-color:var(--control-border);font:400 18px var(--mono-font);color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:0; }
+.order-input [data-slot="input"][aria-invalid="true"] { border-color:var(--danger); }
+.order-unit { position:absolute;right:14px;top:50%;transform:translateY(-50%);font:12px var(--mono-font);color:var(--muted-foreground);pointer-events:none; }
 .order-input button { position:absolute;right:8px;top:50%;transform:translateY(-50%);height:30px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);font:11px var(--mono-font);color:var(--muted-foreground);cursor:pointer; }
 .order-input button:hover { color:var(--text);border-color:var(--control-border); }
 .qty-presets { display:grid;grid-template-columns:repeat(4,minmax(0,1fr)); }
@@ -115,6 +125,43 @@ span.book-market { cursor:default; }
 .order-summary dt { color:var(--muted-foreground); }
 .order-summary dd { margin:0;font-variant-numeric:tabular-nums; }
 .order-reduce { display:flex;gap:9px;align-items:center;font-size:13px;color:var(--text); }
+.order-toggles { display:flex;gap:20px;flex-wrap:wrap; }
+.order-toggles [data-disabled] + span,.order-toggles :disabled + span { color:var(--muted-foreground); }
+
+/* TP/SL: two fields side by side, each with the P&L it would book. */
+.protect-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.protect-field .order-input [data-slot="input"] { height:42px;padding-right:56px;font-size:15px; }
+.protect-field .order-input button { height:26px;padding:0 8px; }
+.protect-field.tp .order-input [data-slot="input"]:not([aria-invalid="true"]):focus-visible { border-color:var(--signal); }
+.protect-field.sl .order-input [data-slot="input"]:not([aria-invalid="true"]):focus-visible { border-color:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 14%,transparent); }
+.protect-label { display:flex;justify-content:space-between;gap:6px; }
+.protect-label small { font:11px var(--mono-font);color:var(--muted-foreground); }
+.protect-field > small { min-height:15px;font:12px/1.25 var(--mono-font);font-variant-numeric:tabular-nums; }
+.protect-note { grid-column:1 / -1;margin:0;font-size:11px;line-height:1.5;color:var(--muted-foreground); }
+
+/* Current position at the top of the ticket. */
+.position-card { display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-left:2px solid var(--side);border-radius:14px;background:var(--field); }
+.position-card.long { --side:var(--signal); }
+.position-card.short { --side:var(--amber); }
+.position-card-head { display:flex;align-items:baseline;gap:10px; }
+.position-card-head .book-side { font-size:14px; }
+.position-lever { font:11px var(--mono-font);color:var(--muted-foreground); }
+.position-card-head strong { margin-left:auto;font:500 16px var(--mono-font);font-variant-numeric:tabular-nums; }
+.position-card-head strong small { font-size:11px;font-weight:400; }
+.position-card dl { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0; }
+.position-card dt { font:10px/1.4 var(--mono-font);letter-spacing:.06em;color:var(--muted-foreground); }
+.position-card dd { display:flex;align-items:baseline;gap:6px;margin:2px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums;white-space:nowrap; }
+.position-card dd small { font-size:11px; }
+.position-protect[data-slot="button"] { min-height:34px;height:34px;font-size:12px; }
+
+.protect-dialog form { display:grid;gap:16px; }
+.protect-facts { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;border:1px solid var(--line);border-radius:14px;overflow:hidden; }
+.protect-facts div { padding:10px 14px;border-right:1px solid var(--line); }
+.protect-facts div:last-child { border-right:0; }
+.protect-facts dt { font:10px var(--mono-font);color:var(--muted-foreground);letter-spacing:.08em; }
+.protect-facts dd { margin:4px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums; }
+.protect-dialog .protect-field .order-input [data-slot="input"] { height:48px;font-size:17px; }
+.protect-dialog .confirm-actions { display:flex;justify-content:flex-end;gap:8px; }
 .order-form .warning { margin:0; }
 .order-submit[data-slot="button"] { margin:0;min-height:48px;font-variant-numeric:tabular-nums; }
 .order-submit.buy[data-slot="button"] { box-shadow:inset 0 -2px 0 var(--signal); }
@@ -175,4 +222,8 @@ span.book-market { cursor:default; }
   .book-row .book-pnl,.book-row .state-label { grid-column:2;grid-row:1;justify-self:end; }
   .book-row .book-side { grid-column:1; }
   .chart-ghost small { display:none; }
+  .chart-chip.position > span:not(.chip-pnl) { display:none; }
+  .protect-facts { grid-template-columns:1fr 1fr; }
+  .protect-facts div:last-child { grid-column:1 / -1;border-top:1px solid var(--line); }
+  .protect-facts div:nth-child(2) { border-right:0; }
 }
