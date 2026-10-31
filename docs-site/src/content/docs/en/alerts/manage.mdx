@@ -1,0 +1,34 @@
+---
+title: Manage alerts
+description: How to edit, rearm and delete alerts, and what the monitoring switch does.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+## Alert states
+
+| State | Meaning | What you can do |
+| --- | --- | --- |
+| Armed | Waiting for the price to meet the condition | Edit, pause, delete |
+| Notification queued / Sending | Triggered, and the notification is on its way | Wait for it to finish. You can't change the alert during this time |
+| Triggered | The notification has been sent and the alert is locked | Rearm, edit, delete |
+| Delivery uncertain | The notification may or may not have arrived | Check your phone first, then decide whether to rearm |
+
+## Rearm
+
+An alert that has triggered only becomes active again after you click **Rearm**. Changing the price or toggling the alert on or off does not unlock it. This keeps a parameter tweak from sending you a notification by accident.
+
+## Monitoring switch
+
+The monitoring switch controls every price alert in your account:
+
+- **Off**: no alert can trigger, and any queued notifications that haven't gone out yet are cancelled. Requests already sent to a channel can't be recalled.
+- **On**: price checks resume. As soon as the first fresh price meets a condition, that alert triggers.
+
+<Aside>
+The monitoring switch only controls price alerts. Anomaly monitoring has its own switch, and the two don't affect each other.
+</Aside>
+
+## Delete an alert
+
+A deleted alert disappears from your list, but its delivery history is still kept in the background. If an alert is queued or sending, you can delete it once sending finishes.

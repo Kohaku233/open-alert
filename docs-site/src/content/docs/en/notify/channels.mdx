@@ -1,0 +1,54 @@
+---
+title: Notification channels
+description: Add Pushover and Discord channels, then test, disable or delete them.
+---
+
+import Aside from '../../../../components/Aside.astro';
+import Tabs from '../../../../components/Tabs.astro';
+import TabItem from '../../../../components/TabItem.astro';
+
+A notification channel is where your notifications land, such as the Pushover app on your phone or a Discord channel you choose. Each account can add up to 10 channels.
+
+## Add a channel
+
+On the **Notifications** page, click **Add channel** and pick a channel type. Give it a name you will recognize (1 to 40 characters), then fill in the settings for that type.
+
+<Tabs>
+  <TabItem label="Pushover">
+    1. Install Pushover on your phone and sign in.
+    2. Open your account page on the Pushover website and copy your **User Key** (30 letters or digits).
+    3. Paste it into **User Key**.
+    4. You can leave **Personal application token** empty. If you do, the site's shared token is used. To use your own, create one on Pushover's application page and paste it here.
+
+    When you save, the system checks your key with Pushover. It does not send a test notification at this step.
+  </TabItem>
+  <TabItem label="Discord">
+    1. In Discord, open the channel's **Settings → Integrations → Webhooks**.
+    2. Create a new webhook and copy its URL.
+    3. Paste it into **Discord Webhook URL**.
+
+    The Discord app controls its own notification sounds, so the sound settings here do not apply to it.
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="New channels receive nothing by default">
+After you add a channel, go to [Delivery rules](/en/notify/routes/), turn on the messages it should receive, and click **Save routing**.
+</Aside>
+
+## Test
+
+Click **Test** next to a channel to send a test notification at normal priority. You can test the same channel once every 30 seconds. Test messages also count toward that day's delivery attempts.
+
+## Disable, edit and delete
+
+- **Disable**: Turn off the switch next to the channel. A disabled channel receives nothing, even if it is turned on in your delivery rules.
+- **Edit**: You can change the channel name or update the key or webhook URL. If you leave a key field empty, the saved value is kept. If you change your Pushover personal application token, you must enter your User Key again too.
+- **Delete**: Removes the channel and its delivery rules for good. You cannot undo this.
+
+## Coming soon
+
+Telegram, DingTalk, WeCom and QQ are planned. They are not yet available in the channel type list.
+
+<Aside>
+Sensitive keys are stored encrypted on the server. The web page only shows part of each key.
+</Aside>

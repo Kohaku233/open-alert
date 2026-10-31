@@ -1,0 +1,42 @@
+---
+import Docs from '../../layouts/Docs.astro';
+import LinkCard from '../../components/LinkCard.astro';
+import Pipeline from '../../components/Pipeline.astro';
+---
+<Docs
+  title="Open Alert user guide"
+  description="Open Alert watches the market for you and notifies you through Pushover or Discord when a price is hit or an anomaly appears. It keeps working after you close the page."
+  meta={[{ label: 'Exchanges', value: 'Binance · OKX · MEXC' }, { label: 'Notifications', value: 'Pushover · Discord' }]}
+  pager={{ next: { href: '/en/start/', title: 'Get started in five minutes' } }}
+>
+  <h2 id="flow">How an alert reaches you</h2>
+  <Pipeline
+    label="Alert flow"
+    steps={[
+      { tag: 'You set it up', title: 'Alert or anomaly', text: 'A target price, or anomaly pushes turned on' },
+      { tag: 'Server', title: 'Checked in the background', text: 'Reads live trades from the exchange' },
+      { tag: 'Match', title: 'Triggered', text: 'Queued as soon as the condition is met' },
+      { tag: 'Delivery rules', title: 'Pick channels', text: 'Each message type goes to its channels' },
+      { tag: 'Delivered', title: 'You get notified', text: 'Pushover or Discord' },
+    ]}
+  />
+  <p>Checking and sending both happen on the server, so alerts still arrive after you close the browser or shut your laptop.</p>
+
+  <h2 id="start">Start here</h2>
+  <div class="cards">
+    <LinkCard title="Get started in five minutes" description="Sign in, add a notification channel, create your first alert and turn on monitoring." href="/en/start/" />
+    <LinkCard title="How price alerts trigger" description="Which price is checked, how fast a hit is caught, and why an alert locks after it triggers." href="/en/alerts/how-it-works/" />
+    <LinkCard title="Anomaly rules" description="What counts as an anomaly, and why a notice sometimes arrives late." href="/en/anomaly/rules/" />
+    <LinkCard title="Channels and delivery rules" description="Set up Pushover and Discord, and choose where each type of message goes." href="/en/notify/channels/" />
+  </div>
+
+  <h2 id="help">Having trouble?</h2>
+  <div class="cards">
+    <LinkCard title="FAQ" description="What to check when an alert is missing, arrives twice, or the price looks wrong." href="/en/help/faq/" />
+    <LinkCard title="Limits" description="How many alerts you can create and how many notifications you can get each day." href="/en/account/limits/" />
+  </div>
+</Docs>
+<style>
+  .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 8px}
+  @media (max-width:860px){.cards{grid-template-columns:1fr}}
+</style>

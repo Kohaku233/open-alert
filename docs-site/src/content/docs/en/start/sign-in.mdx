@@ -1,0 +1,35 @@
+---
+title: Sign-in and invitations
+description: How to sign in during the invite-only beta, how verification codes work, and fixes for common sign-in problems.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+Open Alert is in an invite-only beta. Only invited email addresses can register. Once registered, you can sign in any time, and you never need a password.
+
+## Two ways to sign in
+
+| Method | How to use it | Note |
+| --- | --- | --- |
+| Google | Click **Continue with Google** and pick the Google account that matches your invited email | If you pick the wrong account, you'll see a message that you weren't invited. Click again and pick the right one |
+| Email code | Enter your invited email, click **Send sign-in code**, and type the 6-digit code from the email | The code is valid for 5 minutes. If you request a new one, use the code from the latest email |
+
+Both methods sign you in to the same account, so you can switch between them whenever you like.
+
+## Invitation rules
+
+- An invitation works only for the email address it was sent to, and it's valid for 7 days.
+- If your invitation expires, ask the person who invited you to send a new one.
+- Once you've registered, you don't need an invitation to sign in again.
+
+## Sign-in problems
+
+**No verification code arrives.** First check that the email you entered exactly matches your invited email, and look in your spam folder. If it still hasn't arrived, wait for the resend countdown to finish and try again. If the email service is running late, you can sign in with Google instead.
+
+**The code is wrong or expired.** A code is valid for 5 minutes, and it stops working after several wrong attempts in a row. Request a new email and enter the 6-digit code from the newest one.
+
+**Your account is disabled.** When an account is disabled, all of its active sessions end right away and all notifications stop. If you have questions, contact the person who invited you.
+
+<Aside>
+Your sign-in credentials are stored securely in an HTTP-only cookie, and the web page keeps no sensitive tokens. When you finish on a shared device, always sign out manually to keep your account safe.
+</Aside>

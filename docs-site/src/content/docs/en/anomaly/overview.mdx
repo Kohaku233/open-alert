@@ -1,0 +1,35 @@
+---
+title: What is anomaly monitoring
+description: Which contracts anomaly monitoring scans, and how it differs from price alerts.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+With a price alert, you set the target price yourself. Anomaly monitoring needs no price level. The system scans a large number of contracts on its own and tells you when a symbol's price move and trading volume are both far above their usual levels.
+
+## How it differs from price alerts
+
+| | Price alerts | Anomaly monitoring |
+| --- | --- | --- |
+| Who sets the condition | You set a target price | The system decides using statistical rules |
+| Coverage | Markets you choose | USDT perpetual contracts on Binance, OKX and MEXC |
+| Switch | Monitoring switch | Anomaly pushes switch. The two are independent |
+| Frequency | Each alert triggers once | The rules are strict, so expect a few per day on average |
+
+## Which contracts are monitored
+
+- USDT perpetual contracts on Binance, OKX and MEXC.
+- 24-hour trading volume of at least $10 million.
+- Crypto contracts must also match a token on CoinGecko with a circulating market cap of at least $10 million.
+- Stocks & TradFi contracts (such as contracts tied to US stocks) form a separate category that you can turn on or off on its own.
+
+## How to turn it on
+
+1. On the **Notifications** page, under delivery rules, link "Crypto anomalies" or "Stock anomalies" to at least one enabled notification channel.
+2. Go to the **Anomalies** page, turn on the **Anomaly pushes** switch, then turn on **Crypto contracts** and **Stock & TradFi contracts** as needed.
+
+If no channel receives anomaly messages yet, the page shows "No enabled channel receives anomalies, so nothing can be pushed." and you can't turn on the switch.
+
+<Aside type="caution" title="Anomaly alerts are not trading signals">
+Anomaly monitoring catches unusual market moves that have already happened. Its job is to prompt you to check the market in time. It can't predict where the price goes next.
+</Aside>

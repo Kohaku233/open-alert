@@ -1,0 +1,41 @@
+---
+title: Five-minute start
+description: Every step from signing in to getting your first price alert.
+sidebar:
+  label: Five-minute start
+---
+
+import Steps from '../../../../components/Steps.astro';
+import Aside from '../../../../components/Aside.astro';
+
+Open Alert watches the latest trade price on each exchange from its servers. When the price reaches the level you set, it sends an alert through the channels you connected. It keeps working in the background even if you close your browser or shut your laptop.
+
+<Steps>
+
+1. **Sign in**
+
+   Go to [cryptotool.bar](https://cryptotool.bar) and sign in with the email address you were invited with. You can use Google or an email verification code. Both sign you in to the same account. See [Sign-in and invitations](/en/start/sign-in/) for details.
+
+2. **Add a notification channel**
+
+   Open the **Notifications** page, click **Add channel**, choose Pushover or Discord, and enter its key or webhook URL. Then, under **Delivery rules** below, send "Price alerts" to that channel and click **Save routing**. See [Notification channels](/en/notify/channels/) for details.
+
+3. **Create your first alert**
+
+   Go back to the **Prices** page, pick an exchange and a trading pair, and click **Create alert**. Choose "At or above" or "At or below" and set your target price. See [Create your first alert](/en/start/first-alert/) for details.
+
+4. **Turn on the monitoring switch**
+
+   The monitoring switch is off by default for new accounts. Turn it on from the Prices page. Only then does the backend start checking prices.
+
+</Steps>
+
+<Aside type="tip" title="Want to check that notifications arrive first?">
+On the Notifications page, click **Test** next to a channel. You'll get a normal-priority test notification. Each channel allows one test every 30 seconds.
+</Aside>
+
+## What to do next
+
+- Turn on [anomaly monitoring](/en/anomaly/overview/) to get alerts when futures markets make extreme moves.
+- Try [drawing on the chart or dragging an alert line to change its target](/en/alerts/chart/).
+- Set up [quiet hours](/en/notify/routes/#quiet-hours) so only important messages reach you at night.

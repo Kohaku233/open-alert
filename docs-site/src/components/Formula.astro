@@ -2,9 +2,11 @@
 // Formula block with a name bar and copy button, as in the preview.
 interface Props { name: string; formula: string; example?: string }
 const { name, formula, example } = Astro.props;
+import { langOf, ui } from '../i18n';
+const t = ui(langOf(Astro.url.pathname));
 ---
 <div class="code">
-  <header><span>{name}</span><button type="button" data-copy={formula}>复制</button></header>
+  <header><span>{name}</span><button type="button" data-copy={formula} data-copied={t.copied} data-failed={t.copyFailed} data-label={t.copy}>{t.copy}</button></header>
   <pre><code>{formula}{example && <span class="c">{'\n'}# {example}</span>}</code></pre>
 </div>
 <style>
@@ -19,8 +21,8 @@ const { name, formula, example } = Astro.props;
 <script>
   document.addEventListener('astro:page-load', () => document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) => {
     b.onclick = async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = '已复制'; } catch { b.textContent = '复制失败'; }
-      setTimeout(() => (b.textContent = '复制'), 1400);
+      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = b.dataset.copied!; } catch { b.textContent = b.dataset.failed!; }
+      setTimeout(() => (b.textContent = b.dataset.label!), 1400);
     };
   }));
 </script>

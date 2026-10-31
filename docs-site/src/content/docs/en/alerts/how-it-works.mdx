@@ -1,0 +1,57 @@
+---
+title: How price alerts trigger
+description: Which price is used, how fresh it must be, and why an alert locks after it triggers.
+---
+
+import Aside from '../../../../components/Aside.astro';
+import Pipeline from '../../../../components/Pipeline.astro';
+
+A price alert is checked against **the latest trade price on the exchange you chose**. A price exactly equal to your target also counts. Each alert triggers only once. After that it stays locked until you rearm it yourself.
+
+<Pipeline
+  label="Price alert flow"
+  steps={[
+    { tag: 'Trade price', title: 'Read latest trade', text: 'Only markets needed by enabled, unlocked alerts are collected' },
+    { tag: 'Within 30 s', title: 'Check freshness', text: 'Prices older than 30 seconds never trigger alerts' },
+    { tag: '≥ or ≤', title: 'Compare to target', text: 'An exact match with the target counts' },
+    { tag: 'Locked', title: 'Trigger and queue', text: 'The same alert never triggers twice' },
+    { tag: 'Send', title: 'Deliver notification', text: 'Sent to your channels according to your delivery rules' },
+  ]}
+/>
+
+## Which price is used
+
+The backend reads each exchange's **actual trade price**. It does not use order book quotes or chart candles.
+
+- An alert uses only the exchange and market you chose when you saved it. The same coin can trade at slightly different prices on Binance and OKX, so the check always uses data from your chosen exchange.
+- If a price hasn't updated for more than 30 seconds, triggering pauses until fresh market data returns. This prevents false alerts from stale data.
+- The backend only collects prices for markets used by enabled, unlocked alerts. If you're just viewing a market, or your alert is paused, the backend doesn't request that market's price from the exchange.
+
+## How quickly prices are checked
+
+The server uses one of two collection methods, and the app shows which one is active:
+
+| Method | How it works | What it can miss |
+| --- | --- | --- |
+| Trade stream | Checks every trade the exchange sends | Trades during a reconnect or a data backlog |
+| Polling | Fetches the latest trade every 5 seconds by default | A price that crosses your target and comes back within 5 seconds |
+
+<Aside type="caution">
+Neither method can catch every brief wick. If your target sits right at the edge of a wick, the alert may miss it.
+</Aside>
+
+## Why alerts lock after they trigger
+
+Locking stops a flood of notifications when the price bounces around your target. After an alert triggers once, it stays in the "Triggered" state:
+
+- Changing the target price or the enabled status does **not** unlock it.
+- To use it again, click **Rearm** in the alert list.
+- If the latest price already meets the condition when you rearm, the alert may trigger again right away.
+
+## What if a notification isn't delivered?
+
+Once a notification is handed to a channel, you'll see one of these results:
+
+- **Sent**: The channel accepted it. This doesn't guarantee you'll see it on screen. Your phone's focus mode or system Do Not Disturb settings can also affect how notifications appear.
+- **Failed**: If the channel clearly rejects it, the system retries up to 3 times (60 seconds, then 120 seconds apart). If it still isn't delivered after 10 minutes, the system stops trying.
+- **Delivery uncertain**: If the network drops suddenly, the system can't tell whether the channel received it. In this case it does **not resend automatically**, so you won't get duplicates. Check your phone first, then decide whether to rearm.

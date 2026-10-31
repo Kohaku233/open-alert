@@ -138,7 +138,7 @@ h1{font-size:44px;font-weight:200;letter-spacing:.02em;line-height:1.12;margin:0
 @media (max-width:860px){
   .shell{grid-template-columns:minmax(0,1fr)}.side{display:none}.search{display:none}
   .side.open{display:block;position:fixed;inset:68px 0 0 0;z-index:30;height:auto;background:var(--bg);border-right:0}
-  .top{padding:0 14px;gap:10px}.top-links .pill:not(.theme):not(.menu):not(.find-btn){display:none}.brand .tag{display:none}
+  .top{padding:0 14px;gap:10px}.top-links .pill:not(.theme):not(.menu):not(.find-btn):not(.lang){display:none}.pill.lang span{display:none}.pill.lang{padding:0 10px}.brand .tag{display:none}
   .menu{display:inline-flex;padding:0 10px}.theme span{display:none}.theme,.find-btn{padding:0 10px}
   main{padding:28px 20px 80px}h1{font-size:34px}
   .prose table:has(th:nth-child(3)){min-width:520px}

@@ -1,0 +1,35 @@
+---
+title: Charts and drawings
+description: The built-in candlestick chart, switching intervals, drawing tools, and changing prices on the chart.
+---
+
+import Aside from '../../../../components/Aside.astro';
+
+The built-in chart on the Prices page shows candles straight from your chosen exchange, the same exchange your alerts use. You can also switch to the TradingView chart, but TradingView is for reference only. Alerts never use it.
+
+## Switch intervals
+
+Above the chart, pick a common interval or set your own:
+
+- Enter a plain number for minutes, such as `7` or `90`.
+- Add `H`, `D`, or `W` for hours, days, or weeks, such as `2H` or `3D`.
+- With your mouse over the chart, you can also just type a number. Press Enter to confirm or `Esc` to cancel.
+
+Intervals the exchange doesn't provide are built automatically. If an interval can't be built for a particular exchange, the app asks you to pick another one.
+
+## Manage alerts on the chart
+
+- **Create**: Hover over or long-press the chart, then click the **+** that appears to create an alert at that price.
+- **Change price**: Drag an alert line up or down. When you let go, confirm the new target price.
+
+## Drawing tools
+
+The toolbar on the left has tools such as trend lines, rays, horizontal lines, rectangles, Fibonacci tools, and price ranges. They're grouped much like in TradingView.
+
+- You can add tools you use often to the floating favorites toolbar.
+- Magnet mode snaps drawings to a candle's high, low, open, or close. Click it to cycle between off, weak, and strong.
+- Drawings are saved locally in your current browser. If you switch browsers or clear your browser data, your drawings won't carry over.
+
+<Aside type="caution">
+Drawings only help you read the chart. They never trigger notifications. If you want an alert at a specific price, create an alert for it.
+</Aside>
