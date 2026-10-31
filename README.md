@@ -1,236 +1,214 @@
-# Open Alert
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/logo-mark.svg">
+    <img src="public/brand/logo-mark-light.svg" width="72" height="72" alt="Open Alert logo">
+  </picture>
+</p>
 
-[English](#english) · [中文](#中文)
+<h1 align="center">Open Alert</h1>
+
+<p align="center">
+  Self-hosted crypto price alerts and perpetual market anomaly monitoring.<br>
+  Watch Binance, OKX, and MEXC. Send alerts to Pushover and Discord.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/Node.js-%3E%3D22.12.0-417E38" alt="Node.js >=22.12.0"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#deployment">Deployment</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a id="中文" href="docs/README.zh-CN.md">简体中文</a>
+</p>
 
 <a id="english"></a>
 
-## English
+Open Alert runs your monitoring rules on the server, so alerts continue when you close the dashboard. Each account has its own rules, notification channels, and quotas. Administrators manage invitations, account access, and deployment health.
 
-Self-hosted, multiuser price alerts for Binance, OKX, and MEXC USDT spot markets and linear USDT-settled perpetual swaps. Each user manages their own rules, notification credentials, and daily quota. An operator manages invitations, account status, and capacity. The frontend uses React and Vite, the API uses Hono, Google and email-code login use Better Auth, and notifications are delivered through Pushover.
+The project is in invite beta. Enabled accounts receive the Pro feature set; billing is not enabled. Available features depend on the selected runtime. See [beta access](docs/beta-access.md) and the [deployment comparison](#deployment).
 
-| Deployment | Storage | Scheduling |
-| --- | --- | --- |
-| Node, directly or with Docker | SQLite or PostgreSQL | Shared scheduler with database leases and fencing |
-| Cloudflare Workers | D1 for accounts, rules, and delivery records | One SQLite Durable Object: `coordinator-v1` |
+## Features
 
-The React frontend uses actual shadcn/ui registry components backed by Radix UI,
-cmdk, Sonner, Lucide and Tailwind CSS 4. Shared sources live in
-[`web/components/ui`](web/components/ui/README.md), configured by `components.json`.
-The neutral workbench theme supports Chinese and English. The market picker is a
-keyboard-accessible Popover + Command with exchange/product filters; dialogs,
-selects, checkboxes, switches and action feedback use the shared component system.
+- **Three exchanges, two market types.** Monitor USDT spot markets and linear USDT-settled perpetual swaps on Binance, OKX, and MEXC. Rules retain the exact exchange and market you choose.
+- **Price alerts that stay latched.** Set an upper or lower threshold. Each rule triggers once and stays locked until you explicitly rearm it.
+- **Perpetual market anomalies.** Detect unusual moves across crypto and stock/TradFi contracts using volatility, trading volume, and liquidity filters. Crypto moves are measured relative to BTC; related signals are grouped before delivery.
+- **A notification center.** Route price alerts and anomaly signals to Pushover or Discord, with per-source priorities, quiet hours, daily limits, and delivery history.
+- **Charts and drawing tools.** Use the built-in candlestick chart with custom timeframes, alert lines, and drawings, or switch to the official TradingView embed. Star assets across exchanges.
+- **Multiuser access.** Sign in with email codes or Google. Invite users, disable accounts, and inspect runtime health from the administrator interface.
+- **Desktop and mobile.** Chinese and English, light and dark themes, keyboard-accessible controls, and reduced-motion support.
 
-Business response parsing treats request IDs as optional diagnostics, preserves
-valid envelopes, distinguishes upstream/auth/rate-limit failures, and reports the
-endpoint, HTTP status and server/Cloudflare trace when available. An unreadable
-mutation result is uncertain and is never automatically retried. Native
-`/api/auth/*` responses continue through Better Auth's own client.
-Automatic workspace reads fetch status and alerts every five seconds while the
-tab is visible; the complete market catalog is reused for up to one minute.
-Manual refresh and completed mutations immediately refresh the directory. The
-server still checks current market availability before creating or rearming rules.
+Anomaly monitoring, the notification center, built-in candle history, favorites, and browser WebSocket updates are currently provided by the Node runtime.
 
-The backend evaluates executed trade prices from the selected exchange. An upper rule triggers when `price >= threshold`, and a lower rule triggers when `price <= threshold`, including when the first fresh observation already crosses the threshold. A triggered rule stays latched until the user explicitly rearms it. Editing the threshold does not release the latch. Monitoring is off by default for a new account.
+## Quick start
 
-Node uses public CCXT Pro `watchTrades` and checks all accepted fresh observations in a batch. Cloudflare uses regular CCXT `fetchTrades` and samples only the latest valid fresh trade in each response, with a default five-second interval. Rate limiting, request budgets, network and scheduler delays can make the actual interval longer. Polling can miss transient threshold crossings, even within a fetched page; stream reconnects or bounded queue/cache overflow can also leave gaps. Neither mode guarantees every exchange trade. The authenticated status API exposes optional `scheduler.marketMode` (`stream` or `polling`), and the dashboard explains the mode. A fresh trade price does not establish transport connectivity; no recent trade does not prove disconnection.
+This starts a local Node installation with SQLite. You need **Node.js 22.12.0 or newer**, npm, and Git.
 
-Cloudflare can use an authenticated Vercel Hobby Function in Tokyo for Binance USDT perpetuals. One request batches up to eight monitored markets and preserves executed-trade timestamps and IDs. No persistent Node server or WebSocket listener is required. Spot and other exchanges retain their native paths. See [Binance Vercel relay](docs/binance-vercel-relay.md) for deployment and live Function verification.
-
-Only enabled, unlatched rules for enabled monitoring/accounts create alert-engine trade demand. Viewing the dashboard independently requests the selected market's quote every 5 seconds, even without saved rules. Display snapshots never evaluate alerts or enable monitoring; polling stops when the page is hidden or another tab is active. Quotes share a bounded 5-second cache and reuse validated catalog metadata. The picker searches locally by venue, type and pair, with up to 40 results. New alerts inherit the exact selected venue/product/pair; existing rules keep their saved identity. The panel defaults to the current market, with an All alerts option. TradingView remains display-only; spot and perpetual mappings are enabled for Binance, OKX and MEXC. Listing availability is determined by TradingView, with no cross-exchange substitution.
-
-Market catalogs and confirmed delistings are held in process memory, not persisted to the database. On a Node process restart or Durable Object recreation, the source starts ineligible and fails closed until a fresh complete catalog load succeeds for the relevant venue. Saved rules survive, but the adapter has no durable catalog/delisting history. See [CCXT runtime integration](docs/ccxt-runtime.md) for sampling, restart behavior and offline verification.
-
-A delivery whose provider receipt cannot be confirmed is marked `uncertain` and is not retried automatically. The system does not promise exactly-once delivery. A free tier does not mean unlimited users, polling, or notifications. Size production according to CPU, D1 operations, Durable Object duration, and third-party quotas.
-
-The included Cloudflare template is invite-only and small: 5 users, 20 alerts per user, 100 active alerts globally, 8 instruments per user and globally, and 20 delivery attempts per user per day with 100 globally. Attempts include tests and failures. This is a starting point. The Worker Free 10 ms CPU limit has not been proven under production load, and the limits do not prevent abusive traffic from exhausting a quota. See [capacity](docs/RUNTIME.md#调度免费额度与容量). Above 100 schedulable rules, evaluation is rotated across cycles and cannot guarantee a five-second check for every rule. The Node defaults in source are unchanged.
-
-### Quick start on Node
-
-Node **>=22.12.0** is required. Use the committed `package-lock.json`. Run these commands from the repository root. On Windows, use `Copy-Item .env.example .env` instead of `cp`.
+### 1. Install
 
 ```sh
+git clone https://github.com/Kohaku233/open-alert.git
+cd open-alert
 npm ci --ignore-scripts --no-audit --no-fund
-# Confirm that the SQLite native module can open a database:
-node --input-type=module -e "import Database from 'better-sqlite3'; const db=new Database(':memory:'); console.log(db.prepare('SELECT 1 AS ok').get()); db.close();"
 cp .env.example .env
-node -e "const c=require('node:crypto'); console.log('AUTH_SECRET='+c.randomBytes(32).toString('hex')); console.log('ENCRYPTION_KEY='+c.randomBytes(32).toString('hex')); console.log('BOOTSTRAP_TOKEN='+c.randomBytes(32).toString('hex'))"
 ```
 
-Write the three generated values into the private `.env`. The locked `better-sqlite3` 13.0.3 includes prebuilt binaries for major platforms. If the native query fails, follow [installation](docs/INSTALL.md) before starting. `--ignore-scripts` does not compile a missing native module.
+On Windows PowerShell, use `Copy-Item .env.example .env`. Use the committed lockfile. If SQLite cannot load on your platform, follow the [native-module installation guide](docs/INSTALL.md).
 
-The example uses local `EMAIL_PROVIDER=console`, so email codes appear only in the server terminal. Google is off until both OAuth values are set. Production requires an HTTPS `APP_URL`, `NODE_ENV=production`, real SMTP or Resend, and no `DEV_ORIGIN`. See [configuration](docs/CONFIGURATION.md). Resend checks domain verification by default. For a verified domain and a sending-only key, set `RESEND_VERIFY_DOMAIN=false` explicitly. For a personal trial, `EMAIL_FROM=onboarding@resend.dev` plus a private `EMAIL_TEST_RECIPIENT` allows mail only to that Resend account address and skips the domain lookup. Public capabilities expose `emailSenderMode` but never the address, and they do not prove that mail was accepted or delivered. Google and email registration remain invitation-gated. Multiuser email login requires a verified domain you control.
+### 2. Configure
+
+Generate three independent values:
+
+```sh
+node -e "const c=require('node:crypto'); for(const key of ['AUTH_SECRET','ENCRYPTION_KEY','BOOTSTRAP_TOKEN']) console.log(key+'='+c.randomBytes(32).toString('hex'))"
+```
+
+Copy the values into the corresponding fields in your private `.env`. The example already selects local development, SQLite, and `APP_URL=http://localhost:3000`.
+
+For local development, `EMAIL_PROVIDER=console` prints login codes in the server terminal. Google login is optional and requires both OAuth configuration values. Production email and HTTPS settings are covered in [Configuration](docs/CONFIGURATION.md).
+
+### 3. Build and start
+
+Replace the example address with your own email:
 
 ```sh
 npm run build
-npm start
-# In another terminal, using the same .env and database:
 npm run admin:invite -- you@example.com
+npm start
 ```
 
-`npm run build` compiles the Node server and the Vite frontend to `dist/server` and `dist/web`. `npm start` loads an optional `.env`, runs `dist/server/runtime/node.js`, and serves the frontend from the project root.
+Open **[localhost:3000](http://localhost:3000)** and sign in with the invited email. For the local console provider, read the code from the server terminal.
 
-`INVITE_ONLY=true` by default. The CLI creates a seven-day email invitation. It does not send mail, create a user, or grant administrator access. Sign in with the invited address, then submit the one-time `BOOTSTRAP_TOKEN` on the account page. That operation requires both a verified session and the token. Success persists the consumed state; remove the token from the deployment afterward. Later administrators invite users through the interface, and permissions come from the database role.
+The invitation CLI uses the same `.env` and database as the application. It creates a seven-day invitation without sending mail, creating an account, or granting an administrator role. To become the first administrator, follow the [authenticated bootstrap procedure](docs/RUNTIME.md#邀请与首位管理员); the current interface has no bootstrap form.
 
-A verified account created through email OTP can later sign in with a Google identity that has the same verified email. The first such Google login links the existing account, preserving its user ID and role, without another unused invitation. A new Google user still has to satisfy the invitation and capacity policy. Unverified email, a different email, and a disabled account are rejected.
+### 4. Create your first alert
 
-The user then enters a personal Pushover user key, chooses a private application token or the operator's shared token, sends an explicit test, creates rules, and turns monitoring on. Saving credentials validates them with the provider and does not send a message. A test sends one normal-priority notification and counts against the daily quota. Real alerts use the user's notification settings.
+1. In **Notification center**, add a Pushover or Discord channel and send an explicit test.
+2. Enable the **Price alerts** route for that channel and save the routing rules.
+3. Choose an exchange and market, then create a price alert.
+4. Turn on the monitoring switch. New accounts start with monitoring paused.
 
-### Deployment and operations
+Saving a channel validates its configuration without sending a test message. Pushover needs your user key and either a personal application token or the operator's shared token. Discord uses a channel webhook URL.
 
-- [Runtime](docs/RUNTIME.md): Node with SQLite or PostgreSQL, Docker, Cloudflare D1 plus one Durable Object, bootstrap order, and capacity.
-- [Configuration](docs/CONFIGURATION.md): production `.env`, Worker vars and secrets, Google callback, email and invitations, and every limit.
-- [Backup](docs/BACKUP.md): encrypted storage, separate database and key backups, consistency, and restore checks.
-- [Migration](docs/MIGRATION.md): offline migration from a real snapshot, administrator ownership, encrypted channels, a paused queue, and an explicit cutover.
-- [Installation](docs/INSTALL.md): native-module checks and platform or Docker build boundaries.
-- [Initial contract](CONTRACT.md): design reference for shared DTOs, atomic database operations, and authentication and delivery invariants. Statements that something is "not yet implemented" belong to that historical baseline. Current behavior is defined by this README and the deployment documents. The operator documents are indexed in Chinese at [docs/README.zh-CN.md](docs/README.zh-CN.md).
+## Deployment
 
-Incomplete configuration shows a setup page and an unavailable status. Authentication and monitoring do not start with placeholder credentials. The source contains no usable secrets or runtime data. Operators supply their own domain, Google OAuth client, email service, and Pushover configuration.
+| Capability | Node / Docker | Standalone Cloudflare Workers |
+| --- | --- | --- |
+| Storage | SQLite or PostgreSQL | D1 |
+| Price collection | CCXT Pro trade streams | CCXT REST latest-trade sampling |
+| Scheduling | Shared scheduler with database leases | One Durable Object with alarms and Cron recovery |
+| Notifications | Pushover and Discord through the notification center | Legacy Pushover channel API |
+| Anomaly monitoring | Supported | Not connected |
+| Built-in candle history and favorites | Supported | Not connected |
+| Browser updates | WebSocket with polling fallback | HTTP polling |
+| Email | SMTP or Resend; console for local development | Resend; console for local development |
 
-### Development and checks
+**Node provides the full current feature set.** The shared frontend exposes pages that require Node services; those pages are unavailable on a standalone Worker. Cloudflare can also serve the assets and forward `/api/*`, including WebSocket upgrades, to a Node deployment through `NODE_BACKEND_URL`.
 
-For development, run `npm run dev` and `npm run dev:web` in two terminals. Vite proxies `/api` to port 3000. `DEV_ORIGIN=http://localhost:5173` trusts only that local browser origin and is rejected in production.
+For production, set `NODE_ENV=production` and configure an HTTPS public origin, a real email provider, persistent storage, and your own credentials. Remove `DEV_ORIGIN` and replace the development console email provider. Back up the database and encryption key before upgrades. See [deployment and operations](docs/RUNTIME.md), [configuration](docs/CONFIGURATION.md), and [backup and recovery](docs/BACKUP.md).
+
+Docker Compose includes SQLite and PostgreSQL service options. Standalone Cloudflare requires explicit D1 migrations before deployment; its template starts with 5 users, 8 global markets, and 100 global notification attempts per day. These are starting limits, not a production capacity guarantee. See [capacity planning](docs/RUNTIME.md#调度免费额度与容量).
+
+For Cloudflare deployments that need a separate Binance perpetual data path, an optional authenticated [Vercel relay](docs/binance-vercel-relay.md) batches up to eight monitored markets per request.
+
+## How alerts work
+
+The backend evaluates the selected exchange's executed trade price. Upper rules match `price >= threshold`; lower rules match `price <= threshold`. The first fresh observation can trigger a rule if the condition is already met.
+
+- **Explicit rearming.** Editing a triggered rule preserves its latch. Queued or sending alerts cannot be edited, deleted, or rearmed. Pausing monitoring cancels queued deliveries; requests already dispatched cannot be recalled.
+- **Fresh data only.** Price alerts check both exchange and local receipt timestamps and reject invalid or stale observations. Page quotes and charts are display data and never trigger rules or enable monitoring.
+- **Durable delivery state.** Price alerts reserve the trigger and outbox entry atomically, then commit a fenced send claim and quota before contacting a provider. Confirmed rejections have bounded retries. Ambiguous results become `uncertain` and are not automatically resent.
+- **Independent anomaly monitoring.** Anomaly subscriptions have their own switch, filters, and per-user cooldowns. Anomaly pushes are dispatched once and do not use the price-alert outbox retry flow.
+
+The system does not promise exactly-once delivery or coverage of every exchange trade. Node streams can have reconnect or buffer gaps. Cloudflare samples the latest trade, targeting five-second intervals, and can miss brief crossings. Network, rate limits, and scheduling can lengthen those intervals. A `sent` result means provider acceptance, not device display or a read receipt.
+
+Market catalogs are cached in memory and require a fresh load after a restart. The browser loads the directory once per workspace session and refreshes it on explicit request. Browser WebSockets deliver display quotes and alert-change notifications; status reads reconcile every 30 seconds while connected, with five-second polling as the fallback. Read the [market runtime guide](docs/ccxt-runtime.md) for collection and recovery details; its dated verification snapshots describe earlier revisions.
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [简体中文](docs/README.zh-CN.md) | Chinese project overview and quick start |
+| [Installation](docs/INSTALL.md) | Requirements, native SQLite checks, and platform setup |
+| [Configuration](docs/CONFIGURATION.md) | Environment variables, email, Google login, secrets, and limits |
+| [Deployment](docs/RUNTIME.md) | Node, Docker, Cloudflare, administrator bootstrap, and capacity |
+| [Notifications](docs/notification-center.md) | Channels, source routing, quiet hours, and delivery history |
+| [Observability](docs/OBSERVABILITY.md) | Health, readiness, incidents, and external probes |
+| [Backup and recovery](docs/BACKUP.md) | Database consistency, key storage, and restore procedures |
+| [Legacy migration](docs/MIGRATION.md) | Offline import, ownership checks, and explicit cutover |
+| [Market runtime](docs/ccxt-runtime.md) | Market identity, sampling, failure handling, and verification |
+| [Binance relay](docs/binance-vercel-relay.md) | Optional Cloudflare-to-Vercel market-data relay |
+| [Beta access](docs/beta-access.md) | Account features, usage limits, and current billing status |
+
+## Development
+
+After the quick-start configuration, run the backend and frontend in separate terminals:
 
 ```sh
-npm run typecheck
-npm run typecheck:web
-npm run build
-npm run cf:check
-# Longer checks, run as needed:
-npm run test:foundation
-npm test
-npm run test:runtime:cf
+npm run dev
 ```
 
-`cf:check` is a Worker bundle dry run. It requires `dist/web`, which `npm run build` or `npm run build:web` creates, and it deploys nothing. `test:runtime:cf` builds the frontend, performs the dry run, and runs local workerd tests. `scripts/test-batches.mjs` runs the full suite in batches and writes results under `test-output/`. Tests simulate external provider HTTP. Real Better Auth and SQL adapters verify sessions, registration, isolation, limits, and delivery claims. The PostgreSQL integration test skips explicitly when that optional engine is unavailable. Packaging and local tests do not prove production behavior for Google, email, Docker, hosted PostgreSQL, or a deployed Durable Object alarm.
+```sh
+npm run dev:web
+```
 
-Optional Playwright covers the real browser flow. Install it after the project dependencies and build. The extra install is not written back to the lockfile, and another `npm ci` removes it. The default suite does not depend on Playwright.
+Vite serves the frontend on `http://localhost:5173` and proxies `/api` to port 3000. The example `.env` explicitly trusts that local origin.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run typecheck` | Check backend and test types |
+| `npm run typecheck:web` | Check frontend types |
+| `npm run build` | Build the Node server and web assets |
+| `npm test` | Run the batched Node test suite |
+| `npm run lint:css` | Inspect CSS cascade overrides |
+| `npm run lint:css:dupes` | Check duplicate CSS ownership against the baseline |
+| `npm run cf:check` | Bundle the Worker without deploying; requires built web assets |
+| `npm run test:runtime:cf` | Build and test the local Cloudflare runtime |
+
+Tests use local provider substitutes and write results to `test-output/`. PostgreSQL integration requires the optional embedded engine. Local checks do not establish production provider availability or hosted capacity.
+
+Browser checks use an optional Playwright installation after `npm run build`:
 
 ```sh
 npm install --no-save --package-lock=false playwright
 npx playwright install chromium
-# On Linux, install Chromium system libraries, for example with install --with-deps.
 npm run test:browser
-# Frontend-only simulated flow:
 npm run test:browser:mock
 ```
 
-`PLAYWRIGHT_MODULE` can point to an existing Playwright `index.mjs`. The browser check starts the compiled Node service with temporary SQLite and exercises persistence through a real OTP, cookie, and API. Mail, market data, and notification transport stay local substitutes, so no live notification is sent. The mobile case is a Chromium viewport and does not represent iOS Safari.
+The first command leaves the project lockfile unchanged. On Linux, Chromium may also need system dependencies; `PLAYWRIGHT_MODULE` can point to an existing Playwright `index.mjs`. Browser checks use temporary data and local mail, market, and notification substitutes. Mobile checks emulate a Chromium viewport, not a physical iOS device.
 
-### Contributing and security
+### Project structure
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for changes and [SECURITY.md](SECURITY.md) for private vulnerability reports. Community participation follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-### License
-
-This project is licensed under the [Apache License 2.0](LICENSE). Dependencies remain under their own licenses. Google, Cloudflare, Binance, OKX, MEXC, TradingView, and Pushover are used under their own terms and pricing.
-
-<a id="中文"></a>
-
-## 中文
-
-自行部署的多用户价格警报系统，支持 Binance、OKX、MEXC 的 USDT 现货及 USDT 结算线性永续合约。每个用户独立管理规则、通知凭据和每日额度；运营者管理邀请、账号状态与资源上限。前端使用 React/Vite，API 使用 Hono，Google 与邮箱验证码登录使用 Better Auth，通知通过 Pushover 发送。
-
-| 部署方式 | 数据存储 | 调度 |
-| --- | --- | --- |
-| Node（直接运行或 Docker） | SQLite / PostgreSQL | 共享调度器与数据库租约、fencing |
-| Cloudflare Workers | D1（认证、规则、发送记录） | 一个 SQLite Durable Object：`coordinator-v1` |
-
-后端以所选交易所的实际成交价判断触发。上限规则在 `price >= threshold`、下限规则在 `price <= threshold` 时触发，包括首次获得新鲜成交价时已满足阈值的情况。触发后规则保持锁定，需要用户显式重新武装（rearm）；编辑阈值不会解锁。新账户的总监控默认关闭。
-
-Node 使用公共 CCXT Pro `watchTrades` 成交流，逐条评估批次中收到的有效新鲜成交。Cloudflare 使用常规 CCXT `fetchTrades`，每次只采样返回数据中的最新有效新鲜成交，默认间隔 5 秒；限流、请求预算、网络及调度可能让实际间隔更长。轮询可能漏掉短暂越过阈值的成交，包括同一响应中较早的越界成交；流式模式也可能因重连或有限队列/缓存溢出漏掉成交。两种模式都不保证覆盖交易所的每笔成交。认证后的状态 API 通过可选 `scheduler.marketMode`（`stream` / `polling`）报告模式，页面显示对应说明。「成交价新鲜」只表示价格时效；近期没有成交不代表连接断开。
-
-Cloudflare 的 Binance 永续行情可通过东京 Vercel Hobby Function 获取。每轮一次批量调用，最多 8 个监控市场，保留真实成交时间与 ID；无需常驻 Node 主机。现货和其他交易所保持原路径。配置与实测见 [Binance Vercel 中继](docs/binance-vercel-relay.md)。
-
-仅已开启监控、账户可用且未锁定的启用规则产生警报引擎的成交采集需求。查看仪表盘时独立获取所选市场的报价，默认每 5 秒更新，不需要先保存规则；参考报价不会判断警报或启用监控，隐藏页面或切换到其他页面后停止轮询。报价共享有界的 5 秒缓存，并复用已验证的市场目录。市场搜索按交易所、类型与交易对筛选，最多展示 40 个结果。新建警报默认使用所选市场的完整标识；已有规则保留原来的交易所和市场。右侧默认显示当前市场，可切换到全部警报。TradingView 仅供参考，已开放三家交易所的现货和永续映射；具体币种是否收录由 TradingView 决定，不会替换成其他交易所的图表。
-
-市场目录和已确认下架状态只保存在当前进程内存，不写入数据库。Node 进程重启或 Durable Object 实例重建后，行情源默认不可评估；对应交易所必须完成新的完整目录加载，才能恢复评估（fail closed）。已保存规则保留，但适配器没有持久化目录或下架历史。采样、重启边界与离线验证详见 [CCXT 运行说明](docs/ccxt-runtime.md)。
-
-无法确定提供方是否已接收的发送标记为 `uncertain`，不会自动重发；系统不承诺 exactly-once。免费额度也不代表无限用户、无限轮询或无限通知，生产容量应按实际 CPU、D1 读写、Durable Object 持续时间及外部服务额度评估。
-
-Cloudflare 的 `wrangler.jsonc` 使用邀请制小规模配置：最多 5 位用户、每人 20 条规则、全局 100 条启用规则、每人及全局 8 个品种，每人 20 次/日、全局 100 次/日发送尝试（含测试及失败）。这是试运行起点，Worker Free 的 10 ms CPU 尚未线上验证，也不能抵御恶意访问耗尽额度；预算与线上指标要求见[容量说明](docs/RUNTIME.md#调度免费额度与容量)。若以后放宽到超过 100 条可调度规则，规则会跨轮次轮流评估，不能保证全部每五秒检查。Node 的源码默认容量保持不变。
-
-### 本地 Node 快速开始
-
-要求 Node **>=22.12.0**，使用随源码提交的 `package-lock.json`。以下命令在项目根目录运行；Windows 可用 `Copy-Item .env.example .env` 代替 `cp`。
-
-```sh
-npm ci --ignore-scripts --no-audit --no-fund
-# 确认 SQLite 原生模块能实际打开数据库，不能只看安装成功：
-node --input-type=module -e "import Database from 'better-sqlite3'; const db=new Database(':memory:'); console.log(db.prepare('SELECT 1 AS ok').get()); db.close();"
-cp .env.example .env
-node -e "const c=require('node:crypto'); console.log('AUTH_SECRET='+c.randomBytes(32).toString('hex')); console.log('ENCRYPTION_KEY='+c.randomBytes(32).toString('hex')); console.log('BOOTSTRAP_TOKEN='+c.randomBytes(32).toString('hex'))"
+```text
+src/
+  api/             HTTP routes and service ports
+  auth/            Better Auth, email, and registration policy
+  contracts/       Domain schemas and shared interfaces
+  db/              SQL adapters, repositories, and migrations
+  markets/         Catalogs, trades, quotes, and candle history
+  scheduler/       Rule evaluation, leases, and delivery claims
+  anomaly/         Statistical detection and signal aggregation
+  notifications/   Encryption, providers, and source routing
+  runtime/         Node and Cloudflare entry points
+web/               React pages, charts, components, and styles
+migrations/        SQLite and PostgreSQL schema sources
+relay/             Optional Vercel Binance relay
+test/              Unit and integration tests
+scripts/           Operator tools and verification scripts
 ```
 
-将三项分别生成的随机值写入私有 `.env`。锁定的 `better-sqlite3` 13.0.3 包含主要平台预编译文件；若原生查询失败，按[安装与原生构建说明](docs/INSTALL.md)处理后再启动。`--ignore-scripts` 不会自动完成缺失的原生编译。
+The stack is TypeScript, React, Vite, Hono, Better Auth, Drizzle, and CCXT. UI components use [shadcn/ui and Radix](web/components/ui/README.md); the built-in chart uses Lightweight Charts. [CONTRACT.md](CONTRACT.md) records the original foundation design and includes historical constraints that predate the current feature set.
 
-示例使用本地 `EMAIL_PROVIDER=console`，邮箱验证码只显示在服务器终端。Google 默认关闭；要启用须同时填写两项 OAuth 配置。生产配置必须使用 HTTPS `APP_URL`、`NODE_ENV=production`、真实 SMTP/Resend，并移除 `DEV_ORIGIN`，见[配置模板与 Secrets](docs/CONFIGURATION.md)。Resend 默认读取域名验证状态；已在控制台验证自有域名且使用 sending-only key 时，显式设 `RESEND_VERIFY_DOMAIN=false`。个人试运行可设 `EMAIL_FROM=onboarding@resend.dev` 和私有 `EMAIL_TEST_RECIPIENT`，只允许向该 Resend 账户邮箱发信，启动不读取域名；公开能力仅说明 `emailSenderMode`，不公开邮箱，也不表示邮件已验证或送达。Google 和邮箱注册仍受邀请制约束，多用户邮箱登录需改用自有已验证域名。
+## Contributing
 
-```sh
-npm run build
-npm start
-# 另一个终端，使用相同的 .env 和数据库：
-npm run admin:invite -- you@example.com
-```
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Use [GitHub Issues](https://github.com/Kohaku233/open-alert/issues) for reproducible bugs and feature requests. Community participation follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-`npm run build` 实际依次执行 Node TypeScript 编译与 Vite 前端构建，分别输出 `dist/server` 和 `dist/web`。`npm start` 加载可选 `.env`，运行 `dist/server/runtime/node.js`，并从项目根目录提供前端资源。
+For vulnerabilities, follow [SECURITY.md](SECURITY.md) and report privately through [GitHub Security Advisories](https://github.com/Kohaku233/open-alert/security/advisories/new).
 
-默认 `INVITE_ONLY=true`。CLI 创建有效期七天的邮箱邀请，不发送邀请邮件、不创建用户，也不赋予管理员身份。使用受邀邮箱正常验证登录，然后在账户页提交一次性 `BOOTSTRAP_TOKEN` 完成首位管理员初始化。该操作同时需要已验证会话和 token；成功后持久化标记已消耗，移除部署中的 token。后续管理员通过界面邀请用户，权限依据数据库角色判定。
+## License
 
-通过邮箱验证码创建的已验证用户，可直接用同邮箱且 Google 已验证的身份登录原账户；首次 Google 登录自动关联，保留原用户 ID 与角色，无需另行关联或新的未使用邀请。Google 新用户仍须满足邀请与用户上限策略；未验证邮箱、不同邮箱关联及禁用账户均被拒绝。
-
-用户随后填写自己的 Pushover user key，选择私有 application token 或运营者共享 token，显式测试通知、创建规则并开启总监控。保存凭据只进行提供方验证，不发送消息；点击测试才发送普通优先级通知，并计入每日额度。真实警报按用户通知设置发送。
-
-### 部署与备份
-
-- [部署说明](docs/RUNTIME.md)：Node SQLite/PostgreSQL、Docker、Cloudflare D1 + 单个 Durable Object、初始化顺序和容量边界。
-- [配置模板](docs/CONFIGURATION.md)：生产 `.env`、Worker vars/Secrets、Google 回调、邮箱与邀请策略、全部限额。
-- [备份与恢复](docs/BACKUP.md)：加密存储范围、数据库与密钥分开备份、一致性与恢复验证。
-- [旧系统离线迁移](docs/MIGRATION.md)：真实快照、管理员归属校验、加密通道、暂停队列与显式切换。
-- [安装说明](docs/INSTALL.md)：原生模块检查、不同平台编译与 Docker 适配边界。
-- [初始开发契约](CONTRACT.md)：共享 DTO、数据库原子操作及认证/发送不变量的设计参考；其中“尚未实现”的阶段说明属于历史基线，当前运行方式以本文和部署文档为准。中文运营文档索引见 [docs/README.zh-CN.md](docs/README.zh-CN.md)。
-
-不完整配置会显示 setup 页面并返回不可用状态，认证和监控不会以占位凭据启动。源码不附带可用密钥或运行数据；运营者提供自己的域名、Google OAuth、邮箱和 Pushover 配置。
-
-### 开发与检查
-
-开发时在两个终端运行 `npm run dev` 与 `npm run dev:web`。Vite 将 `/api` 代理到 3000；`DEV_ORIGIN=http://localhost:5173` 仅显式信任本地开发浏览器 origin，生产拒绝该项。
-
-```sh
-npm run typecheck
-npm run typecheck:web
-npm run build
-npm run cf:check
-# 下列检查耗时更长，按需执行：
-npm run test:foundation
-npm test
-npm run test:runtime:cf
-```
-
-`cf:check` 是 Worker 打包 dry-run，执行前必须有 `dist/web`（可先 `npm run build:web`）；不部署网络资源。`test:runtime:cf` 会构建前端、dry-run 并运行本地 workerd 测试。完整测试由 `scripts/test-batches.mjs` 分批执行，结果写入 `test-output/`。测试模拟外部提供方 HTTP，真实 Better Auth 与 SQL 适配器验证会话、注册、隔离、限额和发送声明；缺少可选引擎时 PostgreSQL 集成测试会明确 skip。打包和本地测试不能证明线上 Google、邮件、Docker、托管 PostgreSQL 或部署后的 Durable Object alarm 行为已验证。
-
-真实浏览器集成检查使用可选 Playwright。完成依赖安装与构建后，可执行以下命令；额外安装不写回项目锁文件，重新 `npm ci` 会移除它。默认完整套件不依赖 Playwright。
-
-```sh
-npm install --no-save --package-lock=false playwright
-npx playwright install chromium
-# Linux 系统还需安装 Chromium 所需库，可在测试机器使用 install --with-deps。
-npm run test:browser
-# 单独前端模拟流程：
-npm run test:browser:mock
-```
-
-也可用 `PLAYWRIGHT_MODULE` 指向现有 Playwright 的绝对 `index.mjs` 路径。真实浏览器检查启动编译后的 Node 服务与临时 SQLite，通过真实验证码、cookie 和 API 操作验证持久化；邮件、行情与通知网络传输保持本地替代，不发真实通知。移动端是 Chromium 视口模拟，不能代表 iOS Safari。
-
-### 贡献与安全
-
-代码与问题提交见 [CONTRIBUTING.md](CONTRIBUTING.md)，漏洞请按 [SECURITY.md](SECURITY.md) 私下报告。社区参与遵循 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
-
-### 许可证
-
-项目采用 [Apache License 2.0](LICENSE)，允许按许可证条件使用、修改与分发。依赖仍受各自许可证约束；Google、Cloudflare、Binance、OKX、MEXC、TradingView 和 Pushover 服务按各自条款与收费规则使用。
-
-### Login display quotes / 登录行情预览
-
-The login page shows three fixed public display markets through `GET /api/public-quotes`: Binance BTC/USDT perpetual, OKX ETH/USDT perpetual and MEXC SOL/USDT spot. Requests share a five-second cache, accept no market/query parameters, and never create alert scheduler demand. Prices and trace samples are real; unavailable updates keep the last timestamped data with a paused status. Authenticated quote/catalog APIs remain protected. Notification availability is omitted from the health summary until it can be verified; genuine delivery errors remain visible.
-
-登录页通过固定的公开展示接口显示上述三个标的，每五秒共享缓存并合并并发请求，不接受自选标的参数，也不增加警报调度需求。价格和曲线使用真实采样；更新失败时保留原时间的数据并标注暂停。需登录的行情/目录接口仍受保护。通知服务不再因“尚未验证”被显示为受限，真实投递失败仍会保留。
+[Apache License 2.0](LICENSE). Dependencies retain their own licenses; external services are subject to their own terms and pricing.
