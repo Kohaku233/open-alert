@@ -1,3 +1,5 @@
+import { navigate } from 'astro:transitions/client';
+
 // Site search backed by the Pagefind index generated at build time (npm run build).
 type Result = { url: string; meta: { title?: string }; excerpt: string };
 type Pagefind = { search: (q: string) => Promise<{ results: { data: () => Promise<Result> }[] }>; init?: () => Promise<void> };
@@ -7,21 +9,34 @@ const load = () => (engine ??= import(/* @vite-ignore */ '/pagefind/pagefind.js'
   .then(async (m: Pagefind) => { await m.init?.(); return m; })
   .catch(() => null));
 
+// The dialog lives in the page body, which is replaced on every in-page navigation; look it up each time.
+const dialogEl = () => document.getElementById('find') as HTMLDialogElement | null;
+const open = () => {
+  const dialog = dialogEl();
+  if (dialog && !dialog.open) { dialog.showModal(); dialog.querySelector('input')!.select(); void load(); }
+};
+
 export function setupSearch() {
-  const dialog = document.getElementById('find') as HTMLDialogElement;
+  addEventListener('keydown', (e) => {
+    const dialog = dialogEl();
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); }
+    else if (e.key === '/' && dialog && !dialog.open && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); open(); }
+  });
+  document.addEventListener('astro:before-swap', () => dialogEl()?.close());
+  document.addEventListener('astro:page-load', bindDialog);
+}
+
+function bindDialog() {
+  const dialog = dialogEl();
+  if (!dialog) return;
   const input = dialog.querySelector('input')!;
   const list = dialog.querySelector('.find-list')!;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   document.querySelectorAll('[data-find-key]').forEach((k) => (k.textContent = mac ? '⌘K' : 'Ctrl K'));
 
-  const open = () => { if (!dialog.open) { dialog.showModal(); input.select(); void load(); } };
-  document.querySelectorAll('[data-find-open]').forEach((b) => b.addEventListener('click', open));
-  dialog.querySelector('[data-find-close]')!.addEventListener('click', () => dialog.close());
+  document.querySelectorAll<HTMLElement>('[data-find-open]').forEach((b) => (b.onclick = open));
+  dialog.querySelector<HTMLElement>('[data-find-close]')!.onclick = () => dialog.close();
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
-  addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); }
-    else if (e.key === '/' && !dialog.open && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); open(); }
-  });
 
   let seq = 0;
   const show = (html: string) => { list.innerHTML = html; };
@@ -42,9 +57,10 @@ export function setupSearch() {
   });
   input.addEventListener('keydown', (e) => {
     const anchors = [...list.querySelectorAll<HTMLAnchorElement>('a')];
-    if (e.key === 'Enter' && anchors[0]) { location.href = anchors[0].href; }
+    if (e.key === 'Enter' && anchors[0]) { e.preventDefault(); dialog.close(); void navigate(anchors[0].href); }
     if (e.key === 'ArrowDown' && anchors[0]) { e.preventDefault(); anchors[0].focus(); }
   });
+  list.addEventListener('click', (e) => { if ((e.target as Element).closest('a')) dialog.close(); });
   list.addEventListener('keydown', (e) => {
     const anchors = [...list.querySelectorAll<HTMLAnchorElement>('a')];
     const i = anchors.indexOf(document.activeElement as HTMLAnchorElement);
