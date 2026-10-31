@@ -186,6 +186,48 @@
 .draw-edit-opacity { display: grid; margin: 0; grid-template-columns: auto 1fr 38px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
 .draw-edit-opacity input { width: 100%; min-height: 0; padding: 0; border: 0; background: none; accent-color: var(--signal); }
 .draw-edit-opacity output { font: 11px/1 var(--mono-font); text-align: right; color: var(--text); }
+/* Drawing settings dialog: sections of colour, levels, fill, text, parameters and display switches. */
+[data-slot="dialog-content"].app-dialog.draw-settings-dialog { width: min(480px, calc(100vw - 32px)); padding: 24px; }
+/* Colour menus opened from the dialog sit above it (dialog content is z-index 90). */
+[data-slot="popover-content"].draw-settings-pop { z-index: 100; }
+.draw-settings-dialog .dialog-heading h2 { font-size: 22px; }
+.draw-settings { display: grid; gap: 18px; margin-top: 16px; }
+.draw-settings-section { display: grid; gap: 8px; }
+.draw-settings-section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.draw-settings-section h3 { margin: 0; font: 10px/1 var(--mono-font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted-foreground); }
+.draw-settings-count { font: 11px/1 var(--mono-font); color: var(--muted-foreground); }
+.draw-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; margin: 0; font-size: 13px; color: var(--text); }
+.draw-settings-row > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.draw-settings-hint { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.draw-settings [data-slot="button"].draw-settings-swatch { width: 36px; min-width: 36px; height: 30px; min-height: 30px; padding: 4px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--field); }
+.draw-settings-swatch span { display: block; width: 100%; height: 100%; border-radius: 4px; box-shadow: inset 0 0 0 1px rgb(128 128 128 / .3); }
+.draw-settings-choices { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--field); }
+.draw-settings-choices [data-slot="button"] { min-width: 0; height: 28px; min-height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: none; font: 11px/1 var(--mono-font); color: var(--muted-foreground); }
+.draw-settings-choices [aria-pressed="true"] { background: var(--selected); color: var(--signal); }
+.draw-settings-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 10px; min-height: 36px; margin: 0; font-size: 13px; color: var(--text); cursor: pointer; }
+.draw-settings-flags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.draw-settings-line > div { flex-wrap: nowrap; }
+.draw-settings-line button.ui-field-select { width: 104px; min-height: 32px; height: 32px; padding: 0 10px; font-size: 12px; }
+.draw-settings-row button.ui-field-select { min-width: 96px; min-height: 32px; height: 32px; padding: 0 10px; font-size: 12px; }
+.draw-settings-opacity { grid-template-columns: 1fr 38px; width: 150px; }
+.draw-settings-number { width: 96px; min-height: 32px; height: 32px; padding: 0 8px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--field); font: 12px/1 var(--mono-font); color: var(--text); }
+.draw-settings-number[aria-invalid="true"] { border-color: var(--danger); }
+.draw-settings-bulk { display: flex; flex-wrap: wrap; gap: 4px; }
+.draw-settings-bulk [data-slot="button"], .draw-settings [data-slot="button"].draw-settings-add { height: 30px; min-height: 30px; padding: 0 10px; gap: 6px; border: 1px solid var(--line); border-radius: 999px; background: none; font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.draw-settings-bulk [data-slot="button"]:hover, .draw-settings [data-slot="button"].draw-settings-add:hover { color: var(--text); border-color: var(--control-border); }
+.draw-settings-bulk svg, .draw-settings-add svg { width: 13px; height: 13px; }
+.draw-settings-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
+.draw-settings-levels li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.draw-settings-levels li[data-visible="false"] .draw-settings-number, .draw-settings-levels li[data-visible="false"] .draw-settings-ratio { opacity: .5; }
+.draw-settings-levels .draw-settings-number { flex: 1 1 auto; width: auto; min-width: 0; }
+.draw-settings-ratio { flex: 1 1 auto; font: 12px/1 var(--mono-font); color: var(--text); }
+.draw-settings [data-slot="button"].draw-settings-remove { flex: none; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; background: none; color: var(--muted-foreground); }
+.draw-settings [data-slot="button"].draw-settings-remove:hover:not(:disabled) { color: var(--danger); }
+.draw-settings-remove svg { width: 14px; height: 14px; }
+.draw-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.draw-settings-spacer { flex: 1; }
+.draw-settings-actions [data-slot="button"].draw-settings-defaults, .draw-settings-actions [data-slot="button"].draw-settings-reset { padding: 0 10px; gap: 6px; font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.draw-settings-reset svg { width: 13px; height: 13px; }
 /* Inline editor for text, note and callout drawings, opened at the placed point. */
 .chart-text-edit { position: absolute; z-index: 7; transform: translate(-4px, -50%); }
 .chart-text-edit textarea {
@@ -351,6 +393,19 @@
   .draw-edit-colors { width: min(300px, calc(100vw - 40px)); }
   .draw-edit-custom input { width: 40px; height: 40px; }
   .draw-edit-colors [data-slot="button"].draw-edit-none { height: 36px; min-height: 36px; }
+  /* Phones: one column, 44px targets, 16px inputs so iOS never zooms. */
+  [data-slot="dialog-content"].app-dialog.draw-settings-dialog { width: 100%; padding: 24px 16px max(20px, env(safe-area-inset-bottom)); }
+  .draw-settings-flags, .draw-settings-levels { grid-template-columns: minmax(0, 1fr); }
+  .draw-settings-row, .draw-settings-toggle { min-height: 44px; font-size: 14px; }
+  .draw-settings [data-slot="button"].draw-settings-swatch { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .draw-settings-choices [data-slot="button"] { height: 38px; min-height: 38px; padding: 0 12px; }
+  .draw-settings-number { height: 44px; min-height: 44px; font-size: 16px; }
+  .draw-settings-row button.ui-field-select, .draw-settings-line button.ui-field-select { height: 44px; min-height: 44px; font-size: 16px; }
+  .draw-settings-bulk [data-slot="button"], .draw-settings [data-slot="button"].draw-settings-add { height: 40px; min-height: 40px; padding: 0 14px; }
+  .draw-settings [data-slot="button"].draw-settings-remove { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .draw-settings-levels li { gap: 10px; }
+  .draw-settings-actions [data-slot="button"] { min-height: 44px; }
+  .draw-settings-opacity { width: 160px; }
   .chart-legend { top: 8px; left: 58px; font-size: 10px; }
   .chart-scale-modes button { min-width: 44px; height: 36px; font-size: 12px; }
   .chart-tool-hint { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 24px); }
