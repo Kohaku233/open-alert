@@ -19,4 +19,5 @@
 @import './boot.css' layer(product);
 @import './controls.css' layer(controls);
 @import './chart.css' layer(controls);
+@import './trade.css' layer(controls);
 @import './tokens.css' layer(tokens);

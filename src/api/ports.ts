@@ -44,6 +44,8 @@ export interface ApiDependencies {
     store: import('../anomaly/store.js').AnomalyStore;
     status(): import('../anomaly/engine.js').AnomalyStatus;
   };
+  /** Stateless signed-request relay to OKX; Node runtime only (fixed IPv4 egress for key whitelists). */
+  trade?: import('../trade/okx-contract.js').OkxRelay;
   /** Multi-channel notification centre (channels + source routing); Node runtime only. */
   hub?: import('../notifications/hub.js').NotifyHub;
   runtime: { snapshot(): Promise<RuntimeSnapshot>; observe?(): Promise<ObservabilitySnapshot> };

@@ -420,7 +420,7 @@ test('account overview exposes tenant-scoped invite-beta Pro access and preserve
   assert.equal(account.user.id,member.id);assert.equal(account.user.email,'account-member@example.com');assert.equal(account.user.role,'user');assert.equal(account.user.disabled,false);
   assert.deepEqual(account.access,{
    plan:'pro',phase:'invite_beta',source:'beta_policy',policyVersion:1,billing:'not_enabled',expiresAt:null,
-   features:{price_alerts:true,anomaly_crypto:true,anomaly_tradfi:true,native_charts:true,drawing_tools:true,market_favorites:true,notification_channels:true},
+   features:{price_alerts:true,anomaly_crypto:true,anomaly_tradfi:true,native_charts:true,drawing_tools:true,market_favorites:true,notification_channels:true,trading:true},
    limits:{alerts:3,instruments:2,channels:10,favorites:50,priceAttemptsPerDay:9},
   });
   assert.deepEqual(Object.keys(account.usage).sort(),['activeAlerts','alerts','channels','favorites','instruments','observedAt','priceAttempts','utcDate']);
@@ -464,4 +464,40 @@ test('account overview reports optional channel and favorite stores as unavailab
   assert.equal(account.usage.channels,null);assert.equal(account.usage.favorites,null);
   assert.equal(account.access.plan,'pro');
  }finally{await f.close();}
+});
+
+test('OKX trade relay forwards only allowlisted signed requests and reports uncertain orders',async()=>{
+ const {createOkxRelay,RelayUncertainError}=await import('../src/trade/okx-relay.js');
+ const sent:{method:string;path:string;headers:Record<string,string>;body:string}[]=[];let fail:Error|null=null;
+ const relay=createOkxRelay({egress:'16.148.25.106',send:async req=>{sent.push(req);if(fail)throw fail;return {status:200,body:'{"code":"0","data":[]}'};}});
+ const absent=await fixture();
+ const f=await fixture({}, {trade:relay});
+ try{
+  const headers={key:'k-1',sign:'c2lnbg==',timestamp:'2026-10-31T00:00:00.000Z',passphrase:'pass phrase'};
+  const order={method:'POST',path:'/api/v5/trade/order',body:'{"instId":"BTC-USDT-SWAP"}',headers};
+  assert.equal((await f.call('/api/trade/okx','POST',order)).status,401);
+  const alice=await f.login('trader@example.com');
+  assert.equal((await f.call('/api/trade/okx','POST',order,alice.cookie,{Origin:'https://evil.example'})).status,403);
+  assert.deepEqual((await f.body(await f.call('/api/trade/okx','GET',undefined,alice.cookie))).data,{available:true,egress:'16.148.25.106'});
+  const forwarded=await f.body(await f.call('/api/trade/okx','POST',{...order,simulated:true},alice.cookie));
+  assert.deepEqual(forwarded.data,{status:200,body:'{"code":"0","data":[]}'});
+  assert.equal(sent[0]!.path,'/api/v5/trade/order');assert.equal(sent[0]!.headers['OK-ACCESS-KEY'],'k-1');assert.equal(sent[0]!.headers['x-simulated-trading'],'1');
+  assert.equal(sent[0]!.headers['OK-ACCESS-PASSPHRASE'],'pass phrase');
+  await f.body(await f.call('/api/trade/okx','POST',{method:'GET',path:'/api/v5/account/positions',query:'instType=SWAP',headers},alice.cookie));
+  assert.equal(sent[1]!.path,'/api/v5/account/positions?instType=SWAP');assert.equal(sent[1]!.headers['x-simulated-trading'],undefined);
+  // Withdrawal, transfer and unknown paths never leave the server.
+  for(const path of ['/api/v5/asset/withdrawal','/api/v5/asset/transfer','/api/v5/trade/order/../../asset/withdrawal','/api/v5/account/positions?x=1','https://evil.example/api/v5/trade/order'])
+   assert.equal((await f.call('/api/trade/okx','POST',{...order,path},alice.cookie)).status,400,path);
+  assert.equal((await f.call('/api/trade/okx','POST',{...order,method:'GET'},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/trade/okx','POST',{...order,body:'not json'},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/trade/okx','POST',{...order,headers:{...headers,key:'a\r\nb'}},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/trade/okx','POST',{...order,extra:1},alice.cookie)).status,400);
+  assert.equal((await f.call('/api/trade/okx','POST',{...order,body:JSON.stringify({x:'x'.repeat(9000)})},alice.cookie)).status,400);
+  assert.equal(sent.length,2);
+  fail=new RelayUncertainError();
+  assert.equal((await f.body(await f.call('/api/trade/okx','POST',order,alice.cookie),504)).error.code,'trade_uncertain');
+  assert.equal((await f.call('/api/trade/okx','POST',{method:'GET',path:'/api/v5/account/balance',headers},alice.cookie)).status,503);
+  const bob=await absent.login('no-relay@example.com');
+  assert.equal((await absent.call('/api/trade/okx','POST',order,bob.cookie)).status,503);
+ }finally{await f.close();await absent.close();}
 });

@@ -168,6 +168,9 @@ const messages: Record<string, string> = {
     get invalid_request() {
         return t("提交内容不符合要求，请检查输入。");
     },
+    get trade_uncertain() {
+        return t("交易所结果未知，可能已经生效。正在按客户端订单号核对，请勿重复下单。");
+    },
     get internal_error() {
         return t("服务处理失败，请联系管理员并提供请求编号。");
     },

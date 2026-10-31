@@ -23,6 +23,7 @@ import { createAnomalyEngine } from '../anomaly/engine.js';
 import { anomalyNotification, createAnomalyStore, ensureAnomalySchema } from '../anomaly/store.js';
 import { createRepositories } from '../db/repositories.js';
 import { createNotifyHub, ensureHubSchema } from '../notifications/hub.js';
+import { createOkxRelay } from '../trade/okx-relay.js';
 const types: Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 export async function serveAssets(request: Request,root=resolve('dist/web')): Promise<Response> {
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
@@ -45,6 +46,8 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const binanceEndpoints=config.binanceEndpoints;
   const quotes=createMarketQuoteService({binanceEndpoints});
   const candles=createCandleService({binanceEndpoints});
+  // Optional display hint so users can whitelist the relay's fixed IPv4 egress on their OKX key.
+  const egress=typeof env.TRADE_EGRESS_IP==='string'&&/^(?:\d{1,3}\.){3}\d{1,3}$/.test(env.TRADE_EGRESS_IP)?env.TRADE_EGRESS_IP:null;
   await ensureAnomalySchema(services.db);
   const anomalyStore=createAnomalyStore(services.db);
   await ensureHubSchema(services.db);
@@ -68,7 +71,7 @@ export async function createNodeRuntime(env: Record<string,unknown>=process.env)
   const monitor=createObservability({engine,db:services.db,cronRequired:false,probe:()=>({at:Date.now(),api:{state:'healthy',code:null,lastSuccessAt:Date.now()},email:services.auth.emailHealth()})});
   let monitorWork:ReturnType<typeof monitor.capture>|null=null;
   const observe=()=>{if(monitorWork)return monitorWork;monitorWork=engine.hasWork().catch(()=>monitor.pulse()).then(()=>monitor.capture()).finally(()=>{monitorWork=null;});return monitorWork;};
-  const app=createApp({...services,notifications,quotes,candles,anomaly:{store:anomalyStore,status:()=>anomaly.status()},hub,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
+  const app=createApp({...services,notifications,quotes,candles,trade:createOkxRelay({egress}),anomaly:{store:anomalyStore,status:()=>anomaly.status()},hub,publicPreview:createPublicMarketPreview({read:market=>quotes.recent(market)}),catalog:{get:async()=>{await engine.refreshCatalog();return engine.getMarkets();},resolve:async instrument=>{await engine.refreshCatalog();return engine.resolveMarket(instrument);}},runtime:{snapshot:async()=>({...await engine.snapshot(),marketMode:'stream' as const}),observe},wake:async()=>{engine.invalidate();void engine.tick().then(()=>engine.drain()).catch(()=>{});}});
   const live=createLiveQuoteHub({snapshot:market=>quotes.get(market),binanceEndpoints});
   const realtime=createRealtimeGateway({trustedOrigins:config.trustedOrigins,hub:live,
     authenticate:request=>services.auth.getPrincipal(request),

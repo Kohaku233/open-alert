@@ -1,0 +1,178 @@
+/* Trade mode on the Markets page. Product tokens only; buy follows the upper/signal
+   language and sell the lower/copper language, as in the approved preview. */
+.trade-kbd { display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid var(--control-border);border-bottom-width:2px;border-radius:5px;font:500 10px/1 var(--mono-font);color:var(--muted-foreground);background:var(--field); }
+
+/* Mode switch replaces the old create-alert button. */
+.mode-switch { display:inline-flex;gap:2px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--field); }
+.mode-switch button { min-height:36px;padding:0 20px;border:0;border-radius:999px;background:none;color:var(--muted-foreground);font:13px var(--body-font);cursor:pointer; }
+.mode-switch button[aria-pressed="true"] { background:var(--selected);color:var(--text); }
+.mode-switch button:focus-visible { outline:2px solid var(--ring);outline-offset:2px; }
+.alert-scope .new-alert[data-slot="button"] { flex:none;min-height:30px;height:30px;margin-right:6px;padding:0 4px;font-size:13px;color:var(--text); }
+
+/* Account cell in the 248px instrument. */
+.account-cell { gap:10px; }
+.account-cell.is-locked { background:var(--warning-bg); }
+.account-lock[data-slot="button"] { min-height:34px;height:34px;padding:0 12px;font-size:12px;gap:6px;white-space:nowrap; }
+.account-lock svg { width:14px;height:14px; }
+
+/* Layout: chart + book on the left, order ticket in the 380px column. The chart gets most of the viewport. */
+.dashboard-v2.is-trade .workspace.trade-grid { height:auto;align-items:start; }
+.trade-left { display:grid;gap:16px;min-width:0; }
+.dashboard-v2.is-trade .chart-panel .native-chart-shell { flex:none;height:max(560px, calc(100dvh - 250px)); }
+.dashboard-v2.is-trade .chart-panel .empty-chart { min-height:420px; }
+.dashboard-v2.is-trade .chart-panel-head { align-items:center; }
+.dashboard-v2.is-trade .chart-toolbar { display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end; }
+.dashboard-v2.is-trade .order-panel { position:sticky;top:16px; }
+.arm-group { display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--field); }
+.arm-group [data-slot="button"] { min-height:28px;height:28px;padding:0 12px 0 6px;border:0;border-radius:999px;background:none;font:12px var(--body-font);color:var(--muted-foreground);gap:6px; }
+.arm-group .trade-kbd { height:16px;min-width:16px;font-size:9px; }
+.arm-group .buy[aria-pressed="true"] { background:var(--selected);color:var(--signal); }
+.arm-group .sell[aria-pressed="true"] { background:var(--warning-bg);color:var(--amber); }
+.arm-group .alert[aria-pressed="true"] { background:var(--selected);color:var(--text); }
+.armed-caption.buy { color:var(--signal); }
+.armed-caption.sell { color:var(--amber); }
+.armed-caption.alert { color:var(--text); }
+
+/* Armed chart: crosshair cursor, a hairline frame in the side colour and a ghost order line. */
+.native-chart-shell[data-armed="buy"] .native-chart,.native-chart-shell[data-armed="sell"] .native-chart,.native-chart-shell[data-armed="alert"] .native-chart { cursor:crosshair; }
+.native-chart-shell:is([data-armed="buy"],[data-armed="sell"],[data-armed="alert"])::after { content:"";position:absolute;inset:0;pointer-events:none;z-index:3;box-shadow:inset 0 0 0 1px var(--armed-color); }
+.native-chart-shell[data-armed="buy"] { --armed-color:color-mix(in srgb,var(--signal) 55%,transparent); }
+.native-chart-shell[data-armed="sell"] { --armed-color:color-mix(in srgb,var(--amber) 55%,transparent); }
+.native-chart-shell[data-armed="alert"] { --armed-color:var(--control-border); }
+.native-chart.is-order-hover { cursor:ns-resize; }
+.chart-ghost { position:absolute;left:0;right:var(--price-scale-width,60px);z-index:4;pointer-events:none;border-top:1px dashed var(--ghost); }
+.chart-ghost.buy { --ghost:var(--signal); }
+.chart-ghost.sell { --ghost:var(--amber); }
+.chart-ghost.alert { --ghost:var(--text); }
+.chart-ghost > span { position:absolute;right:10px;top:0;transform:translateY(-50%);display:flex;align-items:baseline;gap:10px;padding:6px 12px;border:1px solid var(--ghost);border-radius:999px;background:color-mix(in srgb,var(--card) 92%,transparent);color:var(--ghost);font:11px/1 var(--mono-font);white-space:nowrap; }
+.chart-ghost small { color:var(--muted-foreground);font-size:10px; }
+
+/* Order and position chips riding their price lines. */
+.chart-chips { position:absolute;inset:0;pointer-events:none;z-index:4; }
+.chart-chip { position:absolute;left:56px;transform:translateY(-50%);display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 4px 0 0;border:1px solid var(--chip);border-radius:7px;background:var(--card);font:11px/1 var(--mono-font);color:var(--text);pointer-events:auto;white-space:nowrap;overflow:hidden; }
+.chart-chip.buy { --chip:color-mix(in srgb,var(--signal) 70%,transparent); }
+.chart-chip.sell { --chip:color-mix(in srgb,var(--amber) 70%,transparent); }
+.chart-chip.position { --chip:var(--control-border);padding-right:10px;left:auto;right:calc(var(--price-scale-width,60px) + 10px); }
+.chart-chip.is-pending { border-style:dashed;opacity:.85; }
+.chart-chip > b { display:grid;place-items:center;height:100%;padding:0 8px;background:var(--chip);color:var(--bg);font-weight:600; }
+.chart-chip.position > b { background:var(--text); }
+.chart-chip > span { color:var(--muted-foreground); }
+.chart-chip > em { font-style:normal; }
+.chart-chip > button { display:grid;place-items:center;width:18px;height:18px;padding:0;border:0;border-radius:5px;background:none;color:var(--muted-foreground);cursor:pointer; }
+.chart-chip > button:hover { background:var(--secondary-hover);color:var(--danger); }
+.chart-chip > button svg { width:12px;height:12px; }
+.chart-chip .chip-state { color:var(--amber);padding-right:6px; }
+
+/* Positions / orders / fills */
+.book-panel { padding:0;overflow:hidden;container:book / inline-size; }
+.book-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line); }
+.book-heading [data-slot="tabs-trigger"] { flex:0 0 auto;padding:5px 14px; }
+.book-heading .text-button[data-slot="button"] { min-height:30px;height:30px;font-size:12px;color:var(--muted-foreground);gap:6px; }
+.book-list { margin:0;max-height:300px;overflow:auto; }
+.book-row { display:grid;grid-template-columns:150px 110px minmax(0,1fr) 110px auto;align-items:center;gap:16px;padding:12px 18px;border-bottom:1px solid var(--line); }
+.book-row:last-child { border-bottom:0; }
+.book-row.fill-row { grid-template-columns:150px 110px minmax(0,1fr); }
+.book-market { display:grid;gap:3px;padding:0;border:0;background:none;color:var(--text);text-align:left;cursor:pointer;min-width:0; }
+span.book-market { cursor:default; }
+.book-market strong { font-size:14px;font-weight:500; }
+.book-market small { font:11px var(--mono-font);color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.book-side { font:500 13px var(--mono-font); }
+.book-side.buy { color:var(--signal); }
+.book-side.sell { color:var(--amber); }
+.book-row dl { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0; }
+.book-row dt { font:10px/1.4 var(--mono-font);letter-spacing:.06em;color:var(--muted-foreground); }
+.book-row dd { margin:2px 0 0;font:13px var(--mono-font);font-variant-numeric:tabular-nums;white-space:nowrap; }
+.book-pnl { display:grid;justify-items:end;font:500 15px var(--mono-font);font-variant-numeric:tabular-nums; }
+.book-pnl small { font-size:11px;font-weight:400; }
+.book-actions { display:flex;gap:6px;justify-content:flex-end; }
+.book-actions [data-slot="button"] { min-height:30px;height:30px;padding:0 12px;font-size:12px; }
+.book-row .state-label { justify-self:start; }
+.book-empty { margin:0;padding:28px 18px;text-align:center;font-size:13px;color:var(--muted-foreground); }
+
+/* Order ticket */
+.order-panel { padding:0;overflow:hidden; }
+.order-panel .panel-heading { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line);margin:0; }
+.order-panel .panel-heading h2 { font-size:15px;display:flex;gap:8px;align-items:baseline; }
+.order-panel .panel-heading h2 span { font:11px var(--mono-font);color:var(--muted-foreground); }
+.order-form { display:grid;gap:14px;padding:16px 18px 18px; }
+.order-form label,.keyboard-settings label,.key-dialog label { margin:0; }
+.order-chips { display:flex;gap:6px;flex-wrap:wrap; }
+.order-chips span { padding:3px 10px;border:1px solid var(--line);border-radius:999px;font:11px/1.6 var(--mono-font);color:var(--muted-foreground); }
+.order-side [data-slot="button"] { flex:1;min-height:38px;border:0;background:none;color:var(--muted-foreground); }
+.order-side [aria-pressed="true"] { background:var(--selected);color:var(--signal); }
+.order-side .lower[aria-pressed="true"] { background:var(--warning-bg);color:var(--amber); }
+.order-type { width:100%; }
+.order-field { display:grid;gap:6px;font-size:12px;color:var(--muted-foreground); }
+.order-field > small { font-size:11px; }
+.order-input { position:relative;display:block; }
+.order-input [data-slot="input"] { height:48px;padding-right:64px;border-radius:12px;background:var(--field);border-color:var(--control-border);font:400 18px var(--mono-font);color:var(--text);font-variant-numeric:tabular-nums; }
+.order-input button { position:absolute;right:8px;top:50%;transform:translateY(-50%);height:30px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);font:11px var(--mono-font);color:var(--muted-foreground);cursor:pointer; }
+.order-input button:hover { color:var(--text);border-color:var(--control-border); }
+.qty-presets { display:grid;grid-template-columns:repeat(4,minmax(0,1fr)); }
+.qty-presets [data-slot="button"] { gap:5px;padding:4px 6px;font-family:var(--mono-font); }
+.order-summary { display:grid;gap:6px;margin:0;padding:12px 0;border-block:1px solid var(--line); }
+.order-summary div { display:flex;justify-content:space-between;font:12px var(--mono-font); }
+.order-summary dt { color:var(--muted-foreground); }
+.order-summary dd { margin:0;font-variant-numeric:tabular-nums; }
+.order-reduce { display:flex;gap:9px;align-items:center;font-size:13px;color:var(--text); }
+.order-form .warning { margin:0; }
+.order-submit[data-slot="button"] { margin:0;min-height:48px;font-variant-numeric:tabular-nums; }
+.order-submit.buy[data-slot="button"] { box-shadow:inset 0 -2px 0 var(--signal); }
+.order-submit.sell[data-slot="button"] { box-shadow:inset 0 -2px 0 var(--amber); }
+
+.keyboard-settings { display:grid;gap:12px;padding:14px 18px 18px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--text) 2%,transparent); }
+.keyboard-toggle { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.keyboard-toggle > span { display:grid;grid-template-columns:auto 1fr;column-gap:8px;font-size:14px;color:var(--text);align-items:center; }
+.keyboard-toggle svg { width:16px;height:16px;color:var(--muted-foreground); }
+.keyboard-toggle small { grid-column:2;font-size:11px;color:var(--amber); }
+.kbd-legend { display:grid;gap:7px;margin:0;padding:0;list-style:none; }
+.kbd-legend li { display:grid;grid-template-columns:52px 1fr;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground); }
+.kbd-legend li > .trade-kbd { justify-self:start; }
+.limit-field .order-input [data-slot="input"] { height:40px;font-size:14px; }
+
+.key-dialog form { display:grid;gap:14px; }
+.key-identity { display:flex;gap:12px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--field); }
+.key-identity svg { width:22px;height:22px;color:var(--signal);flex:none; }
+.key-identity div { display:grid;gap:3px;flex:1;min-width:0; }
+.key-identity small { font:11px var(--mono-font);color:var(--muted-foreground); }
+.key-identity .key-copy[data-slot="button"] { min-height:32px;height:32px;padding:0 12px;font-size:12px; }
+.key-perms { display:grid;grid-template-columns:repeat(3,1fr);margin:0;border:1px solid var(--line);border-radius:14px;overflow:hidden; }
+.key-perms div { padding:10px 14px;border-right:1px solid var(--line); }
+.key-perms div:last-child { border-right:0; }
+.key-perms dt { font:10px var(--mono-font);color:var(--muted-foreground);letter-spacing:.08em; }
+.key-perms dd { margin:4px 0 0;font-size:13px; }
+.key-dialog .order-field [data-slot="input"] { height:44px;border-radius:12px;background:var(--field);border-color:var(--control-border); }
+.key-dialog .confirm-actions { display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap; }
+.key-dialog .confirm-actions .text-button { margin-right:auto;color:var(--danger); }
+
+/* The book sits beside the 380px ticket, so its row layout follows the panel width, not the viewport. */
+@container book (max-width: 980px) {
+  .book-row { grid-template-columns:120px 96px minmax(0,1fr) 96px; }
+  .book-row .book-actions { grid-column:1 / -1;justify-content:flex-start; }
+}
+@media (max-width: 900px) {
+  /* The product grid becomes one column here; the chart comes first, then the ticket, then the book. */
+  .dashboard-v2.is-trade .workspace.trade-grid { align-items:stretch; }
+  .dashboard-v2.is-trade .trade-grid > * { width:100%; }
+  .trade-left { display:contents; }
+  .dashboard-v2.is-trade .chart-panel { order:0; }
+  .dashboard-v2.is-trade .order-panel { order:1;position:static; }
+  .dashboard-v2.is-trade .book-panel { order:2; }
+  .dashboard-v2.is-trade .chart-panel .native-chart-shell { height:calc(440px + min(var(--indicator-panes, 0), 3) * 110px); }
+  .dashboard-v2.is-trade .chart-panel-head { grid-template-columns:1fr; }
+  .dashboard-v2.is-trade .chart-panel-head p { display:none; }
+  .dashboard-v2.is-trade .chart-toolbar { justify-content:flex-start; }
+  /* The mobile heading collapses to zero height; the switch takes the old create button's fixed slot. */
+  .dashboard-heading .mode-switch { position:fixed;top:10px;right:20px;z-index:44;padding:3px; }
+  .mode-switch button { min-height:36px;padding:0 14px;font-size:12px; }
+  .arm-group .trade-kbd,.book-heading .trade-kbd,.keyboard-settings { display:none; }
+  .account-cell { flex-direction:column;align-items:flex-start;gap:8px; }
+  .account-cell .telemetry-label { white-space:nowrap; }
+  .account-cell .venue-label,.account-cell small { display:none; }
+  .account-lock[data-slot="button"] { min-height:32px;height:32px;padding:0 10px; }
+  .book-row,.book-row.fill-row { grid-template-columns:1fr auto;gap:8px 12px; }
+  .book-row dl { grid-column:1 / -1; }
+  .book-row .book-pnl,.book-row .state-label { grid-column:2;grid-row:1;justify-self:end; }
+  .book-row .book-side { grid-column:1; }
+  .chart-ghost small { display:none; }
+}

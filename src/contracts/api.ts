@@ -12,7 +12,7 @@ export type ApiErrorCode =
   | 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found'
   | 'generation_conflict' | 'pending_delivery' | 'limit_exceeded' | 'account_exists'
   | 'rate_limited' | 'channel_unconfigured' | 'service_unavailable'
-  | 'notification_failed' | 'notification_uncertain' | 'internal_error';
+  | 'notification_failed' | 'notification_uncertain' | 'trade_uncertain' | 'internal_error';
 export interface Paginated<T> { items: T[]; cursor: string | null }
 export interface InvitationResult {
   id: string; email: string; expiresAt: number; reused: boolean;

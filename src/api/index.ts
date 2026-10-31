@@ -18,6 +18,7 @@ import { AnomalyConflict } from '../anomaly/store.js';
 import { betaAccess } from '../access/policy.js';
 import type { ProductAccess, ProductFeature } from '../contracts/access.js';
 import { CHANNEL_TYPES, HubError, ROUTABLE_SOURCES, routeOptionsSchema } from '../notifications/hub.js';
+import { okxRelaySchema, RelayUncertainError } from '../trade/okx-contract.js';
 export type { ApiDependencies, NotificationPort, RuntimeSnapshot, CatalogSnapshot } from './ports.js';
 type Env = { Variables: { requestId: string; principal: SessionPrincipal; settings: UserSettingsRecord; productAccess: ProductAccess; schedulerWake: 'confirmed' | 'pending' } };
 class HttpError extends Error { constructor(readonly status: 400|401|403|404|409|429|500|502|503|504, readonly code: ApiErrorCode, readonly fields?: Record<string,string>) { super(code); } }
@@ -38,7 +39,7 @@ const hubRoutesSchema = z.strictObject({ routes: z.array(z.strictObject({ source
 const pageSchema = z.strictObject({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().min(1).max(200).optional()});
 const messages: Record<ApiErrorCode,string> = {
   account_exists:'This email already has an account',
-  invalid_request:'Invalid request',unauthenticated:'Sign in required',forbidden:'Access denied',not_found:'Not found',generation_conflict:'The record has changed; reload before retrying',pending_delivery:'A notification is pending',limit_exceeded:'Configured limit reached',rate_limited:'Please wait before trying again',channel_unconfigured:'Configure a notification channel first',service_unavailable:'Service is unavailable',notification_failed:'Notification provider rejected the request',notification_uncertain:'Delivery could not be confirmed; check your device before retrying',internal_error:'Request failed',
+  invalid_request:'Invalid request',unauthenticated:'Sign in required',forbidden:'Access denied',not_found:'Not found',generation_conflict:'The record has changed; reload before retrying',pending_delivery:'A notification is pending',limit_exceeded:'Configured limit reached',rate_limited:'Please wait before trying again',channel_unconfigured:'Configure a notification channel first',service_unavailable:'Service is unavailable',notification_failed:'Notification provider rejected the request',notification_uncertain:'Delivery could not be confirmed; check your device before retrying',trade_uncertain:'The exchange result is unknown; check open orders before retrying',internal_error:'Request failed',
 };
 function equalToken(a:string,b:string):Promise<boolean> {
   return Promise.all([crypto.subtle.digest('SHA-256',new TextEncoder().encode(a)),crypto.subtle.digest('SHA-256',new TextEncoder().encode(b))]).then(([x,y])=>{const p=new Uint8Array(x),q=new Uint8Array(y);let n=0;for(let i=0;i<p.length;i++)n|=p[i]!^q[i]!;return n===0;});
@@ -174,14 +175,16 @@ export function createApi(d:ApiDependencies) {
       if(!origin||!trusted.includes(origin))throw new HttpError(403,'forbidden');
       if(c.req.header('sec-fetch-site')==='cross-site')throw new HttpError(403,'forbidden');
     }
-    const budget=await consumeAuthLimit(d.db,await privateLimitKey('api-user',principal.userId,d.config.authSecret),120,60000);
+    // The trade relay polls the exchange and has its own budget so it never starves alert edits.
+    const trade=c.req.path.startsWith('/api/trade/');
+    const budget=await consumeAuthLimit(d.db,await privateLimitKey(trade?'trade-relay':'api-user',principal.userId,d.config.authSecret),trade?300:120,60000);
     if(!budget.allowed){c.header('Retry-After',String(budget.retryAfter));throw new HttpError(429,'rate_limited');}
     const settings=await d.repositories.settings.get(principal.userId)??await d.repositories.settings.initialize(principal.userId,Date.now());if(settings.disabled)throw new HttpError(403,'forbidden');
     c.set('settings',settings);
     const access=betaAccess(d.config,settings.dailyLimit,principal.role);
     c.set('productAccess',access);
     const path=c.req.path;
-    const feature:ProductFeature|null=path.startsWith('/api/alerts')?'price_alerts':path.startsWith('/api/anomaly')?'anomaly_crypto':path.startsWith('/api/notify')?'notification_channels':path.startsWith('/api/favorites')?'market_favorites':path.startsWith('/api/candles')?'native_charts':null;
+    const feature:ProductFeature|null=path.startsWith('/api/alerts')?'price_alerts':path.startsWith('/api/anomaly')?'anomaly_crypto':path.startsWith('/api/notify')?'notification_channels':path.startsWith('/api/favorites')?'market_favorites':path.startsWith('/api/candles')?'native_charts':path.startsWith('/api/trade')?'trading':null;
     if(feature&&!access.features[feature])throw new HttpError(403,'forbidden');
     await next();
   });
@@ -299,6 +302,14 @@ export function createApi(d:ApiDependencies) {
     const claim=await d.repositories.tests.claim(userId,channel.generation,settings.generation,Date.now());if(!claim)throw new HttpError(429,'rate_limited');
     let result:{outcome:'sent'|'failed'|'uncertain';code:string|null};try {result=await d.notifications.test(userId,channel);}catch {result={outcome:'uncertain',code:'provider_uncertain'};}
     const at=Date.now();const finished=await d.repositories.tests.finish(userId,claim.id,claim.claimId,result.outcome,result.code,at);if(!finished||result.outcome==='uncertain')throw new HttpError(504,'notification_uncertain');if(result.outcome==='failed')throw new HttpError(502,'notification_failed');return ok(c,{outcome:'sent',at});
+  });
+  const trade=()=>{if(!d.trade)throw new HttpError(503,'service_unavailable');return d.trade;};
+  app.get('/api/trade/okx',c=>{if(Object.keys(c.req.queries()).length)throw new HttpError(400,'invalid_request');return ok(c,{available:true,egress:trade().egress});});
+  app.post('/api/trade/okx',async c=>{
+    const relay=trade(),req=await json(c,okxRelaySchema);
+    // OKX's own status and body pass through as data; the browser verifies them against its signature context.
+    try {return ok(c,await relay.forward(req));}
+    catch(error){if(error instanceof RelayUncertainError&&req.method==='POST')throw new HttpError(504,'trade_uncertain');throw new HttpError(503,'service_unavailable');}
   });
   app.post('/api/admin/bootstrap',async c=>{const configured=d.config.bootstrapToken;const bearer=c.req.header('authorization')?.match(/^Bearer ([^\s]+)$/)?.[1]??'';if(!configured||!await equalToken(bearer,configured))throw new HttpError(403,'forbidden');if(!await d.repositories.admin.bootstrap(uid(c),Date.now()))throw new HttpError(409,'generation_conflict');return ok(c,{bootstrapped:true});});
   app.use('/api/admin/*',async(c,next)=>{if(c.get('principal').role!=='admin')throw new HttpError(403,'forbidden');await next();});

@@ -1,6 +1,6 @@
 import type { UserIdentity } from './domain.js';
 
-export const PRO_FEATURES = ['price_alerts', 'anomaly_crypto', 'anomaly_tradfi', 'native_charts', 'drawing_tools', 'market_favorites', 'notification_channels'] as const;
+export const PRO_FEATURES = ['price_alerts', 'anomaly_crypto', 'anomaly_tradfi', 'native_charts', 'drawing_tools', 'market_favorites', 'notification_channels', 'trading'] as const;
 export type ProductFeature = typeof PRO_FEATURES[number];
 export interface ProductAccess {
   plan: 'pro';
