@@ -213,8 +213,9 @@ export const NativeChart = memo(function NativeChart({ market, tick, alerts, sou
         : current.chart.addSeries(LineSeries, { color: colors[i]!, lineWidth: 1, lineStyle: line.style === 'dashed' ? LineStyle.Dashed : LineStyle.Solid, priceFormat,
           priceLineVisible: false, lastValueVisible: pane > 0, crosshairMarkerVisible: false,
           ...(item.kind === 'rsi' ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) } : {}) }, pane));
-      // RSI keeps a fixed 0–100 axis with little padding, so labels stay inside that range.
-      if (item.kind === 'rsi') list[0]!.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
+      // New panes copy the price pane's scale options, including log mode and a manual (auto-off) range.
+      // Oscillators cross zero or sit in 0–100, so their pane always starts linear and auto-fitted.
+      if (pane > 0) list[0]!.priceScale().applyOptions({ mode: PriceScaleMode.Normal, autoScale: true, scaleMargins: item.kind === 'rsi' ? { top: 0.08, bottom: 0.08 } : { top: 0.1, bottom: 0.1 } });
       if (item.kind === 'rsi') for (const level of [70, 30]) list[0]!.createPriceLine({ price: level, color: muted, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
       indicatorSeries.current.set(item.id, list);
     }
