@@ -1,0 +1,14 @@
+---
+// Numbered steps. Wrap a Markdown ordered list.
+---
+<div class="steps-list"><slot /></div>
+<style>
+  .steps-list :global(> ol){list-style:none;counter-reset:step;padding:0;margin:24px 0 28px}
+  .steps-list :global(> ol > li){counter-increment:step;position:relative;padding:0 0 22px 46px;margin:0}
+  .steps-list :global(> ol > li::before){content:counter(step);position:absolute;left:0;top:1px;width:28px;height:28px;border-radius:50%;
+    display:grid;place-items:center;font:500 12px var(--mono);color:var(--signal);background:var(--selected);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent)}
+  .steps-list :global(> ol > li::after){content:"";position:absolute;left:14px;top:36px;bottom:6px;width:1px;background:var(--line)}
+  .steps-list :global(> ol > li:last-child){padding-bottom:4px}
+  .steps-list :global(> ol > li:last-child::after){display:none}
+  .steps-list :global(> ol > li > p:first-child){margin-bottom:6px}
+</style>

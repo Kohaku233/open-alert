@@ -1,0 +1,42 @@
+---
+import Docs from '../layouts/Docs.astro';
+import LinkCard from '../components/LinkCard.astro';
+import Pipeline from '../components/Pipeline.astro';
+---
+<Docs
+  title="价格哨站使用说明"
+  description="后台盯盘，到价或出现异动时通过 Pushover、Discord 通知你。页面关掉也照常工作。"
+  meta={[{ label: '交易所', value: 'Binance · OKX · MEXC' }, { label: '通知', value: 'Pushover · Discord' }]}
+  pager={{ next: { href: '/start/', title: '五分钟上手' } }}
+>
+  <h2 id="flow">一条提醒怎样到你手里</h2>
+  <Pipeline
+    label="提醒流程"
+    steps={[
+      { tag: '你来设置', title: '警报或异动', text: '目标价，或打开异动推送' },
+      { tag: '服务器', title: '后台判断', text: '读取交易所实时成交' },
+      { tag: '命中', title: '触发', text: '满足条件立即排队' },
+      { tag: '推送规则', title: '选渠道', text: '按消息类型发到对应渠道' },
+      { tag: '送达', title: '收到通知', text: 'Pushover 或 Discord' },
+    ]}
+  />
+  <p>判断和发送都在服务器上完成，关掉浏览器或合上电脑也照常提醒。</p>
+
+  <h2 id="start">从这里开始</h2>
+  <div class="cards">
+    <LinkCard title="五分钟上手" description="登录、添加通知渠道、创建第一条警报、打开监控。" href="/start/" />
+    <LinkCard title="价格警报怎么触发" description="用哪个价格判断、多快能发现、触发后为什么锁定。" href="/alerts/how-it-works/" />
+    <LinkCard title="异动监测规则" description="怎样算一次异动，以及提醒为什么有时偏晚。" href="/anomaly/rules/" />
+    <LinkCard title="通知渠道与推送规则" description="配置 Pushover、Discord，决定每类消息发到哪里。" href="/notify/channels/" />
+  </div>
+
+  <h2 id="help">遇到问题</h2>
+  <div class="cards">
+    <LinkCard title="常见问题" description="没收到提醒、收到两次、价格对不上时怎么排查。" href="/help/faq/" />
+    <LinkCard title="额度与限制" description="能建多少条警报，每天能收多少条通知。" href="/account/limits/" />
+  </div>
+</Docs>
+<style>
+  .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 8px}
+  @media (max-width:860px){.cards{grid-template-columns:1fr}}
+</style>

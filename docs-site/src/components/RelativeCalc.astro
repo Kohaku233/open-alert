@@ -1,7 +1,7 @@
 ---
 // Same formula as src/anomaly/rules.ts: relative = (1 + coin) / (1 + btc) - 1.
 ---
-<div class="oa-calc not-content" data-oa-calc>
+<div class="oa-calc" data-oa-calc>
   <div class="oa-row"><label for="oa-btc">BTC 涨跌</label><input id="oa-btc" type="range" min="-10" max="10" step="0.5" value="2"/><output data-btc>+2.0%</output></div>
   <div class="oa-row"><label for="oa-coin">币种涨跌</label><input id="oa-coin" type="range" min="-40" max="60" step="0.5" value="12.5"/><output data-coin>+12.5%</output></div>
   <div class="oa-result">
@@ -10,18 +10,19 @@
   <p class="oa-note">拖动滑块试试。这里只演示幅度这一项，真正触发还要同时满足波动倍数和放量。</p>
 </div>
 <style>
-  .oa-calc { margin: 1.4rem 0 1.6rem; padding: 20px; border: 1px solid var(--oa-line); border-radius: 16px; background: var(--oa-card); }
-  .oa-row { display: grid; grid-template-columns: 96px 1fr 72px; align-items: center; gap: 14px; margin: 6px 0; font-size: 13px; }
-  .oa-row label { color: var(--oa-muted-fg); }
-  .oa-row output { font-family: var(--sl-font-mono); text-align: right; font-variant-numeric: tabular-nums; color: var(--oa-text); }
-  .oa-row input { width: 100%; accent-color: var(--oa-signal); }
-  .oa-result { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--oa-line); }
-  .oa-result > span:first-child { font-size: 13px; color: var(--oa-muted-fg); }
-  .oa-result b { font-family: var(--sl-font-mono); font-weight: 500; font-size: 26px; font-variant-numeric: tabular-nums; color: var(--oa-text); }
-  .oa-result b.up { color: var(--oa-signal); } .oa-result b.down { color: var(--oa-danger); }
-  .oa-verdict { font-family: var(--sl-font-mono); font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--oa-line); color: var(--oa-muted-fg); }
-  .oa-verdict.ok { color: var(--oa-signal); border-color: color-mix(in srgb, var(--oa-signal) 45%, transparent); background: var(--oa-signal-bg); }
-  .oa-note { margin: 12px 0 0; font-size: 12px; color: var(--oa-muted-fg); }
+  .oa-calc { margin: 20px 0 26px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .oa-row { display: grid; grid-template-columns: 110px 1fr 74px; align-items: center; gap: 14px; margin: 8px 0; font-size: 13px; }
+  .oa-row label { color: var(--muted-fg); }
+  .oa-row output { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .oa-row input { width: 100%; accent-color: var(--signal); }
+  .oa-result { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .oa-result > span:first-child { font-size: 13px; color: var(--muted-fg); }
+  .oa-result b { font-family: var(--mono); font-weight: 500; font-size: 26px; font-variant-numeric: tabular-nums; color: var(--text); }
+  .oa-result b.up { color: var(--signal); } .oa-result b.down { color: var(--danger); }
+  .oa-verdict { font-family: var(--mono); font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted-fg); }
+  .oa-verdict.ok { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--signal-bg); }
+  .oa-note { margin: 12px 0 0; font-size: 12px; color: var(--muted-fg); }
+  @media (max-width: 860px) { .oa-row { grid-template-columns: 84px 1fr 64px; } }
 </style>
 <script>
   const pct = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';

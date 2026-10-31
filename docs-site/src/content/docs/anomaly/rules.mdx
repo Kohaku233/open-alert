@@ -3,9 +3,10 @@ title: 监测规则
 description: 系统怎样判断一次异动，相对 BTC 的幅度怎么算，提醒为什么有时偏晚。
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Aside from '../../../components/Aside.astro';
 import Pipeline from '../../../components/Pipeline.astro';
 import RelativeCalc from '../../../components/RelativeCalc.astro';
+import Formula from '../../../components/Formula.astro';
 
 各交易所行情独立进行统计运算，任意一家交易所满足门槛即视为候选。若同一个币种在多家交易所同时命中，系统会按 CoinGecko 币种合并为一条推送，只展示信号最强的那一个。
 
@@ -49,9 +50,7 @@ import RelativeCalc from '../../../components/RelativeCalc.astro';
 
 加密货币的异常波动幅度需剔除同一交易所内 BTC 在相同时间窗口下的涨跌幅。在大盘普涨或普跌行情中，单个代币需要走出更具独立性的涨幅才会被判定为异动。
 
-```txt
-相对幅度 = (1 + 币种涨跌) / (1 + BTC 涨跌) − 1
-```
+<Formula name="relative-move" formula="相对幅度 = (1 + 币种涨跌) / (1 + BTC 涨跌) − 1" example="BTC +2%，币种 +12.2%  →  相对幅度 ≈ +10%" />
 
 例如 BTC 涨了 2%，某个币要涨到约 12.2%，相对幅度才到 10%。如果你的过滤条件是默认的 25%，它要涨到约 27.5%。
 

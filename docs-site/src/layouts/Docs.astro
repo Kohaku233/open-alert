@@ -1,0 +1,163 @@
+---
+import '../styles/site.css';
+import { nav, href } from '../nav';
+
+interface Heading { depth: number; slug: string; text: string }
+interface Props {
+  title: string;
+  description: string;
+  current?: string;
+  group?: string;
+  meta?: { label: string; value: string }[];
+  headings?: Heading[];
+  pager?: { prev?: { href: string; title: string }; next?: { href: string; title: string } };
+  noindex?: boolean;
+}
+const { title, description, current, group, meta = [], headings = [], pager, noindex } = Astro.props;
+const { getEntry } = await import('astro:content');
+const groups = await Promise.all(nav.map(async (g) => ({
+  label: g.label,
+  links: await Promise.all(g.items.map(async (id) => ({ id, href: href(id), title: (await getEntry('docs', id))?.data.title ?? id }))),
+})));
+const toc = headings.filter((h) => h.depth === 2);
+const pageTitle = current === undefined && !group ? title : `${title} · 价格哨站文档`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{pageTitle}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonical} />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="sitemap" href="/sitemap-index.xml" />
+  <link rel="preload" href="/fonts/Geist-400.woff2" as="font" type="font/woff2" crossorigin />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:type" content="article" />
+  <meta name="theme-color" content="#05070a" />
+  {noindex && <meta name="robots" content="noindex" />}
+  <script is:inline>
+    (() => {
+      let t = null;
+      try { t = localStorage.getItem('oa-docs-theme'); } catch {}
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip" href="#content">跳到正文</a>
+  <header class="top">
+    <a class="brand" href="/" aria-label="价格哨站文档首页">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 22A16 16 0 0 1 40 22Z" fill="var(--mark-top)" transform="translate(3 -1.5)"/><path d="M8 26A16 16 0 0 0 40 26Z" fill="var(--mark-bottom)" transform="translate(-3 1.5)"/></svg>
+      <span>价格哨站<small>openalert</small></span><span class="tag">docs</span>
+    </a>
+    <button class="search" type="button" data-find-open aria-label="搜索文档">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      搜索文档、规则、通知渠道…<kbd data-find-key>⌘K</kbd>
+    </button>
+    <nav class="top-links" aria-label="站点">
+      <button class="pill find-btn" type="button" data-find-open aria-label="搜索文档">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+      <button class="pill theme" id="theme" type="button" aria-label="切换明暗主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path class="moon" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg><span>深色</span></button>
+      <button class="pill menu" id="menu" type="button" aria-label="打开文档目录" aria-expanded="false" aria-controls="side">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <a class="pill solid" href="https://cryptotool.bar">打开控制台</a>
+    </nav>
+  </header>
+
+  <div class="shell">
+    <aside class="side" id="side" aria-label="文档目录">
+      {groups.map((g) => (
+        <div class="group"><h4>{g.label}</h4>
+          {g.links.map((l) => <a href={l.href} aria-current={l.id === current ? 'page' : undefined}>{l.title}</a>)}
+        </div>
+      ))}
+    </aside>
+
+    <main id="content">
+      <div class="crumbs">
+        <a href="/">文档</a>
+        {group && <><span>/</span>{group}</>}
+        {current !== undefined && <><span>/</span><b>{title}</b></>}
+      </div>
+      <article data-pagefind-body={noindex ? undefined : ''}>
+        <h1 data-pagefind-meta="title">{title}</h1>
+        <p class="lede">{description}</p>
+        {meta.length > 0 && <div class="meta" data-pagefind-ignore>{meta.map((m) => <span>{m.label} <i>{m.value}</i></span>)}</div>}
+        <div class="prose"><slot /></div>
+      </article>
+      {pager && (pager.prev || pager.next) && (
+        <nav class="pager" aria-label="上一篇和下一篇">
+          {pager.prev && <a href={pager.prev.href}><small>上一篇</small>{pager.prev.title}</a>}
+          {pager.next && <a class="next" href={pager.next.href}><small>下一篇</small>{pager.next.title}</a>}
+        </nav>
+      )}
+    </main>
+
+    {toc.length > 0 && (
+      <aside class="toc" aria-label="本页目录"><h4>本页内容</h4>
+        {toc.map((h) => <a href={`#${h.slug}`}>{h.text}</a>)}
+      </aside>
+    )}
+  </div>
+
+  <dialog class="find" id="find" aria-label="搜索文档">
+    <div class="find-head">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" placeholder="搜索文档、规则、通知渠道…" aria-label="搜索关键词" autocomplete="off" />
+      <button type="button" data-find-close>关闭</button>
+    </div>
+    <ul class="find-list" role="listbox" aria-label="搜索结果"></ul>
+  </dialog>
+
+  <script is:inline>
+    // Wrap Markdown tables for horizontal scroll, and add "#" links to section headings.
+    document.querySelectorAll('.prose table').forEach((t) => {
+      const w = document.createElement('div'); w.className = 'table'; t.before(w); w.append(t);
+    });
+    document.querySelectorAll('.prose h2[id]').forEach((h) => {
+      const a = document.createElement('a'); a.className = 'anchor'; a.href = '#' + h.id; a.textContent = '#';
+      a.setAttribute('aria-label', '链接到本节'); a.setAttribute('data-pagefind-ignore', ''); h.append(a);
+    });
+  </script>
+  <script>
+    import { setupSearch } from '../scripts/search';
+    const root = document.documentElement;
+    const themeButton = document.getElementById('theme')!;
+    const paintTheme = () => {
+      const dark = root.dataset.theme === 'dark';
+      themeButton.querySelector('span')!.textContent = dark ? '深色' : '浅色';
+      themeButton.querySelector<SVGElement>('.moon')!.style.display = dark ? '' : 'none';
+      themeButton.querySelector<SVGElement>('.sun')!.style.display = dark ? 'none' : '';
+    };
+    themeButton.addEventListener('click', () => {
+      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('oa-docs-theme', root.dataset.theme); } catch {}
+      paintTheme();
+    });
+    paintTheme();
+
+    const menu = document.getElementById('menu')!;
+    const side = document.getElementById('side')!;
+    menu.addEventListener('click', () => { const open = side.classList.toggle('open'); menu.setAttribute('aria-expanded', String(open)); });
+    side.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => { side.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); }));
+    side.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest' });
+
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('.toc a')];
+    if (links.length) {
+      const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+        if (e.isIntersecting) links.forEach((l) => l.classList.toggle('on', l.getAttribute('href') === '#' + e.target.id));
+      }), { rootMargin: '-90px 0px -70% 0px' });
+      document.querySelectorAll('.prose h2[id]').forEach((h) => io.observe(h));
+      links[0]!.classList.add('on');
+    }
+
+    setupSearch();
+  </script>
+</body>
+</html>

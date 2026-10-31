@@ -1,0 +1,27 @@
+---
+// Callout box from the preview. type: note (default), tip, caution.
+interface Props { type?: 'note' | 'tip' | 'caution'; title?: string }
+const { type = 'note', title } = Astro.props;
+---
+<div class:list={['callout', type]} role="note">
+  {type === 'caution'
+    ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+    : type === 'tip'
+      ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2.2h5c.1-1 .5-1.7 1.1-2.2A6 6 0 0 0 12 3Z"/></svg>
+      : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>}
+  <div>
+    {title && <p class="callout-title"><strong>{title}</strong></p>}
+    <slot />
+  </div>
+</div>
+<style>
+  .callout{display:grid;grid-template-columns:20px 1fr;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--note-bd);background:var(--note-bg);color:var(--note-tx);font-size:14px;margin:20px 0}
+  .callout.caution{border-color:var(--warn-bd);background:var(--warn-bg);color:var(--warn-tx)}
+  .callout.tip{border-color:var(--tip-bd);background:var(--tip-bg);color:var(--tip-tx)}
+  .callout svg{width:18px;height:18px;margin-top:3px}
+  .callout :global(p){margin:0}
+  .callout :global(p + p){margin-top:6px}
+  .callout :global(strong){color:inherit}
+  .callout :global(a){color:inherit}
+  .callout-title{margin-bottom:2px !important}
+</style>

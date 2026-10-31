@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
-    "deploy": "astro build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "@astrojs/starlight": "0.42.8",
+    "@astrojs/mdx": "8.0.3",
+    "@astrojs/sitemap": "3.7.4",
     "astro": "7.4.4",
+    "pagefind": "1.5.2",
     "sharp": "0.35.5"
   },
   "devDependencies": {

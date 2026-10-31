@@ -3,7 +3,7 @@ title: 推送规则
 description: 决定每类消息发到哪些渠道，设置提醒级别、每日上限和免打扰。
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Aside from '../../../components/Aside.astro';
 
 推送规则决定每类消息发到哪些渠道。消息有三类：
 
@@ -37,7 +37,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 ### 每日上限
 
-每个渠道针对每类消息每日支持发送的最大数量，可在 1 到 50 之间自定义，额度于 UTC 零点（北京时间早上 8 点）统一重置。管理员账户不受此上限限制。
+每个渠道针对每类消息每日支持发送的最大数量，可在 1 到 50 之间自定义，额度于 UTC 零点（北京时间早上 8 点）统一重置。
 
 价格警报另外有一个账户级的每日尝试次数，包含失败重试，详见 [额度与限制](/account/limits/)。
 
