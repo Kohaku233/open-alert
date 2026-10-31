@@ -57,7 +57,7 @@ function fakeAdapter(sent: Sent[], outcome: 'sent' | 'failed' | 'uncertain' = 's
 
 async function setup(legacyUsers: string[] = []) {
   const db = await createSQLite(':memory:', true);
-  await db.execute('CREATE TABLE "user" (id TEXT PRIMARY KEY)');
+  await db.execute('CREATE TABLE "user" (id TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT \'user\')');
   await db.execute('CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
   await db.execute('CREATE TABLE channels (user_id TEXT PRIMARY KEY)');
   for (const id of ['u1', 'u2']) await db.execute('INSERT INTO "user"(id) VALUES(?)', [id]);

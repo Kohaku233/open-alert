@@ -56,3 +56,26 @@ test('invite beta price attempts cannot exceed the existing deployment ceiling',
   assert.equal(access.billing, 'not_enabled');
   assert.equal(access.expiresAt, null);
 });
+
+test('admin access uses explicit null limits for every business quota', () => {
+  const access = betaAccess({
+    limits: {
+      users: 1_000,
+      alertsPerUser: 17,
+      instrumentsPerUser: 6,
+      activeAlerts: 2_000,
+      globalInstruments: 200,
+      dailyNotificationAttempts: 13,
+      globalNotificationAttempts: 20_000,
+    },
+  }, 9, 'admin');
+
+  assert.deepEqual(access.limits, {
+    alerts: null,
+    instruments: null,
+    channels: null,
+    favorites: null,
+    priceAttemptsPerDay: null,
+  });
+  assert.ok(Object.values(access.features).every(enabled => enabled === true));
+});
